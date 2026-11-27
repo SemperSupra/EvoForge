@@ -36,6 +36,7 @@ jobs:
           npm audit --json > evidence/candidate-audit.json || test "$?" -eq 1
           npm audit --omit=dev --audit-level=low
       - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
       - run: npm run typecheck && npm test && npm run build && npm run verify:dist && npm run golden:test
       - name: Development advisory gate
         run: npm audit --audit-level=low
