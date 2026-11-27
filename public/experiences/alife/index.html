@@ -104,7 +104,15 @@
       #hud-left{left:5px;} #hud-right{right:5px;}
       .roster-grid,.guild-bar{grid-template-columns:1fr 1fr;}
     }
-    @media(max-width:600px){ :root{--toolbar-height:88px;} #experience-toolbar{gap:5px;padding:6px;} }
+    @media(max-width:600px){ :root{--toolbar-height:104px;} #experience-toolbar{gap:5px;padding:6px;}
+      #experience-toolbar a,#experience-toolbar button,#hud-toggle,#camera-controls button{min-height:44px;min-width:44px;font-size:14px;display:inline-flex;align-items:center;justify-content:center;}
+      #hud-left,#hud-right{width:calc(100vw - 16px);left:8px;right:8px;max-height:38dvh;font-size:14px;backdrop-filter:none;}
+      body.mobile-panel-left #hud-right,body.mobile-panel-right #hud-left{display:none}
+      #camera-controls{bottom:calc(56px + env(safe-area-inset-bottom));max-width:calc(100vw - 16px);max-height:24dvh;overflow:auto;}
+      #hud-toggle{bottom:calc(5px + env(safe-area-inset-bottom));}
+      #hud-left button,#hud-right button,.faction-card,#hud-left input[type=range],#hud-right input[type=range]{min-height:44px;font-size:14px;}
+      #hud-left h1,#hud-right h2,.section-title,.faction-name,.faction-stat,.control label{font-size:14px;}
+    }
   </style>
 </head>
 <body>
@@ -271,7 +279,9 @@ function failArena(message) {
 window.addEventListener('error', e => { if (!stopped) failArena(e.message || 'Arena runtime error'); });
 window.addEventListener('unhandledrejection', e => { if (!stopped) failArena(e.reason?.message || 'Arena initialization failed'); });
 
-const MAX_NODES = 7200;
+const mobileBudget=matchMedia('(pointer: coarse) and (max-width: 900px)').matches || launchQuery.get('profile')==='mobile';
+const MAX_NODES = 7200; // retain shader ABI; bound active population and render area instead
+if(mobileBudget){document.body.classList.add('hud-hidden','mobile-panel-left');document.getElementById('hud-toggle').textContent='Panels';}
 const MAX_CREATURES = 512;
 const HASH_BUCKETS = 16384;
 const GRID_DIM = 128;
@@ -292,7 +302,7 @@ const speciesConfig = [
 
 const state = {
   selectedSpecies: 0,
-  popCounts: launchQuery.get('profile')==='smoke' ? [6,2,2,2,2,2] : [110,32,28,26,22,20],
+  popCounts: launchQuery.get('profile')==='smoke' ? [6,2,2,2,2,2] : mobileBudget ? [12,4,4,4,4,4] : [110,32,28,26,22,20],
   arenaFamily: 0, // 0:Pillars, 1:Atolls, 2:Estuary, 3:Volcano, 4:Karst, 5:Ziggurat, 6:Ringworld
   renderMode: 0,  // 0:Species, 1:Guilds, 2:Temp/Water
   waterLevel: -0.15,
@@ -1653,7 +1663,7 @@ function buildEcosystem() {
 
   const founding=Array(6).fill(-1);
   for(let cid=0;cid<cCursor;cid++){const sp=cu32[cid*8+1];if(founding[sp]===-1)founding[sp]=cid;}
-  const reserveCount=launchQuery.get('profile')==='smoke'?12:48;
+  const reserveCount=launchQuery.get('profile')==='smoke'||mobileBudget?12:48;
   for(let extra=0;extra<reserveCount && cCursor<MAX_CREATURES;extra++){
     const sp=extra%6, source=founding[sp];
     if(source<0)continue;
@@ -1839,7 +1849,13 @@ document.getElementById('btn-apply-rec').addEventListener('click', () => { if (t
 document.getElementById('btn-auto-director').addEventListener('click', e => { state.autoDirector = !state.autoDirector; e.target.textContent = `Auto: ${state.autoDirector ? 'ON' : 'OFF'}`; e.target.classList.toggle('active', state.autoDirector); });
 document.getElementById('btn-auto-chaos').addEventListener('click', e => { state.autoSurprises = !state.autoSurprises; e.target.textContent = `Surprises: ${state.autoSurprises ? 'ON' : 'OFF'}`; e.target.classList.toggle('active', state.autoSurprises); });
 document.getElementById('btn-export-json').addEventListener('click', () => { navigator.clipboard?.writeText(JSON.stringify(window.__ARENA_RPC__.getState(), null, 2)); logEvent('Copied v7 snapshot JSON.'); });
-document.getElementById('hud-toggle').addEventListener('click', () => document.body.classList.toggle('hud-hidden'));
+document.getElementById('hud-toggle').addEventListener('click', () => {
+  const b=document.body;
+  if(!mobileBudget){b.classList.toggle('hud-hidden');return;}
+  if(b.classList.contains('hud-hidden')){b.classList.remove('hud-hidden','mobile-panel-right');b.classList.add('mobile-panel-left');}
+  else if(b.classList.contains('mobile-panel-left')){b.classList.remove('mobile-panel-left');b.classList.add('mobile-panel-right');}
+  else{b.classList.add('hud-hidden');}
+});
 
 window.__ARENA_RPC__ = Object.freeze({
   getState: () => structuredClone({ ...experience, tick: state.simTick, telemetry: telemetry.latest, knobs: { state, speciesConfig } }),
@@ -1856,7 +1872,7 @@ window.addEventListener('pagehide', e => { if (e.persisted) setPaused(true); els
 async function init() {
   const canvas = document.getElementById('canvas');
   const badge = document.getElementById('backend-badge');
-  function resize() { const max = gpuDevice?.limits.maxTextureDimension2D || 4096; const dpr=Math.min(devicePixelRatio,2); canvas.width=Math.max(1,Math.min(max,Math.floor(window.innerWidth*dpr))); canvas.height=Math.max(1,Math.min(max,Math.floor(window.innerHeight*dpr))); }
+  function resize() { const max = gpuDevice?.limits.maxTextureDimension2D || 4096; const dpr=Math.min(devicePixelRatio,mobileBudget?1:2); canvas.width=Math.max(1,Math.min(max,Math.floor(window.innerWidth*dpr))); canvas.height=Math.max(1,Math.min(max,Math.floor(window.innerHeight*dpr))); }
   window.addEventListener('resize', resize); resize();
 
   if (!navigator.gpu) throw new Error('WebGPU is unavailable in this browser or context. Mosaic remains available.');
@@ -1989,6 +2005,7 @@ async function init() {
   document.getElementById('btn-pause').disabled = false;
   function frame(now) {
     if (stopped) return;
+    if (document.hidden || (mobileBudget && !paused && now-lastTime<1000/24)) { requestAnimationFrame(frame); return; }
     if (paused && !viewDirty) { lastTime=now; requestAnimationFrame(frame); return; }
     const stepping = !paused;
     viewDirty = false;

@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {AXES,cardinality,enumerate,capacity} from './coverage.mjs';
+test('explicit macro domains have exact unique counts',()=>{for(const [name,n] of [['emblem',864],['motif',2592],['craft',2592]]){const axes=AXES[name],rows=[...enumerate(axes)];assert.equal(cardinality(axes),BigInt(n));assert.equal(rows.length,n);assert.equal(new Set(rows.map(r=>JSON.stringify(r.candidate))).size,n)}});
+test('resumable rank and bounded execution',()=>{const all=[...enumerate(AXES.emblem)];assert.deepEqual([...enumerate(AXES.emblem,12n,3)],all.slice(12,15));assert.throws(()=>[...enumerate(AXES.emblem,0n,10001)]);assert.equal(capacity(2592n).requiredPerSecond,8.64)});

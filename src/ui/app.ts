@@ -93,7 +93,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   function workerCountFromPace(p: Pace): number {
     const cores = navigator.hardwareConcurrency || 4;
     const cap = p === "ultra" ? 8 : p === "fast" ? 6 : p === "medium" ? 4 : 3;
-    return Math.max(1, Math.min(cap, cores));
+    return Math.max(1, Math.min(cap, cores, matchMedia('(pointer: coarse) and (max-width: 900px)').matches ? 2 : 8));
   }
 
   async function startNewSession() {
