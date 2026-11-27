@@ -175,3 +175,57 @@ jobs:
             provenance-verification.json
             ${{ steps.attest.outputs.bundle-path }}
           retention-days: 14
+  os-remediation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [upgrade, headless-minimal]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build isolated OS remediation candidate
+        env:
+          MODE: ${{ matrix.mode }}
+        run: |
+          set -euo pipefail
+          mkdir -p os-evidence
+          python3 - <<'PY'
+          import os,pathlib
+          s=pathlib.Path('Dockerfile.tooling').read_text()
+          s=s.replace('RUN apt-get update', 'RUN apt-get update && apt-get -y upgrade')
+          if os.environ['MODE']=='headless-minimal':
+              for pkg in ('xvfb','git','curl'):
+                  s=s.replace('    '+pkg+' '+chr(92)+'\n','')
+          pathlib.Path('os-evidence/Dockerfile.candidate').write_text(s)
+          PY
+          docker build --iidfile os-evidence/image-id.txt -f os-evidence/Dockerfile.candidate .
+          image="$(cat os-evidence/image-id.txt)"
+          docker run --rm --network none "$image" dpkg-query -W > os-evidence/packages.tsv
+          docker run --rm "$image" node --version > os-evidence/node.txt
+      - name: Scan candidate and classify fix availability
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          "$RUNNER_TEMP/trivy" image --image-src docker --scanners vuln --pkg-types os --format json --output os-evidence/audit.json --exit-code 0 "$(cat os-evidence/image-id.txt)"
+          python3 - <<'PY'
+          import json,collections,pathlib
+          a=json.load(open('os-evidence/audit.json'))
+          assert any(r.get('Class')=='os-pkgs' for r in a.get('Results',[]))
+          v=[x for r in a['Results'] for x in (r.get('Vulnerabilities') or [])]
+          counts=collections.Counter(x['Severity'] for x in v)
+          fixes=collections.Counter(x['Severity'] for x in v if x.get('FixedVersion'))
+          report={'counts':dict(counts),'with_fixed_version':dict(fixes),'release_eligible':not any(x['Severity'] in ('HIGH','CRITICAL') for x in v)}
+          pathlib.Path('os-evidence/summary.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: os-remediation-${{ matrix.mode }}
+          path: os-evidence/
+          retention-days: 14
