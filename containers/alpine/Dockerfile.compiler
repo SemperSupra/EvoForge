@@ -1,0 +1,11 @@
+ARG BASE
+FROM ${BASE} AS unpack
+COPY npm.tgz /tmp/npm.tgz
+RUN mkdir /npm && tar -xzf /tmp/npm.tgz -C /npm --strip-components=1
+FROM ${BASE}
+RUN apk add --no-cache nodejs=24.22.3-r0 ca-certificates=20261020-r0 ada-libs=4.0.0-r0 brotli-libs=1.2.1-r0 c-ares=1.34.9-r0 icu-data-en=78.1-r0 icu-libs=78.1-r0 libgcc=15.2.0-r5 libstdc++=15.2.0-r5 nghttp2-libs=1.70.0-r0 simdjson=4.2.4-r0 simdutf=9.0.0-r0 sqlite-libs=3.53.4-r0 zstd-libs=1.6.0-r1
+COPY --from=unpack /npm /usr/local/lib/node_modules/npm
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && addgroup -g 10001 app && adduser -D -u 10001 -G app -h /home/app app
+WORKDIR /workspace
+USER 10001:10001
+CMD ["node"]

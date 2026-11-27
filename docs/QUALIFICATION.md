@@ -1,25 +1,25 @@
-# Reproducing qualification
+# Reproducing the EvoForge release candidate
 
-The repository contains the source, locked dependencies, container tooling, complete test fixtures, and a static-distribution allowlist. No private inputs are required.
+The source, locked dependencies, deterministic renderer fixtures, distribution allowlist and pinned Alpine compiler recipe are included. No private repository or previous GitHub Actions artifact is required.
 
-## Required ordered gates
+## Build locally (Linux/WSL, amd64)
 
-Run `EVOFORGE_ZERO_COST=1 bash scripts/rdte-direct.sh "$(git rev-parse HEAD)" /tmp/evoforge-candidate-dist` from a clean checkout on a verified zero-cost Docker executor. The disposable tooling container runs locked installation, Chromium installation, TypeScript checking, unit tests, build, distribution validation, the complete 298-job golden plan, and the built-site Mosaic/ALife smoke. Check `/tmp/evoforge-candidate-dist.evidence/result.txt`, the ordered gates.tsv, native logs and distribution SHA-256 manifest. An absent or failed stage is not acceptance.
+Prerequisites: Git, a local Docker-compatible Docker engine, Bash, curl, GNU coreutils and tar. The image is qualified for linux/amd64; no arm64 compiler qualification is asserted. On Windows use a supported WSL Linux engine rather than requiring Docker Desktop. The script downloads public pinned compiler inputs and the lockfile dependencies, then performs two independent network-isolated builds and verifies their exact 13-file distribution hash. A missing historical version in an upstream repository fails closed; do not substitute a newer package silently.
 
-The smoke uses a software WebGPU path as a functional bring-up gate; it is not evidence of physical GPU performance. Actual platform browser tests are separate.
+```sh
+git clone --branch release-source https://github.com/SemperSupra/EvoForge.git
+cd EvoForge
+bash scripts/build-alpine-candidate.sh /tmp/evoforge-candidate
+```
 
-## Public source and distribution
+The output includes the built site, deterministic site tar, compiler export, dependency and build receipts. This is build-only evidence; it is not release approval or permission to redistribute the compiler. Serve the static directory with an HTTP server, not a file URL. The live site is https://sempersupra.github.io/EvoForge/.
 
-Release-source CI runs on standard public hosted Ubuntu. Qualification artifacts are candidate outputs until promotion. Public Pages receives only the validated static distribution, license and version metadata. The source repository is independently buildable. The upstream-intake identity check remains an internal provenance test; the public suite tests the actual shipped arena rather than requiring an excluded raw intake file. No golden expectation was removed or changed.
+## Mandatory release qualification
 
-## Native browser RDTE
+The public qualification workflow builds exact reviewed source from public inputs, runs fresh compiler OS and npm language coverage and zero high/critical checks, and separately audits the application's locked dependencies. It builds twice with networking disabled after online prefetch. It verifies the application distribution allowlist and exact reviewed manifest, including the original MIT license and idb ISC notice.
 
-The companion browser workflow runs on standard Ubuntu, Windows and macOS. Its canaries distinguish desktop engine, viewport/touch emulation, actual WebGPU execution, adapter and software fallback. Browser availability and functional support are reported, not inferred from runner names. It is a capability experiment, not a substitute for release or physical device qualification.
+The independent Linux browser job restores the compiler image from that same run, installs the pinned system Chromium and full ICU data in a separate image, scans that image and exercises the full 298-job source golden oracle and actual production routes in an isolated container. It verifies the site before and after testing. The native macOS ARM64 job executes the full built-site native WebGPU smoke using Apple Metal without a software fallback. It checks both modes, all seven families and responsive interactions. Physical mobile testing is separate. Hosted runner inventory and custom system Chromium support limitations are distinct from scanner clearance of the container images.
 
-## Targeted runtime diagnostics
+After all jobs pass, the workflow signs and independently verifies the exact deterministic build archive and source/manifest receipts. The qualification workflow does not deploy. Publication requires a separate guarded promotion of the same verified artifact; no skipped, failed or unavailable gate is acceptance. Earlier Debian tooling scripts remain diagnostic/legacy and do not determine this release's qualification.
 
-Run `node scripts/arena-runtime-rdte.mjs linux-swiftshader` or use the `mac-headed` / `mac-headless` profiles on the appropriate disposable native OS runner after installing the locked dependencies and Chromium. The test executes a synthetic compute/readback oracle, then traces the actual shipped ALife startup and first 15 telemetry ticks in a fresh page. This is diagnostic instrumentation, not the full release smoke. The separate `node scripts/storage-rdte.mjs chromium|firefox|webkit` probe exercises atomic IndexedDB abort/reopen, two-page Web Locks exclusion, Cache Storage, OPFS and offline Service Worker behavior in a fresh test context. Unsupported APIs or failed checks remain visible; these are not evidence of the complete product installer or its crash recovery. All results appear under runtime-evidence/ and in the public runtime workflow.
-
-## Split native qualification
-
-Seven container gates are required before transfer of an intermediate artifact. The full built-site smoke is then run on actual Apple WebGPU using macOS ARM64 Chromium; the input distribution is rehashed before and after testing. Only that full passing result completes the eight-gate receipt. The Linux SwiftShader failure is retained as a separate diagnostic and not claimed as supported. Local default rdte-direct.sh still requires full software smoke. Runtime dependency audit is a required independent promotion job. Development advisories are retained for triage.
+The browser/runtime RDTE workflows are optional manual diagnostics; their reports do not replace the mandatory qualification.

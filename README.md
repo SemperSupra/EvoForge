@@ -6,16 +6,15 @@ EvoForge is a local-first browser laboratory for evolutionary art and artificial
 
 ## Start here
 
-Requirements: Git, Docker with Compose, and a modern browser. Clone this branch explicitly:
+Use a Linux/WSL amd64 Docker engine, Git, Bash, curl, GNU coreutils and tar. No project toolchains need to be installed on the host.
 
 ```sh
 git clone --branch release-source https://github.com/SemperSupra/EvoForge.git
 cd EvoForge
-npm run container:install
-npm run container:dev
+bash scripts/build-alpine-candidate.sh /tmp/evoforge-candidate
 ```
 
-If Node/npm is not installed on your machine, use `bash scripts/container-npm.sh install` and `bash scripts/container-npm.sh run dev` instead. Open http://localhost:5173. Project dependencies are installed inside the tooling container; do not install them on the host.
+Serve the generated `/tmp/evoforge-candidate/site` directory over HTTP using a local static web server. Do not open the HTML as a file URL. The builder resolves exact public pinned inputs, performs two network-isolated application builds after dependency prefetch, and checks the reference manifest. See the [reproduction guide](docs/QUALIFICATION.md).
 
 ## Experiences in this candidate
 
@@ -24,17 +23,11 @@ If Node/npm is not installed on your machine, use `bash scripts/container-npm.sh
 
 See [user guide](docs/USAGE.md) and [reproduction guide](docs/QUALIFICATION.md).
 
-## Test and develop
+## Qualification
 
-The source, lockfile, five golden suites (298 render jobs), tests and container tooling are included. A clean checkout is sufficient; no private repository, API key, AI tool or proprietary service is needed.
+The primary public qualification uses an optimized Alpine compiler, a separate isolated Alpine Chromium profile, and native Apple Metal. The workflow builds the exact reviewed source, scans the actual tool images, performs deterministic and production checks, and signs the verified distribution. It does not deploy. No failed, missing or skipped gate is acceptance. Older Debian tooling and optional manual browser/runtime diagnostics are retained for comparison, not as the release qualification authority.
 
-```sh
-EVOFORGE_ZERO_COST=1 bash scripts/rdte-direct.sh "$(git rev-parse HEAD)" /tmp/evoforge-candidate-dist
-```
-
-Only use the zero-cost acknowledgement on a verified no-incremental-cost executor. The command executes the ordered native gates in a disposable Debian tooling container, creates a new candidate output directory and a separate evidence directory. It does not publish. Output directories must not already exist.
-
-The public [Actions](https://github.com/SemperSupra/EvoForge/actions) runs are the qualification record. A failed, missing or skipped gate is not a pass. Browser and device qualification are reported separately; mobile emulation is not a physical mobile test. No claim of broad device support is implied by this candidate.
+The [Actions runs](https://github.com/SemperSupra/EvoForge/actions) retain qualification evidence. Mobile emulation is not physical mobile testing.
 
 ## Source and license
 
