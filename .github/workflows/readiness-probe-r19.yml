@@ -21,3 +21,96 @@ jobs:
         with:
           node-version: '22'
       - run: node --test scripts/wait-for-server.test.mjs
+  integrate:
+    if: github.repository == 'SemperSupra/EvoForge'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    timeout-minutes: 10
+    outputs:
+      source: ${{ steps.commit.outputs.source }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: toolchain-major-no-wait-on
+          run-id: 45992192161
+          github-token: ${{ github.token }}
+          path: selected
+      - name: Verify exact qualified manifests
+        run: |
+          cd selected
+          printf '%s  %s\n' 7552f1df20b233b04da2040c36eb5a992a262d7558149d1092c6deb9bb8e5812 package.json 65b6c770ed63455930bdc84c42aa9d00bd57f66ce6dd13943aa6af5baf2f8214 package-lock.json | sha256sum -c -
+      - name: Commit only verified manifests to isolated branch
+        id: commit
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/rdte/readiness-probe-r19
+          cp selected/package.json selected/package-lock.json .
+          git add package.json package-lock.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git diff --cached --quiet; then
+            git commit -m 'build: integrate exact qualified zero-advisory dependency lock'
+            git push origin HEAD:refs/heads/rdte/readiness-probe-r19
+          fi
+          echo "source=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  container:
+    needs: integrate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.integrate.outputs.source }}
+          persist-credentials: false
+      - name: Run canonical container gates
+        env:
+          EVOFORGE_ZERO_COST: '1'
+          EVOFORGE_QUALIFICATION_PHASE: container
+        run: |
+          bash scripts/rdte-direct.sh "$(git rev-parse HEAD)" "$RUNNER_TEMP/evoforge-dist"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: integrated-site
+          path: ${{ runner.temp }}/evoforge-dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: integrated-evidence
+          path: ${{ runner.temp }}/evoforge-dist.evidence/
+  native:
+    needs: [integrate, container]
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.integrate.outputs.source }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: integrated-site
+          path: ${{ runner.temp }}/evoforge-dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: integrated-evidence
+          path: ${{ runner.temp }}/evidence
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=low
+      - run: npx playwright install chromium
+      - name: Verify exact artifact and full native smoke
+        env:
+          EVOFORGE_SMOKE_BACKEND: mac-metal
+          EVOFORGE_DIST_DIR: ${{ runner.temp }}/evoforge-dist
+        run: |
+          set -euo pipefail
+          E="$RUNNER_TEMP/evidence"
+          test "$(cat "$E/native-source.txt")" = "source=$(git rev-parse HEAD)"
+          test "$(cat "$E/gates.tsv")" = "$(printf '%s\tPASS\n' install chromium typecheck unit build dist golden)"
+          (cd "$EVOFORGE_DIST_DIR" && shasum -a 256 -c "$E/dist-sha256.txt")
+          node scripts/arena-smoke.mjs
+          (cd "$EVOFORGE_DIST_DIR" && shasum -a 256 -c "$E/dist-sha256.txt")
