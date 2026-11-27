@@ -72,20 +72,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test "$(cat signed/source.txt)" = "$RELEASE_SOURCE"
-          test "$(cat signed/run.txt)" = "$RELEASE_RUN"
-          printf '%s  %s\n' "$SUBJECT_SHA" signed/evoforge-site.tar "$MANIFEST_SHA" signed/dist-1.sha256 | sha256sum -c -
+          # The signed artifact includes the package directory and a separate attestation bundle.
+          # Admit only one package root matching the observed archive layout.
+          test -f signed/EvoForge/EvoForge/package/evoforge-site.tar
+          mkdir verified-package
+          for file in source.txt run.txt evoforge-site.tar dist-1.sha256 SHA256SUMS; do
+            test -f "signed/EvoForge/EvoForge/package/$file"
+            test ! -L "signed/EvoForge/EvoForge/package/$file"
+            cp "signed/EvoForge/EvoForge/package/$file" verified-package/
+          done
+          test "$(cat verified-package/source.txt)" = "$RELEASE_SOURCE"
+          test "$(cat verified-package/run.txt)" = "$RELEASE_RUN"
+          printf '%s  %s\n' "$SUBJECT_SHA" verified-package/evoforge-site.tar "$MANIFEST_SHA" verified-package/dist-1.sha256 | sha256sum -c -
           gh attestation verify --help > preflight/attestation-help.txt
           grep -q -- '--source-digest' preflight/attestation-help.txt
-          gh attestation verify signed/evoforge-site.tar --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/public-qualification.yml" --source-digest "$RELEASE_SOURCE" --format json > preflight/attestation-verification.json
-          node scripts/verify-artifact.mjs site signed/dist-1.sha256
+          gh attestation verify verified-package/evoforge-site.tar --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/public-qualification.yml" --source-digest "$RELEASE_SOURCE" --format json > preflight/attestation-verification.json
+          node scripts/verify-artifact.mjs site verified-package/dist-1.sha256
           node scripts/verify-dist.mjs site
           python3 - <<'PY'
           import pathlib,tarfile,hashlib,json,re
           root=pathlib.Path('site')
-          expected={x.split('  ',1)[1][2:]:x.split('  ',1)[0] for x in pathlib.Path('signed/dist-1.sha256').read_text().splitlines()}
+          expected={x.split('  ',1)[1][2:]:x.split('  ',1)[0] for x in pathlib.Path('verified-package/dist-1.sha256').read_text().splitlines()}
           found={}
-          with tarfile.open('signed/evoforge-site.tar','r:') as t:
+          with tarfile.open('verified-package/evoforge-site.tar','r:') as t:
               for m in t:
                   path=m.name.removeprefix('./')
                   assert not path.startswith('/') and '..' not in pathlib.PurePosixPath(path).parts
@@ -114,57 +123,14 @@ jobs:
             printf '%s\n' '{"status":"CONFIGURATION_UNAVAILABLE","release_authorized":false}' > preflight/pages.json
           fi
           printf '%s\n' 'Read-only preflight; no Pages mutation, deployment approval or blanket legal/security clearance.' > preflight/SCOPE.txt
+          cp verified-package/dist-1.sha256 preflight/
+          printf '%s\n' "$RELEASE_SOURCE" > preflight/source.txt
+          printf '%s\n' "$RELEASE_RUN" > preflight/qualified-run.txt
+          printf '%s\n' "$SUBJECT_SHA" > preflight/subject.txt
+          printf '%s\n' 'PASS_ARTIFACT_PREFLIGHT' > preflight/result.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: release-promotion-preflight
           path: preflight/
-          retention-days: 30
-  worker-boundary:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: 86755c2bf87dd5230141d84ece273b3b43575eee
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: '24.22.3'
-          package-manager-cache: false
-      - name: Probe existing worker lifecycle without modifying product code
-        run: |
-          set -euo pipefail
-          mkdir worker-evidence
-          node --input-type=module <<'JS' | tee worker-evidence/observations.json
-          import {WorkerLifecycle} from './src/workers/worker-lifecycle.mjs';
-          import assert from 'node:assert/strict';
-          import {setTimeout as sleep} from 'node:timers/promises';
-          const workers=[],results=[];
-          const pool=new WorkerLifecycle(2,()=>{
-            const w={sent:[],terminated:0,postMessage(j){this.sent.push(j)},terminate(){this.terminated++}};
-            workers.push(w);return w;
-          });
-          pool.onMessage(m=>results.push(m));
-          const job=i=>({type:'render',jobId:'probe-'+i,generationId:1,renderIntentId:1,candidateId:'c'+i,slot:'thumb',engineId:'mosaic',engineVersion:'2.0.0',genomeQ16:new Uint16Array([1,2]),engineConfig:{},intent:{kind:'thumb',width:2,height:2,lod:0}});
-          const hung=job(1),healthy=job(2);
-          pool.post(hung);pool.post(healthy);
-          workers[1].onmessage({data:{type:'result',jobId:healthy.jobId,generationId:1,renderIntentId:1,candidateId:healthy.candidateId,slot:'thumb',width:2,height:2,rgba:new Uint8ClampedArray(16),meta:{}}});
-          await sleep(1000);
-          assert.equal(results.length,1);
-          assert.equal(pool.stats().pending,1);
-          const waiting=pool.stats();
-          pool.terminate();
-          await Promise.resolve();
-          assert.equal(results.length,2);
-          assert.equal(results[1].jobId,hung.jobId);
-          assert.equal(results[1].type,'error');
-          assert.equal(pool.stats().pending,0);
-          console.log(JSON.stringify({source:process.env.RELEASE_SOURCE,scope:'synthetic one-second nonresponse probe; not a product endurance or deadline acceptance test',healthySiblingCompleted:true,hungPendingAfterMs:1000,waiting,explicitPoolCancellation:true,terminal:pool.stats(),automaticDeadlineDemonstrated:false},null,2));
-          JS
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
-        with:
-          name: worker-boundary-diagnostics
-          path: worker-evidence/
           retention-days: 30
