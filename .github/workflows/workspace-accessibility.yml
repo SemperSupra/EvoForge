@@ -1,0 +1,40 @@
+name: Workspace accessibility RDTE
+on:
+  push:
+    branches: [rdte/workspace-accessibility]
+    paths: ['examples/adaptive-workspace/**','.github/workflows/workspace-accessibility.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser:
+    if: ${{ github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/rdte/workspace-accessibility' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, engine: chromium }
+          - { runner: ubuntu-24.04, engine: firefox }
+          - { runner: macos-26, engine: webkit }
+          - { runner: windows-2025, engine: chromium }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - if: runner.os == 'Linux'
+        run: npx playwright install --with-deps ${{ matrix.engine }}
+      - if: runner.os != 'Linux'
+        run: npx playwright install ${{ matrix.engine }}
+      - run: node examples/adaptive-workspace/qualify.mjs ${{ matrix.engine }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-${{ matrix.runner }}-${{ matrix.engine }}
+          path: workspace-evidence/
+          retention-days: 3
