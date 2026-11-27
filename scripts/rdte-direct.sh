@@ -70,32 +70,8 @@ if [[ "$attach_rc" != 0 || "$tee_rc" != 0 || "$state" != "exited 0" ]]; then
   printf 'FAIL native-container\n' > "$evidence/result.txt"; exit 1
 fi
 # A successful exit without the complete ordered pass record is not a pass.
-expected=
-[[ "$(cat "$evidence/native-source.txt")" == "source=$sha" ]] || { printf 'FAIL source-identity\n' > "$evidence/result.txt"; exit 1; }
-[[ "$(cat "$evidence/gates.tsv")" == "$expected" ]] || { printf 'FAIL incomplete-gates\n' > "$evidence/result.txt"; exit 1; }
-mkdir "$scratch/qualified-dist"
-docker cp "$cid:/workspace/dist/." "$scratch/qualified-dist/"
-[[ -s "$scratch/qualified-dist/index.html" ]] || { printf 'FAIL missing-dist\n' > "$evidence/result.txt"; exit 1; }
-# Recheck destinations before publication to a new local artifact path.
-mkdir -- "$out"
-cp -R "$scratch/qualified-dist/." "$out/"
-(cd "$out" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum) > "$evidence/dist-sha256.txt"
-printf 'PASS source=%s\n' "$sha" > "$evidence/result.txt"
-echo "QUALIFICATION_PASS source=$sha evidence=$evidence"
-install\tPASS\nchromium\tPASS\ntypecheck\tPASS\nunit\tPASS\nbuild\tPASS\ndist\tPASS\ngolden\tPASS'
-if [[ "$phase" = full ]]; then expected+=
-[[ "$(cat "$evidence/native-source.txt")" == "source=$sha" ]] || { printf 'FAIL source-identity\n' > "$evidence/result.txt"; exit 1; }
-[[ "$(cat "$evidence/gates.tsv")" == "$expected" ]] || { printf 'FAIL incomplete-gates\n' > "$evidence/result.txt"; exit 1; }
-mkdir "$scratch/qualified-dist"
-docker cp "$cid:/workspace/dist/." "$scratch/qualified-dist/"
-[[ -s "$scratch/qualified-dist/index.html" ]] || { printf 'FAIL missing-dist\n' > "$evidence/result.txt"; exit 1; }
-# Recheck destinations before publication to a new local artifact path.
-mkdir -- "$out"
-cp -R "$scratch/qualified-dist/." "$out/"
-(cd "$out" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum) > "$evidence/dist-sha256.txt"
-printf 'PASS source=%s\n' "$sha" > "$evidence/result.txt"
-echo "QUALIFICATION_PASS source=$sha evidence=$evidence"
-\nsmoke\tPASS'; fi
+expected=$'install\tPASS\nchromium\tPASS\ntypecheck\tPASS\nunit\tPASS\nbuild\tPASS\ndist\tPASS\ngolden\tPASS'
+if [[ "$phase" = full ]]; then expected+=$'\nsmoke\tPASS'; fi
 [[ "$(cat "$evidence/native-source.txt")" == "source=$sha" ]] || { printf 'FAIL source-identity\n' > "$evidence/result.txt"; exit 1; }
 [[ "$(cat "$evidence/gates.tsv")" == "$expected" ]] || { printf 'FAIL incomplete-gates\n' > "$evidence/result.txt"; exit 1; }
 mkdir "$scratch/qualified-dist"
