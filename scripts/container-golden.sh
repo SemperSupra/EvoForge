@@ -22,7 +22,7 @@ npm run dev -- --host 127.0.0.1 --port 5173 &
 DEV_PID=$!
 cleanup() { kill "$DEV_PID" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
-npx wait-on http://127.0.0.1:5173/#golden
+node scripts/wait-for-server.mjs http://127.0.0.1:5173/ 60000
 '
 
 if [ "$mode" = "test" ]; then
