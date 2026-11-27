@@ -1,0 +1,148 @@
+name: Alpine split release rehearsal
+on:
+  push:
+    branches: [rdte/readiness-probe-r19]
+    paths: ['.github/workflows/alpine-release-rehearsal.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      BASE: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
+      DONOR: node@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build candidate with pinned base and explicit APK versions
+        run: |
+          set -euo pipefail
+          mkdir evidence site
+          git rev-parse HEAD > evidence/source.txt
+          printf '%s  %s\n' 7552f1df20b233b04da2040c36eb5a992a262d7558149d1092c6deb9bb8e5812 package.json 65b6c770ed63455930bdc84c42aa9d00bd57f66ce6dd13943aa6af5baf2f8214 package-lock.json | sha256sum -c -
+          cp containers/alpine/Dockerfile evidence/Dockerfile
+          sed -i 's/apk add --no-cache ca-certificates libstdc++/apk add --no-cache ca-certificates=20261020-r0 libgcc=15.2.0-r5 libstdc++=15.2.0-r5/' evidence/Dockerfile
+          for i in 1 2; do
+            docker build --no-cache --target compiler --build-arg ALPINE_BASE="$BASE" --build-arg NODE_DONOR="$DONOR" --iidfile "evidence/image-$i.txt" -f evidence/Dockerfile containers/alpine
+            image="$(cat "evidence/image-$i.txt")"
+            docker image inspect "$image" > "evidence/image-$i.json"
+            docker run --rm --network none --entrypoint sh "$image" -ec 'apk info -v | sort' > "evidence/packages-$i.txt"
+            docker run --rm --network none --entrypoint sh "$image" -ec 'node --version; npm --version; sha256sum /usr/local/bin/node; find /usr/local/lib/node_modules/npm -type f -exec sha256sum {} + | sort' > "evidence/toolchain-$i.txt"
+            scratch="$(mktemp -d)"
+            trap 'rm -rf "$scratch"' EXIT
+            git archive HEAD | tar -x -C "$scratch"
+            docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch:/workspace" -w /workspace --entrypoint sh "$image" -ec 'test "$(node --version)" = v22.23.5; npm ci --ignore-scripts; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist; npm audit --audit-level=low' 2>&1 | tee "evidence/build-$i.log"
+            (cd "$scratch/dist" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "evidence/dist-$i.sha256"
+            if [ "$i" = 1 ]; then cp -a "$scratch/dist/." site/; fi
+            rm -rf "$scratch"
+            trap - EXIT
+          done
+          cmp evidence/packages-1.txt evidence/packages-2.txt
+          cmp evidence/toolchain-1.txt evidence/toolchain-2.txt
+          cmp evidence/dist-1.sha256 evidence/dist-2.sha256
+          printf '%s  %s\n' 4f269bfce25085ada3fcc63441f6c7a116fe7439ceeeac4e7d3188dcda07f39a evidence/dist-1.sha256 | sha256sum -c -
+      - name: Scan both actual compiler images and record SBOM
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          for i in 1 2; do
+            image="$(cat "evidence/image-$i.txt")"
+            "$RUNNER_TEMP/trivy" image --image-src docker --scanners vuln --pkg-types os,library --list-all-pkgs --format json --output "evidence/audit-$i.json" --exit-code 0 "$image"
+            "$RUNNER_TEMP/trivy" image --image-src docker --format cyclonedx --output "evidence/sbom-$i.json" "$image"
+          done
+          python3 - <<'PY'
+          import json,collections
+          for i in (1,2):
+              a=json.load(open(f'evidence/audit-{i}.json'))
+              assert any(r.get('Class')=='os-pkgs' and r.get('Packages') for r in a.get('Results',[]))
+              v=[x for r in a['Results'] for x in r.get('Vulnerabilities') or []]
+              print(i,dict(collections.Counter(x['Severity'] for x in v)))
+              assert not any(x['Severity'] in ('HIGH','CRITICAL') for x in v)
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: rehearsal-compiler-evidence
+          path: evidence/
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: rehearsal-site
+          path: site/
+          if-no-files-found: error
+          retention-days: 14
+  qualify:
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-site
+          path: candidate
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-compiler-evidence
+          path: compiler-evidence
+          digest-mismatch: error
+      - name: Verify exact source and artifact
+        run: |
+          set -euo pipefail
+          test "$(cat compiler-evidence/source.txt)" = "$GITHUB_SHA"
+          (cd candidate && find . -type f -print0 | sort -z | xargs -0 shasum -a 256) | cmp - compiler-evidence/dist-1.sha256
+          node scripts/verify-dist.mjs candidate
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=low
+      - if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+      - if: runner.os == 'macOS'
+        run: npx playwright install chromium
+      - name: Source oracle and exact production smoke
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          npm run dev -- --host 127.0.0.1 --port 5173 --strictPort > "$RUNNER_TEMP/oracle.log" 2>&1 &
+          p1=$!
+          python3 -m http.server 5174 --bind 127.0.0.1 --directory candidate > "$RUNNER_TEMP/server.log" 2>&1 &
+          p2=$!
+          trap 'kill "$p1" "$p2" 2>/dev/null || true' EXIT
+          node scripts/wait-for-server.mjs
+          npm run golden:test
+          node scripts/wait-for-server.mjs http://127.0.0.1:5174/
+          node scripts/production-smoke.mjs
+      - name: Native Metal regression
+        if: runner.os == 'macOS'
+        env:
+          EVOFORGE_SMOKE_BACKEND: mac-metal
+          EVOFORGE_DIST_DIR: candidate
+        run: node scripts/arena-smoke.mjs
+      - name: Verify post-test integrity and record runner identity
+        run: |
+          set -euo pipefail
+          (cd candidate && find . -type f -print0 | sort -z | xargs -0 shasum -a 256) | cmp - compiler-evidence/dist-1.sha256
+          mkdir qualification
+          printf '%s\n' "$GITHUB_SHA" > qualification/source.txt
+          printf '%s\n' "$RUNNER_OS" "${ImageOS:-unknown}" "${ImageVersion:-unknown}" > qualification/runner.txt
+          node --version > qualification/node.txt
+          npx playwright --version > qualification/playwright.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: rehearsal-qualification-${{ matrix.os }}
+          path: qualification/
+          retention-days: 14
