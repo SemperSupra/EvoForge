@@ -1,0 +1,274 @@
+name: Alpine release closure and isolated browser trials
+on:
+  push:
+    branches: [rdte/readiness-probe-r19]
+    paths: ['.github/workflows/alpine-release-closure.yml']
+permissions:
+  contents: read
+  actions: read
+env:
+  QUALIFIED_SOURCE: 8a63604273641209d159bb0d916c653522e6b3c7
+  COMPILER: evoforge-alpine-compiler:node24-npm12
+jobs:
+  offline-application:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8a63604273641209d159bb0d916c653522e6b3c7
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: alpine-compiler-docker-image
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: image-export
+      - name: Restore exact previously tested compiler
+        run: |
+          set -euo pipefail
+          (cd image-export && sha256sum -c SHA256SUMS)
+          test "$(cat image-export/source.txt)" = "$QUALIFIED_SOURCE"
+          gzip -dc image-export/compiler.docker.tar.gz | docker load
+          test "$(docker inspect "$COMPILER" --format '{{.Id}}')" = "$(cat image-export/image-1.txt)"
+          test "$(cat image-export/image-1.txt)" = sha256:f125c2fe011902f77a2c3b378f85c3b38bf7fa197aa5aff581822a8babf7eb63
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-site
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: qualified-site
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-compiler-evidence
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: prior
+      - name: Populate public dependency cache and then compile without networking
+        run: |
+          set -euo pipefail
+          mkdir offline-evidence
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          mkdir "$scratch/src" "$scratch/cache"
+          git archive HEAD | tar -x -C "$scratch/src"
+          args=(--rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch/src:/workspace" -v "$scratch/cache:/npm-cache" -w /workspace --entrypoint sh)
+          docker run "${args[@]}" "$COMPILER" -ec 'npm ci --ignore-scripts --no-audit --cache /npm-cache; npm cache verify --cache /npm-cache; npm audit --audit-level=low --cache /npm-cache' 2>&1 | tee offline-evidence/prefetch.log
+          rm -rf "$scratch/src/node_modules" "$scratch/src/dist"
+          test -d "$scratch/cache/_cacache"
+          mkdir cache-export
+          tar -czf cache-export/npm-cacache.tar.gz -C "$scratch/cache" _cacache
+          (cd cache-export && sha256sum npm-cacache.tar.gz > SHA256SUMS)
+          # Restore only the exported cache into a new empty directory.
+          rm -rf "$scratch/cache"
+          mkdir "$scratch/cache"
+          tar -xzf cache-export/npm-cacache.tar.gz -C "$scratch/cache"
+          docker run --network none "${args[@]}" "$COMPILER" -ec 'npm ci --offline --ignore-scripts --no-audit --cache /npm-cache; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist' 2>&1 | tee offline-evidence/offline-build.log
+          node scripts/verify-artifact.mjs "$scratch/src/dist" prior/dist-1.sha256
+          node scripts/verify-artifact.mjs qualified-site prior/dist-1.sha256
+          cp prior/dist-1.sha256 offline-evidence/
+          printf '%s\n' "$QUALIFIED_SOURCE" > offline-evidence/source.txt
+          printf '%s\n' 'Online audit before network-isolated build; offline run does not assert fresh vulnerability status.' > offline-evidence/scope.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: offline-application-evidence
+          path: offline-evidence/
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: success()
+        with:
+          name: offline-application-dependency-cache
+          path: cache-export/
+          compression-level: 0
+          retention-days: 14
+  installed-licenses:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8a63604273641209d159bb0d916c653522e6b3c7
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: alpine-compiler-docker-image
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: image-export
+      - name: Restore exact previously tested compiler
+        run: |
+          set -euo pipefail
+          (cd image-export && sha256sum -c SHA256SUMS)
+          test "$(cat image-export/source.txt)" = "$QUALIFIED_SOURCE"
+          gzip -dc image-export/compiler.docker.tar.gz | docker load
+          test "$(docker inspect "$COMPILER" --format '{{.Id}}')" = "$(cat image-export/image-1.txt)"
+          test "$(cat image-export/image-1.txt)" = sha256:f125c2fe011902f77a2c3b378f85c3b38bf7fa197aa5aff581822a8babf7eb63
+      - name: Inventory exact installed package licenses and notices
+        run: |
+          set -euo pipefail
+          mkdir license-evidence
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          git archive HEAD | tar -x -C "$scratch"
+          docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch:/workspace" -w /workspace --entrypoint sh "$COMPILER" -ec 'npm ci --ignore-scripts --no-audit; npm sbom --sbom-format cyclonedx > installed-sbom.json; npm sbom --omit=dev --sbom-format cyclonedx > installed-runtime-sbom.json'
+          cp "$scratch/"installed*-sbom.json license-evidence/
+          python3 - "$scratch" <<'PY'
+          import pathlib,json,hashlib,sys,collections
+          root=pathlib.Path(sys.argv[1])
+          lock=json.load(open(root/'package-lock.json'))['packages']
+          rows=[]; absent=[]
+          for p,meta in lock.items():
+              if not p: continue
+              f=root/p/'package.json'
+              if not f.is_file():
+                  absent.append({'path':p,'version':meta.get('version'),'optional':meta.get('optional',False)})
+                  continue
+              data=json.load(open(f))
+              assert data.get('version')==meta.get('version'),p
+              notices=[]
+              for n in f.parent.iterdir():
+                  if n.is_file() and n.name.lower().startswith(('license','licence','copying','notice')):
+                      notices.append({'name':n.name,'sha256':hashlib.sha256(n.read_bytes()).hexdigest()})
+              rows.append({'path':p,'name':data.get('name'),'version':data.get('version'),'license':data.get('license') or data.get('licenses'),'notices':notices,'dev':meta.get('dev',False),'integrity':meta.get('integrity')})
+          runtime=[r for r in rows if not r['dev']]
+          out=pathlib.Path('license-evidence')
+          for r in runtime:
+              for n in r['notices']:
+                  target=out/('runtime-'+r['name'].replace('/','_')+'-'+n['name'])
+                  target.write_bytes((root/r['path']/n['name']).read_bytes())
+          result={'installed':rows,'absentLockEntries':absent,'missingLicense':[r for r in rows if not r['license']],'missingNotices':[r for r in runtime if not r['notices']],'runtime':runtime,'scope':'Installed linux/amd64 musl closure, absent platform packages are not asserted installed. Metadata and notices for legal review; no blanket clearance.'}
+          (out/'installed-license-inventory.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps({'installed':len(rows),'absent':len(absent),'missingLicense':result['missingLicense'],'runtime':runtime,'runtimeMissingNotices':result['missingNotices']},indent=2))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: installed-application-licenses
+          path: license-evidence/
+          retention-days: 14
+  isolated-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8a63604273641209d159bb0d916c653522e6b3c7
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: alpine-compiler-docker-image
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: image-export
+      - name: Restore exact previously tested compiler
+        run: |
+          set -euo pipefail
+          (cd image-export && sha256sum -c SHA256SUMS)
+          test "$(cat image-export/source.txt)" = "$QUALIFIED_SOURCE"
+          gzip -dc image-export/compiler.docker.tar.gz | docker load
+          test "$(docker inspect "$COMPILER" --format '{{.Id}}')" = "$(cat image-export/image-1.txt)"
+          test "$(cat image-export/image-1.txt)" = sha256:f125c2fe011902f77a2c3b378f85c3b38bf7fa197aa5aff581822a8babf7eb63
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-site
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: qualified-site
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-compiler-evidence
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: prior
+      - name: Construct separate Alpine Chromium qualification candidate
+        run: |
+          set -euo pipefail
+          mkdir -p browser-context browser-evidence
+          cat > browser-context/Dockerfile <<'DOCKER'
+          ARG COMPILER
+          FROM ${COMPILER}
+          USER 0
+          RUN apk add --no-cache chromium font-dejavu font-noto font-noto-cjk
+          USER 10001:10001
+          DOCKER
+          cp browser-context/Dockerfile browser-evidence/
+          docker build --no-cache --build-arg COMPILER="$COMPILER" --iidfile browser-evidence/image.txt -f browser-context/Dockerfile browser-context
+          image="$(cat browser-evidence/image.txt)"
+          docker image inspect "$image" > browser-evidence/image.json
+          docker run --rm --network none --entrypoint sh "$image" -ec 'apk info -v | sort; chromium --version; node --version; npm --version' > browser-evidence/packages-and-versions.txt
+      - name: Scan actual browser candidate and retain full inventory
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          image="$(cat browser-evidence/image.txt)"
+          "$RUNNER_TEMP/trivy" image --image-src docker --scanners vuln --pkg-types os,library --list-all-pkgs --format json --output browser-evidence/audit.json --exit-code 0 "$image"
+          "$RUNNER_TEMP/trivy" image --image-src docker --format cyclonedx --output browser-evidence/sbom.json "$image"
+          python3 - <<'PY'
+          import json,collections,pathlib
+          r=json.load(open('browser-evidence/audit.json'))['Results']
+          assert any(x.get('Class')=='os-pkgs' and x.get('Packages') for x in r)
+          assert any(x.get('Type')=='node-pkg' and x.get('Packages') for x in r)
+          v=[v for x in r for v in x.get('Vulnerabilities') or []]
+          summary={'counts':dict(collections.Counter(x['Severity'] for x in v)),'high_critical':[{'id':x['VulnerabilityID'],'package':x['PkgName'],'fixed':x.get('FixedVersion')} for x in v if x['Severity'] in ('HIGH','CRITICAL')]}
+          pathlib.Path('browser-evidence/scan-summary.json').write_text(json.dumps(summary,indent=2))
+          print(json.dumps(summary))
+          PY
+      - name: Exercise actual browser workload in a network-isolated container
+        run: |
+          set -euo pipefail
+          image="$(cat browser-evidence/image.txt)"
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          git archive HEAD | tar -x -C "$scratch"
+          mkdir "$scratch/candidate" "$scratch/screenshots"
+          cp -a qualified-site/. "$scratch/candidate/"
+          cp prior/dist-1.sha256 "$scratch/dist.sha256"
+          # Only adapt the test harness to select the system Chromium; no application changes.
+          python3 - "$scratch" <<'PY'
+          import pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          p=root/'scripts/golden-test.mjs'
+          s=p.read_text()
+          old='chromium.launch({args:isRoot?["--no-sandbox","--disable-dev-shm-usage"]:[]})'
+          assert old in s
+          p.write_text(s.replace(old,'chromium.launch({executablePath:process.env.EVOFORGE_CHROMIUM_EXECUTABLE,args:["--disable-dev-shm-usage"]})'))
+          p=root/'scripts/production-smoke.mjs'
+          s=p.read_text()
+          assert 'chromium.launch()' in s
+          p.write_text(s.replace('chromium.launch()','chromium.launch({executablePath:process.env.EVOFORGE_CHROMIUM_EXECUTABLE,args:["--disable-dev-shm-usage"]})'))
+          PY
+          cp "$scratch/scripts/golden-test.mjs" "$scratch/scripts/production-smoke.mjs" browser-evidence/
+          args=(--rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch:/workspace" -w /workspace --entrypoint sh)
+          docker run "${args[@]}" "$image" -ec 'npm ci --ignore-scripts; npm audit --audit-level=low'
+          docker run --network none "${args[@]}" "$image" -ec '
+            export EVOFORGE_CHROMIUM_EXECUTABLE="$(command -v chromium || command -v chromium-browser)"
+            export EVOFORGE_SCREENSHOT_DIR=/workspace/screenshots
+            node scripts/verify-artifact.mjs candidate dist.sha256
+            npm run dev -- --host 127.0.0.1 --port 5173 --strictPort >/tmp/oracle.log 2>&1 & p1=$!
+            npm run preview -- --host 127.0.0.1 --port 5174 --strictPort --outDir /workspace/candidate >/tmp/site.log 2>&1 & p2=$!
+            trap "kill $p1 $p2 2>/dev/null || true" EXIT
+            node scripts/wait-for-server.mjs
+            npm run golden:test
+            node scripts/wait-for-server.mjs http://127.0.0.1:5174/
+            node scripts/production-smoke.mjs
+            node scripts/verify-artifact.mjs candidate dist.sha256
+          ' 2>&1 | tee browser-evidence/workload.log
+          cp -a "$scratch/screenshots" browser-evidence/
+      - name: Require full candidate security coverage
+        run: python3 -c 'import json; assert not json.load(open("browser-evidence/scan-summary.json"))["high_critical"], "browser candidate has unresolved high/critical findings"'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: isolated-alpine-browser-evidence
+          path: browser-evidence/
+          retention-days: 14
