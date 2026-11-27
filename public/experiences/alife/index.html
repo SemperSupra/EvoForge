@@ -123,6 +123,7 @@
     <button id="btn-pause" type="button" disabled>Pause</button>
     <a href="?mode=observe">Observe</a><a href="?mode=play">Play</a>
   </nav>
+  <section id="mobile-start" hidden aria-labelledby="mobile-start-title" style="position:fixed;z-index:45;inset:0;background:#131c27;padding:24px;overflow:auto;color:white;font-size:16px"><h2 id="mobile-start-title" style="font-size:24px;display:block;margin-bottom:16px">ALife — mobile safe start</h2><p style="line-height:1.6;margin-bottom:20px">The simulation uses WebGPU. Start a reduced-load session only when ready. If your browser reloads or closes, return here instead of restarting automatically.</p><button id="mobile-start-button" style="min-height:48px;font-size:16px;padding:12px;width:100%;margin-bottom:16px">Start reduced-load simulation</button><p id="mobile-start-status" role="status" style="margin-bottom:20px"></p><a href="../../" style="color:#9ce5ff;display:inline-flex;align-items:center;min-height:44px">Return to all experiences</a></section>
   <section id="arena-message" role="status" hidden><p id="arena-error"></p><a href="../../">Return to EvoForge</a></section>
   <button id="hud-toggle">Toggle HUD (H)</button>
   <div id="camera-controls" role="group" aria-label="Arena camera">
@@ -279,7 +280,7 @@ function failArena(message) {
 window.addEventListener('error', e => { if (!stopped) failArena(e.message || 'Arena runtime error'); });
 window.addEventListener('unhandledrejection', e => { if (!stopped) failArena(e.reason?.message || 'Arena initialization failed'); });
 
-const mobileBudget=matchMedia('(pointer: coarse) and (max-width: 900px)').matches || launchQuery.get('profile')==='mobile';
+const mobileBudget=matchMedia('(pointer: coarse) and (max-width: 900px)').matches || /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1) || launchQuery.get('profile')==='mobile';
 const MAX_NODES = 7200; // retain shader ABI; bound active population and render area instead
 if(mobileBudget){document.body.classList.add('hud-hidden','mobile-panel-left');document.getElementById('hud-toggle').textContent='Panels';}
 const MAX_CREATURES = 512;
@@ -2245,7 +2246,14 @@ updateCamera();
   });
 });
 
-init().catch(error => failArena(error.message || String(error)));
+const beginArena=()=>init().catch(error => failArena(error.message || String(error)));
+if(mobileBudget){
+  const entry=document.getElementById('mobile-start'),start=document.getElementById('mobile-start-button'),status=document.getElementById('mobile-start-status');
+  entry.hidden=false;document.getElementById('backend-badge').textContent='AWAITING START';
+  experience.phase='awaiting-start';
+  if(!navigator.gpu){start.disabled=true;status.textContent='WebGPU is not available in this browser. Return to the other experiences.';}
+  start.addEventListener('click',()=>{start.disabled=true;entry.hidden=true;beginArena();},{once:true});
+}else beginArena();
 </script>
 </body>
 </html>
