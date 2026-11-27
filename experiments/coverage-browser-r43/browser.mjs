@@ -14,8 +14,8 @@ function refresh(){const pageSize=size(),rows=index?.page(offset,pageSize)??[],t
 }
 function begin(fresh){stop();if(fresh){index=new CoverageIndex($('engine').value);offset=0;}refresh();$('engine').disabled=true;$('start').disabled=true;$('cancel').disabled=false;status('Exploring…');const active=new Worker(new URL('./worker.mjs',import.meta.url),{type:'module'});scan=active;resumeState();
  active.onmessage=({data:m})=>{if(scan!==active)return;if(m.type==='rank'){index.add(m.rank,m.hash);if(index.count%32===0||index.complete){status(index.count+'/'+index.total+' explored · '+index.unique+' unique previews');checkpoint();}}
- else if(m.type==='done'){stop();status(index.count+'/'+index.total+' explored · '+index.unique+' unique previews · complete');checkpoint();resumeState();refresh();}
- else if(m.type==='error'){stop();status('Incomplete: '+m.message);refresh();}};active.onerror=e=>{if(scan===active){stop();status('Incomplete: '+e.message);refresh();}};active.postMessage({type:'scan',lane:index.lane,completed:[...index.ranks]});}
+ else if(m.type==='done'){stop();status(index.count+'/'+index.total+' explored · '+index.unique+' unique previews · '+(index.complete?'complete':'batch complete; resume for more'));checkpoint();resumeState();refresh();}
+ else if(m.type==='error'){stop();status('Incomplete: '+m.message);refresh();}};active.onerror=e=>{if(scan===active){stop();status('Incomplete: '+e.message);refresh();}};active.postMessage({type:'scan',lane:index.lane,completed:[...index.ranks],limit:$('budget').value==='all'?index.total:Math.min(index.total,Number($('budget').value))});}
 $('start').onclick=()=>begin(true);$('resume').onclick=()=>begin(false);
 $('cancel').onclick=()=>{stop();status(index.count+'/'+index.total+' explored · cancelled');checkpoint();resumeState();refresh();};
 $('prev').onclick=()=>{offset=Math.max(0,offset-size());refresh();};$('next').onclick=()=>{offset+=size();refresh();};$('close').onclick=()=>$('detail').close();

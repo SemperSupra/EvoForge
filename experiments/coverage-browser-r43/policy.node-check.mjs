@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {scheduledRanks} from './policy.mjs';
+test('all ranks exactly once for real coarse domains',()=>{for(const total of [1,864,2592])for(const seed of [0,42,1337,2026]){const x=[...scheduledRanks(total,seed)];assert.equal(x.length,total);assert.equal(new Set(x).size,total);assert.ok(x.every(r=>r>=0&&r<total));}});
+test('bounded batches resume with same rank order',()=>{for(const total of [864,2592]){const a=[...scheduledRanks(total,42,[],128)],b=[...scheduledRanks(total,42,a,512)],c=[...scheduledRanks(total,42,[...a,...b])];assert.deepEqual([...a,...b,...c],[...scheduledRanks(total,42)]);}});
+test('malformed schedules fail closed',()=>{assert.throws(()=>[...scheduledRanks(0,42)]);assert.throws(()=>[...scheduledRanks(864,42,[864])]);assert.throws(()=>[...scheduledRanks(864,42,[],865)]);});
