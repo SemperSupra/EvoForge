@@ -113,6 +113,9 @@
       #hud-left button,#hud-right button,.faction-card,#hud-left input[type=range],#hud-right input[type=range]{min-height:44px;font-size:14px;}
       #hud-left h1,#hud-right h2,.section-title,.faction-name,.faction-stat,.control label{font-size:14px;}
     }
+    @media(min-width:601px) and (max-width:1199px){body.mobile-panel-left #hud-right,body.mobile-panel-right #hud-left{display:none}body.mobile-panel-left #hud-left,body.mobile-panel-right #hud-right{width:min(65vw,420px);max-height:46dvh;font-size:13px}body.mobile-panel-left #hud-left button,body.mobile-panel-right #hud-right button{min-height:44px;font-size:14px}}
+    @media(pointer:coarse){#camera-controls button,#hud-toggle,#experience-toolbar button{min-height:44px;min-width:44px}}
+    @media(min-width:1400px){#hud-left,#hud-right{width:clamp(240px,19vw,320px)}}
   </style>
 </head>
 <body>
@@ -285,7 +288,7 @@ const arenaProfile=(()=>{
  const w=window.innerWidth||1440,small=launchQuery.get('profile')==='smoke',touch=mobileBudget;
  if(small)return {name:'smoke',counts:[6,2,2,2,2,2],radius:9.5,reserve:12,hz:60,dpr:2};
  if(touch&&w<640)return {name:'phone',counts:[12,4,4,4,4,4],radius:8,reserve:12,hz:24,dpr:1};
- if(touch||w<1000)return {name:'tablet',counts:[22,9,9,8,7,7],radius:12,reserve:18,hz:30,dpr:1.25};
+ if(touch)return {name:'tablet',counts:[22,9,9,8,7,7],radius:12,reserve:18,hz:30,dpr:1.25};
  if(w<1400)return {name:'laptop',counts:[36,15,14,13,12,10],radius:14,reserve:24,hz:45,dpr:1.5};
  return {name:'desktop',counts:[50,23,22,19,16,14],radius:17,reserve:36,hz:60,dpr:2};
 })();
@@ -427,7 +430,7 @@ function ecologyAudio(sample) {
 const telemetry = {
   history: [],
   latest: {
-    tick: 0, fps: 60, dynamicBonds: 0, autotomyDrops: 0,
+    tick: 0, fps: 60, dynamicBonds: 0, autotomyDrops: 0, fastMovingNodes:0,
     populations: { worms: 110, urchins: 32, centipedes: 28, amoebas: 26, anglers: 22, jellies: 20 },
     generations: { worms: 1, urchins: 1, centipedes: 1, amoebas: 1, anglers: 1, jellies: 1 },
     guilds: { herbivore: 0, carnivore: 0, scavenger: 0, omnivore: 0 },
@@ -1097,6 +1100,8 @@ fn collectStats(@builtin(global_invocation_id) gid: vec3<u32>){
     let node=nodes[i];
     if(u32(node.prev.w)==6u){atomicAdd(&stats[14u],u32(max(0.0,node.pos.w)*650.0));}
     if(u32(node.prev.w)<6u && node.pos.w>0.05){
+      // Quantized count of live nodes with unusually large per-tick displacement.
+      if(length(node.pos.xyz-node.prev.xyz)>0.04){atomicAdd(&stats[23u],1u);}
       let link=node.nodeMeta.z;
       if(link<params.totalNodes && nodes[link].nodeMeta.x!=node.nodeMeta.x && nodes[link].pos.w>0.05){atomicAdd(&stats[19u],1u);}
     }
@@ -1416,12 +1421,12 @@ fn vsLink(@builtin(vertex_index) vIdx: u32) -> VSOut {
   side=normalize(side);
   let hybrid = n.nodeMeta.x != other.nodeMeta.x;
   var width = 0.115;
-  if(sp==0u){width=0.13;}
-  if(sp==1u){width=0.055;}
-  if(sp==2u){width=select(0.14,0.055,n.nodeMeta.y>=6u);}
-  if(sp==3u){width=0.19;}
+  if(sp==0u){width=0.16*(1.0-0.045*f32(n.nodeMeta.y));}
+  if(sp==1u){width=0.038;}
+  if(sp==2u){width=select(0.155,0.039,n.nodeMeta.y>=6u);}
+  if(sp==3u){width=0.25;}
   if(sp==4u){width=0.08;}
-  if(sp==5u){width=0.06;}
+  if(sp==5u){width=0.16;}
   if(hybrid){width=0.018;}
   let p = mix(n.pos.xyz,other.pos.xyz,uv.x)+side*uv.y*width*mix(0.82,1.0,uv.x);
   out.clipPos=cam.viewProj*vec4<f32>(p,1.0);out.localUV=uv;out.worldPos=p;
@@ -1443,12 +1448,12 @@ fn vsNode(@builtin(vertex_index) vIdx:u32,@builtin(instance_index) iIdx:u32)->VS
   if(n.pos.w<=0.01){out.clipPos=vec4<f32>(2.0,2.0,2.0,1.0);return out;}
   let p=n.pos.xyz;let sp=u32(n.prev.w);let lid=n.nodeMeta.y;
   var axes=vec2<f32>(0.16,0.13);
-  if(sp==0u){axes=select(vec2<f32>(0.19,0.13),vec2<f32>(0.22,0.16),lid==0u);}
-  if(sp==1u){axes=select(vec2<f32>(0.11,0.075),vec2<f32>(0.26,0.26),lid==0u);}
-  if(sp==2u){axes=select(vec2<f32>(0.20,0.13),vec2<f32>(0.10,0.055),lid>=6u);}
-  if(sp==3u){axes=vec2<f32>(0.24,0.20);}
+  if(sp==0u){let taper=1.0-0.045*f32(lid);axes=vec2<f32>(0.19,0.15)*taper;}
+  if(sp==1u){axes=select(vec2<f32>(0.19,0.043),vec2<f32>(0.31,0.31),lid==0u);}
+  if(sp==2u){axes=select(vec2<f32>(0.20,0.16),vec2<f32>(0.14,0.04),lid>=6u);}
+  if(sp==3u){axes=vec2<f32>(0.29,0.24);}
   if(sp==4u){axes=select(vec2<f32>(0.13,0.08),vec2<f32>(0.28,0.19),lid==0u);}
-  if(sp==5u){axes=select(vec2<f32>(0.11,0.075),vec2<f32>(0.27,0.20),lid==0u);}
+  if(sp==5u){axes=vec2<f32>(0.19,0.12);}
   if(sp>=6u){axes=vec2<f32>(0.11);}
   let forward=normalize(cam.camPos.xyz-p);
   var right=cross(vec3<f32>(0.0,1.0,0.0),forward);
@@ -1456,7 +1461,7 @@ fn vsNode(@builtin(vertex_index) vIdx:u32,@builtin(instance_index) iIdx:u32)->VS
   right=normalize(right);
   var up=cross(forward,right);
   let linkA=n.nodeMeta.z;
-  if(linkA<cam.totalNodes && sp!=1u){
+  if(linkA<cam.totalNodes && !(sp==1u&&lid==0u)){
     let d=nodes[linkA].pos.xyz-p;
     let projected=d-forward*dot(d,forward);
     if(length(projected)>0.0001){right=normalize(projected);up=normalize(cross(forward,right));}
@@ -2145,6 +2150,7 @@ async function init() {
         telemetry.latest.autotomyDrops = arr[20];
         telemetry.latest.contentionDrops = arr[21];
         telemetry.latest.neighborTruncations = arr[22];
+        telemetry.latest.fastMovingNodes = arr[23];
         telemetry.latest.energy = { fauna: eFauna, flora: eFlora, carcass: eCarcass, total: totalE };
         telemetry.latest.guilds = { herbivore: arr[15], carnivore: arr[16], scavenger: arr[17], omnivore: arr[18] };
 
