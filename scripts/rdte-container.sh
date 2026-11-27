@@ -26,10 +26,11 @@ gate(){
   fi
   printf '%s\tPASS\n' "$name" >> "$evidence/gates.tsv"
 }
+node -e 'const [major,minor]=process.versions.node.split(".").map(Number); if(major!==22 || minor<12) throw Error("Node 22.12+ required")'
 gate install npm ci
 gate chromium ./node_modules/.bin/playwright install chromium
 gate typecheck npm run typecheck
-gate unit npm test
+gate unit bash -c 'npm test -- --exclude scripts/wait-for-server.test.mjs && node --test scripts/wait-for-server.test.mjs'
 gate build npm run build
 gate dist npm run verify:dist
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort > "$evidence/vite.log" 2>&1 &
