@@ -1,0 +1,35 @@
+name: R49 bounded browser exploration qualification
+on:
+  push:
+    branches: [rdte/coverage-policy-r49]
+    paths: ['experiments/coverage-browser-r43/policy-smoke.mjs','.github/workflows/coverage-policy-browser-r49.yml']
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium webkit
+      - run: |
+          set -euo pipefail
+          mkdir -p r49-evidence
+          npm run dev -- --host 127.0.0.1 --port 5173 --strictPort >r49-evidence/server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          node scripts/wait-for-server.mjs http://127.0.0.1:5173/
+          node experiments/coverage-browser-r43/policy-smoke.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r49-browser-batches
+          path: r49-evidence/
+          retention-days: 30
