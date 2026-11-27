@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';import {chromium} from '@playwright/test';import {mkdir,writeFile} from 'node:fs/promises';
+const browser=await chromium.launch();const out='intervention-evidence';await mkdir(out,{recursive:true});const page=await browser.newPage({viewport:{width:1200,height:960}});const errors=[];page.on('pageerror',e=>errors.push(e.message));const b=id=>page.locator('#'+id);const get=()=>page.evaluate(()=>window.interventionReference.snapshot());const sample=()=>page.evaluate(()=>window.interventionReference.sample(1,0));const shot=name=>page.screenshot({path:out+'/'+name+'.png',fullPage:true});
+try{
+ await page.goto('http://127.0.0.1:5174/experiments/alife-interventions-r36/index.html?manual=1');
+ await page.waitForFunction(()=>!!window.interventionReference);
+ const before=await sample();await b('target').click();assert.equal((await get()).pending.phase,'countdown');await shot('01-target-countdown');
+ await b('pause').click();await b('step30').click();assert.equal((await get()).tick,0);await b('pause').click();await b('cancel').click();assert.equal((await get()).pending,null);assert.equal((await get()).craters.length,0);
+ await b('target').click();for(let i=0;i<3;i++)await b('step30').click();assert.equal((await get()).pending.phase,'descent');assert.equal(await b('cancel').isDisabled(),true);for(let i=0;i<12;i++)await b('step').click();await shot('02-descending-meteor');for(let i=0;i<12;i++)await b('step').click();assert.equal((await get()).craters.length,1);const after=await sample();assert.ok(after.height<before.height-.8&&after.nutrients>.6);await shot('03-impact');await b('step30').click();await shot('04-persistent-crater');const saved=(await get()).craters;await b('lightning').click();await b('target').click();assert.deepEqual((await get()).craters,saved);assert.equal((await get()).effects.at(-1).type,'lightning');await shot('05-lightning');
+ await b('step30').click();await b('reset').click();assert.equal((await get()).craters.length,0);assert.equal((await sample()).height,before.height);
+ // Exercise actual terrain click/picking, not only numeric inputs.
+ await b('meteor').click();const rect=await b('world').boundingBox();await b('world').click({position:{x:rect.width*.5,y:rect.height*.53}});assert.ok((await get()).pending);
+ assert.deepEqual(errors,[]);await writeFile(out+'/result.json',JSON.stringify({pass:true,scope:'standalone numerical reference + actual browser interaction; not Arena GPU integration',before,after,checks:['target','pause','cancel','descent','crater','nutrient field','lightning','reset','terrain picking'],browser:browser.version()},null,2));
+}finally{await browser.close()}
