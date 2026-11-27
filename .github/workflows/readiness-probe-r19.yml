@@ -176,49 +176,52 @@ jobs:
             provenance-verification.json
             ${{ steps.attest.outputs.bundle-path }}
           retention-days: 14
-  vendor-assessment:
+  alternative-build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { name: build-only, artifact: os-remediation-build-only, digest: "6f6c6c15fee183618d5286c30e2c1aa94990f78eebe9cdef0ac3140f4f050235" }
-          - { name: browser-minimal, artifact: os-remediation-browser-minimal, digest: "5f9c3c6e843a79fd3308f07f9c9a1591aebd651b91cc8305ccef982665d7c60b" }
+        base: [node:22-alpine, node:22-bookworm-slim]
     steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          name: ${{ matrix.artifact }}
-          run-id: 45998251952
-          github-token: ${{ github.token }}
-          path: prior
-          digest-mismatch: error
-      - name: Correlate Debian source-package findings
+          persist-credentials: false
+      - name: Resolve and scan alternative base
+        env:
+          BASE: ${{ matrix.base }}
         run: |
           set -euo pipefail
-          mkdir -p vendor-evidence
-          curl --fail --silent --show-error --location --proto '=https' https://security-tracker.debian.org/tracker/data/json -o "$RUNNER_TEMP/debian.json"
-          sha256sum "$RUNNER_TEMP/debian.json" > vendor-evidence/tracker.sha256
-          date -u +%FT%TZ > vendor-evidence/retrieved.txt
+          mkdir -p alternative-evidence
+          docker pull "$BASE"
+          image="$(docker image inspect "$BASE" --format '{{index .RepoDigests 0}}')"
+          printf '%s\n' "$image" > alternative-evidence/base.txt
+          docker image inspect "$image" > alternative-evidence/image.json
+          curl --fail --silent --show-error --location --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          "$RUNNER_TEMP/trivy" image --image-src docker --scanners vuln --pkg-types os --format json --output alternative-evidence/audit.json --exit-code 0 "$image"
           python3 - <<'PY'
-          import json,pathlib,os,collections
-          a=json.load(open('prior/audit.json'))
-          db=json.load(open(pathlib.Path(os.environ['RUNNER_TEMP'])/'debian.json'))
-          rows=[]
-          for r in a['Results']:
-              for v in r.get('Vulnerabilities') or []:
-                  if v['Severity'] not in ('HIGH','CRITICAL'): continue
-                  src=v.get('SrcName') or v['PkgName']
-                  entry=db.get(src,{}).get(v['VulnerabilityID'],{})
-                  release=entry.get('releases',{}).get('trixie',{})
-                  rows.append(dict(id=v['VulnerabilityID'],package=v['PkgName'],source=src,installed=v.get('InstalledVersion'),scanner_severity=v['Severity'],scanner_fixed=v.get('FixedVersion'),vendor_status=release.get('status','unknown'),vendor_urgency=release.get('urgency','unknown'),vendor_fixed=release.get('fixed_version'),vendor_nodsa=release.get('nodsa'),vendor_nodsa_reason=release.get('nodsa_reason')))
-          assert rows
-          pathlib.Path('vendor-evidence/assessment.json').write_text(json.dumps(rows,indent=2))
-          print(dict(collections.Counter((x['vendor_status']+' / '+x['vendor_urgency']) for x in rows)))
+          import json,collections,pathlib
+          a=json.load(open('alternative-evidence/audit.json'))
+          assert any(r.get('Class')=='os-pkgs' for r in a.get('Results',[]))
+          v=[x for r in a['Results'] for x in (r.get('Vulnerabilities') or [])]
+          counts=collections.Counter(x['Severity'] for x in v)
+          report={'counts':dict(counts),'with_fixed_version':dict(collections.Counter(x['Severity'] for x in v if x.get('FixedVersion'))),'release_eligible':not any(x['Severity'] in ('HIGH','CRITICAL') for x in v)}
+          pathlib.Path('alternative-evidence/summary.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report))
           PY
+      - name: Test locked build without browser packages
+        run: |
+          set -euo pipefail
+          image="$(cat alternative-evidence/base.txt)"
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          git archive "$GITHUB_SHA" | tar -x -C "$scratch"
+          docker run --rm -v "$scratch:/workspace" -w /workspace "$image" sh -ec 'node --version; npm ci --ignore-scripts; npm run typecheck; npm run build; npm run verify:dist' 2>&1 | tee alternative-evidence/build.log
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
-          name: vendor-assessment-${{ matrix.name }}
-          path: vendor-evidence/
+          name: alternative-build-${{ strategy.job-index }}
+          path: alternative-evidence/
           retention-days: 14
