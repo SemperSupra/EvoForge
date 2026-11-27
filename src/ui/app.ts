@@ -595,7 +595,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       canvas.height = height;
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("Canvas 2D unavailable");
-      ctx.putImageData(new ImageData(rgba, width, height), 0, 0);
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), width, height), 0, 0);
 
       const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error("PNG encode failed");
@@ -760,12 +760,12 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       const ctx = canvas.getContext("2d");
       if (ctx && entry && entry.status === "ready") {
         if (entry.w === canvas.width && entry.h === canvas.height) {
-          ctx.putImageData(new ImageData(entry.rgba, entry.w, entry.h), 0, 0);
+          ctx.putImageData(new ImageData(new Uint8ClampedArray(entry.rgba), entry.w, entry.h), 0, 0);
         } else {
           // Scale the previous thumb into the new requested size while refinement is in flight.
           const tmp = document.createElement("canvas");
           tmp.width = entry.w; tmp.height = entry.h;
-          const tctx = tmp.getContext("2d"); if (tctx) tctx.putImageData(new ImageData(entry.rgba, entry.w, entry.h), 0, 0);
+          const tctx = tmp.getContext("2d"); if (tctx) tctx.putImageData(new ImageData(new Uint8ClampedArray(entry.rgba), entry.w, entry.h), 0, 0);
           ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
         }
       } else if (ctx) {
@@ -855,7 +855,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       if (ctx2 && src) {
         const tmp = document.createElement("canvas");
         tmp.width = src.w; tmp.height = src.h;
-        const tctx = tmp.getContext("2d"); if (tctx) tctx.putImageData(new ImageData(src.rgba, src.w, src.h), 0, 0);
+        const tctx = tmp.getContext("2d"); if (tctx) tctx.putImageData(new ImageData(new Uint8ClampedArray(src.rgba), src.w, src.h), 0, 0);
         ctx2.drawImage(tmp, 0, 0, canvas2.width, canvas2.height);
       } else if (ctx2) {
         ctx2.fillStyle = "rgba(127,127,127,0.18)";
