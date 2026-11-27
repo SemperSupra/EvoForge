@@ -1,0 +1,88 @@
+name: Open build environment bakeoff
+on:
+  push:
+    branches: [rdte/readiness-probe-r19]
+    paths: ['.github/workflows/os-bakeoff.yml']
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: alpine, base: 'node:22-alpine' }
+          - { name: bookworm, base: 'node:22-bookworm-slim' }
+          - { name: trixie, base: 'node:22-trixie-slim@sha256:f0960f8dc047f358e3fb428f36ccba21732194fa5f0cac849f401e63e62fb9e6' }
+          - { name: wolfi, base: 'cgr.dev/chainguard/wolfi-base:latest' }
+          - { name: dhi, base: 'dhi.io/node:22-alpine3.24-dev' }
+          - { name: suse, base: 'registry.suse.com/bci/nodejs:22' }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: dde7f1d29d5ec2798eae87546dbc773da85ef894
+          persist-credentials: false
+      - name: Resolve anonymous access and immutable identity
+        env:
+          BASE: ${{ matrix.base }}
+          CANDIDATE: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          mkdir -p bakeoff
+          printf '%s\n' "$BASE" > bakeoff/requested.txt
+          git rev-parse HEAD > bakeoff/source.txt
+          sha256sum package.json package-lock.json > bakeoff/inputs.sha256
+          docker pull "$BASE" 2>&1 | tee bakeoff/pull.log
+          ref="$(docker image inspect "$BASE" --format '{{index .RepoDigests 0}}')"
+          printf '%s\n' "$ref" > bakeoff/base.txt
+          if [ "$CANDIDATE" = wolfi ]; then
+            printf 'FROM %s\nRUN apk add --no-cache nodejs-22 npm\n' "$ref" > bakeoff/Dockerfile
+            docker build --iidfile bakeoff/image-id.txt -f bakeoff/Dockerfile bakeoff
+          else
+            docker image inspect "$ref" --format '{{.Id}}' > bakeoff/image-id.txt
+          fi
+          docker image inspect "$(cat bakeoff/image-id.txt)" > bakeoff/image.json
+      - name: Inventory and security assessment
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          t="$RUNNER_TEMP/trivy"
+          image="$(cat bakeoff/image-id.txt)"
+          "$t" image --image-src docker --scanners vuln --pkg-types os --format json --output bakeoff/audit.json --exit-code 0 "$image"
+          "$t" image --image-src docker --format cyclonedx --output bakeoff/os-sbom.json "$image"
+          python3 - <<'PY'
+          import json,collections
+          a=json.load(open('bakeoff/audit.json'))
+          assert any(r.get('Class')=='os-pkgs' for r in a.get('Results',[])), 'OS coverage missing'
+          v=[x for r in a['Results'] for x in r.get('Vulnerabilities') or []]
+          print(dict(collections.Counter(x['Severity'] for x in v)))
+          PY
+      - name: Two independent builds in disposable containers
+        run: |
+          set -euo pipefail
+          image="$(cat bakeoff/image-id.txt)"
+          for i in 1 2; do
+            cid="$(docker create --user 0 --entrypoint sh -w /workspace "$image" -ec 'node --version; npm --version; npm ci --ignore-scripts; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist; npm audit --audit-level=low')"
+            trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+            git archive HEAD | docker cp - "$cid:/workspace"
+            start="$(date +%s)"
+            docker start -a "$cid" 2>&1 | tee "bakeoff/build-$i.log"
+            test "$(docker inspect "$cid" --format '{{.State.ExitCode}}')" = 0
+            echo "$(($(date +%s)-start))" > "bakeoff/seconds-$i.txt"
+            mkdir "bakeoff/dist-$i"
+            docker cp "$cid:/workspace/dist/." "bakeoff/dist-$i/"
+            (cd "bakeoff/dist-$i" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "bakeoff/dist-$i.sha256"
+            docker rm "$cid"
+            trap - EXIT
+          done
+          cmp bakeoff/dist-1.sha256 bakeoff/dist-2.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: bakeoff-${{ matrix.name }}
+          path: bakeoff/
+          retention-days: 14
