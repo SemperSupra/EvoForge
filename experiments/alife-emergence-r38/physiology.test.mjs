@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {appearance} from './physiology.mjs';
+const state={age:10,lifeSpan:100,health:1,energy:1};
+test('age and health separately visible without color',()=>{const a=appearance(state),b=appearance({...state,age:90}),c=appearance({...state,health:.1});assert.equal(a.stage,'juvenile');assert.equal(b.stage,'elder');assert.notEqual(a.ageMark,b.ageMark);assert.equal(a.ageMark,c.ageMark);assert.notEqual(a.healthMark,c.healthMark);assert.ok(b.flexibility<a.flexibility&&c.motionScale<a.motionScale)});
+test('read-only, bounded and invalid input fails closed',()=>{const before={...state};const a=appearance(state);assert.deepEqual(state,before);assert.ok(Object.isFrozen(a));assert.ok(a.tint.every(v=>v>=0&&v<=1));assert.throws(()=>appearance({...state,lifeSpan:0}));assert.throws(()=>appearance({...state,health:2}))});
