@@ -181,7 +181,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [upgrade, headless-minimal]
+        mode: [build-only, browser-minimal]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -196,8 +196,11 @@ jobs:
           import os,pathlib
           s=pathlib.Path('Dockerfile.tooling').read_text()
           s=s.replace('RUN apt-get update', 'RUN apt-get update && apt-get -y upgrade')
-          if os.environ['MODE']=='headless-minimal':
-              for pkg in ('xvfb','git','curl'):
+          if os.environ['MODE']=='build-only':
+              first=s.splitlines()[0]
+              s=first+'\nRUN apt-get update && apt-get -y upgrade && rm -rf /var/lib/apt/lists/*\nWORKDIR /workspace\nCMD ["bash"]\n'
+          else:
+              for pkg in ('xvfb','git','curl','fonts-unifont','fonts-wqy-zenhei','fonts-ipafont-gothic','fonts-tlwg-loma-otf','fonts-freefont-ttf'):
                   s=s.replace('    '+pkg+' '+chr(92)+'\n','')
           pathlib.Path('os-evidence/Dockerfile.candidate').write_text(s)
           PY
