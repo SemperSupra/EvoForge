@@ -1,7 +1,7 @@
 import { readdir, readFile, lstat } from 'node:fs/promises';
 import { resolve, relative, join, sep } from 'node:path';
 const root=resolve(process.argv[2]||'dist');
-const required=new Set(['index.html','experiences.json','experiences/alife/index.html','experiences/alife/manifest.webmanifest','experiences/alife/sw.js']);
+const required=new Set(['LICENSE','release.json','index.html','experiences.json','experiences/alife/index.html','experiences/alife/manifest.webmanifest','experiences/alife/sw.js']);
 const seen=new Set();
 async function walk(dir){
   for(const name of await readdir(dir)){

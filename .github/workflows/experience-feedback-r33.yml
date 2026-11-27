@@ -399,3 +399,4 @@ jobs:
             ${{ steps.attest.outputs.bundle-path }}
           retention-days: 30
 # Retry: paused dirty views render without compute; clean paused frames remain idle.
+# Retry: retain both required LICENSE/release.json files and exact Arena version gate.
