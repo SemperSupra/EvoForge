@@ -1,0 +1,378 @@
+{
+  "engineId": "mosaic-emblem",
+  "engineVersion": "1.0.0",
+  "genome": [
+    5000,
+    5000,
+    18000,
+    5000,
+    40000,
+    36000,
+    14000,
+    12345,
+    54321,
+    24000,
+    30000,
+    38000
+  ],
+  "renderIntent": {
+    "kind": "thumb",
+    "width": 384,
+    "height": 216,
+    "lod": 2
+  },
+  "fixtures": [
+    {
+      "config": {
+        "symbolId": "us",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "18e1fbe206d2e5ae7e753174e33f211fc4d7f5bef1e93f8bfdead2e7ed288519"
+    },
+    {
+      "config": {
+        "symbolId": "us",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "16d8172e2263e62476fc842dbe61689393529cd40aadd17c75eb13f9e7ad2e27"
+    },
+    {
+      "config": {
+        "symbolId": "us",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "3ead36008b2bea7e2668e61a88e25310b28eb700ac53e029f554852a6de267a7"
+    },
+    {
+      "config": {
+        "symbolId": "us",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "b46bb4a1a38405d66bd9e043448bfb951b52b2e1e7d997c45e724805188c689d"
+    },
+    {
+      "config": {
+        "symbolId": "de",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "2690af878b9e954b858715c0b157a8bcd5126491566144a56262265fb464cd85"
+    },
+    {
+      "config": {
+        "symbolId": "de",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "1f2118644920c8f4ada4aec51754a1579343a9cff6011e586dcf905717fd1f84"
+    },
+    {
+      "config": {
+        "symbolId": "de",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "e1eb0e221506526c11778177af689eb13fa51d99820261c71e4b3e64523dde22"
+    },
+    {
+      "config": {
+        "symbolId": "de",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "2f9db477123e643ea9df33f919337e284cbc2731c458c0a4e857ebfce10c9541"
+    },
+    {
+      "config": {
+        "symbolId": "th",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "586cb6547842b98df1669b329b9a028390a014d80bfbc7abe53b4017bfe21c80"
+    },
+    {
+      "config": {
+        "symbolId": "th",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "9ec61aa697ba34e8387c64e26ed42ec16703aed078aa6cde1c0c2efe0172ce76"
+    },
+    {
+      "config": {
+        "symbolId": "th",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "d6fe06bef8788c826cc91cb8c653fc759cc0bfeb84b10ff5a1fd023d6af1b0b2"
+    },
+    {
+      "config": {
+        "symbolId": "th",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "7b2b01b4d891f20f994db4ee2d3d70142abcbbfed1740903bd8f9fb7af3008b3"
+    },
+    {
+      "config": {
+        "symbolId": "jp",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "ea3b8d405947c6b2caaaf42c30bee63cd99a51f0632e0054a0d8864cd9666044"
+    },
+    {
+      "config": {
+        "symbolId": "jp",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "28146e7ca2374c6ec4fc7d7ea3d39096348bb04cfae7701f9901a0e77edd2030"
+    },
+    {
+      "config": {
+        "symbolId": "jp",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "ce9652028a04754daba2c8d8a9213104a200bc9e97d2c9a6d4716ba5b9113bae"
+    },
+    {
+      "config": {
+        "symbolId": "jp",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "e920e1b98a7823118e5498156114c1ab4bbd02b91b1e630c28f007d97f71ff4d"
+    },
+    {
+      "config": {
+        "symbolId": "fr",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "74ab6645c63508da40d6fa179103b8ba1065413e1eecc2e3477c1c2ce80a3881"
+    },
+    {
+      "config": {
+        "symbolId": "fr",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "059082ee24411a7761a733deb7a5d71070d34c6ff2f406c12bffe33615a874b8"
+    },
+    {
+      "config": {
+        "symbolId": "fr",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "d1e95c05aad88dbf8439e5d425cf70a9b37c306ff224d7c5b6f149e0503a0a97"
+    },
+    {
+      "config": {
+        "symbolId": "fr",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "a9c255db00083106c2f9ccf5e1fb052163b66e1ed2ae15ea9cf4ac3e85670036"
+    },
+    {
+      "config": {
+        "symbolId": "eagle",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "176de12220a125289d17ed9ad0860b5d55ebf5db2b9b2e4d0717c24fbce6c1c6"
+    },
+    {
+      "config": {
+        "symbolId": "eagle",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "c8db47bff9acc9ac4850f86d6c5e1693050b3eac2343a185f5e9987558b3f45b"
+    },
+    {
+      "config": {
+        "symbolId": "eagle",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "1715326be5e980c535e341be801029c88ef1e509dfc4c77d78a3fb014fa9be08"
+    },
+    {
+      "config": {
+        "symbolId": "eagle",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "2c4f0986b899a691ecdf0f7536efc21070a1fe0f2a9467038bd24130a1f5d743"
+    },
+    {
+      "config": {
+        "symbolId": "crown",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "fefa47afdd7ef9524a8c263036ccb8200b2db6afbb1dd7e06bbc1fc7a5f03d06"
+    },
+    {
+      "config": {
+        "symbolId": "crown",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "cc8b1db0791a4657ca4f15131e0e10af1261571bd4cdf63c0318c5d1f2fa8e49"
+    },
+    {
+      "config": {
+        "symbolId": "crown",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "4e54b8c4ff6dee56e3a204e8fac1d52b85657051443bc241badb2a61e484e95c"
+    },
+    {
+      "config": {
+        "symbolId": "crown",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "1c6e9c26e85fd3e7c7b2e3ddb1a98c3b84786c0553edae530de83db45fd30b78"
+    },
+    {
+      "config": {
+        "symbolId": "anchor",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "b5c1681b4c3fc32332d0161c90299dc9c076e8c7d0380cfd03e6bb3d327c9b66"
+    },
+    {
+      "config": {
+        "symbolId": "anchor",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "d9e243777f512d203eb366096f4828b199fe1dfa8c70ada097c2ec944b1b2d5d"
+    },
+    {
+      "config": {
+        "symbolId": "anchor",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "cc5934cee3c8f4b660c2674755154a1513abd1221ba0a6f698f8c55b7e18776b"
+    },
+    {
+      "config": {
+        "symbolId": "anchor",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "f601b3762ffcf7cfc4d3fe7a48405527477c31a83591e5a0e9c8e0f8d8f17a1f"
+    },
+    {
+      "config": {
+        "symbolId": "compass",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "5f9ff766137d538066ef9a1eefa10f1be1fea2dd2087ae694cadd0850c18592d"
+    },
+    {
+      "config": {
+        "symbolId": "compass",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "ddd647b84bae1a37afeccb4d21bbb74a5a414a59f9b068a7c9225a45fa37b32c"
+    },
+    {
+      "config": {
+        "symbolId": "compass",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "d300791cde620c9e4464c4e63359b0eae732059536859b058bf1a8cc1c21cbf4"
+    },
+    {
+      "config": {
+        "symbolId": "compass",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "627321415faba73157313d4820927aa7f56e914e3a6a8d9154af3363482bf8a8"
+    },
+    {
+      "config": {
+        "symbolId": "chevrons",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "bbe80913e0f66fc456adf9b40cffc3b68892186ea89738d567719e0969a33a83"
+    },
+    {
+      "config": {
+        "symbolId": "chevrons",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "380f41080b774dbdbc9b5ba130044edb111a6c8ec63d611655356970d8e6d5c1"
+    },
+    {
+      "config": {
+        "symbolId": "chevrons",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "deed79f6e6bf7c9f86b4457bea9af3ecc3ee0b68c0e717c0f2e0acf0ac11a695"
+    },
+    {
+      "config": {
+        "symbolId": "chevrons",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "0f414241f755db33efa433d6730205cd2c2e1e19c540ddc184d1bb57b8cfa072"
+    },
+    {
+      "config": {
+        "symbolId": "lily",
+        "techniqueId": 0,
+        "materialId": 0
+      },
+      "sha256": "fdcc46c59b45c0a7304b705fb95cad41036781b1cb7b262a2621fed10d5a623f"
+    },
+    {
+      "config": {
+        "symbolId": "lily",
+        "techniqueId": 1,
+        "materialId": 0
+      },
+      "sha256": "e3dc013926cd1f0a241d26282ee9f57c1df4132c0f2fff21b838063ad7b033ef"
+    },
+    {
+      "config": {
+        "symbolId": "lily",
+        "techniqueId": 2,
+        "materialId": 1
+      },
+      "sha256": "0132472239c3bc00f7d43278cde9d82e356e475c734a0ff694f737f9653a1982"
+    },
+    {
+      "config": {
+        "symbolId": "lily",
+        "techniqueId": 3,
+        "materialId": 2
+      },
+      "sha256": "4e3823e7c42cf8970af8fb91cf74d4801eefe9e84062095c846f43a6bda0b6ed"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+name: Public browser RDTE
+
+on:
+  push:
+    branches: [release-source]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    if: ${{ github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/release-source' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, profile: chromium, install: chromium }
+          - { runner: ubuntu-24.04, profile: firefox, install: firefox }
+          - { runner: ubuntu-24.04, profile: chromium-touch, install: chromium }
+          - { runner: windows-2025, profile: edge, install: msedge }
+          - { runner: macos-26, profile: chromium, install: chromium }
+          - { runner: macos-26, profile: webkit, install: webkit }
+          - { runner: macos-26, profile: webkit-touch, install: webkit }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned dependencies on disposable native runner
+        run: npm ci
+      - name: Install Linux browser and system dependencies
+        if: runner.os == 'Linux'
+        run: npx playwright install --with-deps ${{ matrix.install }}
+      - name: Install native browser
+        if: runner.os != 'Linux'
+        run: npx playwright install ${{ matrix.install }}
+      - name: Run actual browser capability probe
+        run: node scripts/browser-rdte.mjs ${{ matrix.profile }}
+      - name: Retain bounded public-safe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-${{ matrix.runner }}-${{ matrix.profile }}
+          path: browser-evidence/
+          retention-days: 3
+          if-no-files-found: warn

@@ -1,0 +1,51 @@
+name: Public candidate qualification
+
+on:
+  push:
+    branches: [release-source]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-qualification-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-gates:
+    if: ${{ github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/release-source' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Qualify exact public source in disposable tooling container
+        env:
+          EVOFORGE_ZERO_COST: '1'
+        run: bash scripts/rdte-direct.sh "$GITHUB_SHA" "$RUNNER_TEMP/evoforge-dist"
+      - name: Verify ordered gate receipt and exact candidate distribution
+        run: |
+          set -euo pipefail
+          E="$RUNNER_TEMP/evoforge-dist.evidence"
+          test "$(cat "$E/result.txt")" = "PASS source=$GITHUB_SHA"
+          test "$(cat "$E/native-source.txt")" = "source=$GITHUB_SHA"
+          test "$(grep -c $'\tPASS$' "$E/gates.tsv")" = 8
+          test -s "$E/dist-sha256.txt"
+          (cd "$RUNNER_TEMP/evoforge-dist" && sha256sum -c "$E/dist-sha256.txt")
+      - name: Retain bounded native evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualification-evidence
+          path: ${{ runner.temp }}/evoforge-dist.evidence/
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Retain exact qualified candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualified-site
+          path: ${{ runner.temp }}/evoforge-dist/
+          if-no-files-found: error
+          retention-days: 3

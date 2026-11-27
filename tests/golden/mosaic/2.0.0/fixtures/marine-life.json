@@ -1,0 +1,25 @@
+{
+  "recipeFormatVersion": 1,
+  "engineId": "mosaic",
+  "engineVersion": "2.0.0",
+  "createdAt": "2026-11-26T00:00:00.000Z",
+  "genomeQ16": {
+    "encoding": "base64-u16le",
+    "length": 16,
+    "data": "ZuboA1BGkGXwVXhpSHFYmCgj0IRQwyBOMHUwdTkwMdQ="
+  },
+  "engineConfig": {
+    "paletteId": "pompeii",
+    "familyId": 4
+  },
+  "renderIntent": {
+    "kind": "full",
+    "width": 640,
+    "height": 360,
+    "lod": 2,
+    "format": "png"
+  },
+  "provenance": {
+    "note": "RDTE visual comparison fixture"
+  }
+}

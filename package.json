@@ -1,0 +1,41 @@
+{
+  "name": "evoforge-pwa",
+  "private": true,
+  "version": "0.2.0-rc.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "golden:test": "node scripts/golden-test.mjs",
+    "golden:update": "node scripts/golden-update.mjs",
+    "lint": "eslint .",
+    "container:npm": "./scripts/container-npm.sh",
+    "container:cmd": "./scripts/container-cmd.sh",
+    "container:install": "./scripts/container-npm.sh install",
+    "container:test": "./scripts/container-npm.sh test",
+    "container:playwright:install": "./scripts/container-cmd.sh npx playwright install chromium",
+    "container:golden:test": "./scripts/container-golden.sh test",
+    "container:golden:update": "./scripts/container-golden.sh update",
+    "container:dev": "./scripts/container-npm.sh run dev",
+    "verify:dist": "node scripts/verify-dist.mjs",
+    "arena:smoke": "node scripts/arena-smoke.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "idb": "^8.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0",
+    "eslint": "^9.0.0",
+    "@eslint/js": "^9.0.0",
+    "globals": "^15.0.0",
+    "wait-on": "^8.0.0"
+  }
+}

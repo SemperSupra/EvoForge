@@ -1,0 +1,20 @@
+services:
+  tooling:
+    build:
+      context: .
+      dockerfile: Dockerfile.tooling
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+      - evoforge_node_modules:/workspace/node_modules
+      - evoforge_npm_cache:/root/.npm
+      - evoforge_playwright:/root/.cache/ms-playwright
+    environment:
+      - CI=1
+    tty: true
+    stdin_open: true
+
+volumes:
+  evoforge_node_modules:
+  evoforge_npm_cache:
+  evoforge_playwright:

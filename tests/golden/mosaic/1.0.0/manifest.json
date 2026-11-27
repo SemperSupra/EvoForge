@@ -1,0 +1,27 @@
+{
+  "recipeFormatVersion": 1,
+  "engineId": "mosaic",
+  "engineVersion": "1.0.0",
+  "fixtures": [
+    {
+      "name": "prism_neon_001",
+      "recipePath": "fixtures/prism_neon_001.json",
+      "renders": [
+        {
+          "kind": "thumb",
+          "w": 320,
+          "h": 180,
+          "lod": 1,
+          "sha256": "2bb36ecff25962d5cced005dc6148ccbcb2642f6d01835f2f47e1d7adb8efcaa"
+        },
+        {
+          "kind": "full",
+          "w": 640,
+          "h": 360,
+          "lod": 2,
+          "sha256": "bcb40e0c291e1f252679660481610275dc43ca894708967cd06a60d38c2c54c0"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "version": "0.2.0-rc.1",
+  "channel": "release-candidate",
+  "qualification": "pending",
+  "scope": [
+    "mosaic-craft",
+    "mosaic-motifs",
+    "mosaic-emblems",
+    "mosaic",
+    "mosaic-legacy",
+    "alife-observe",
+    "alife-play"
+  ],
+  "notes": "Experimental ALife requires functional WebGPU. Candidate status is not stable-release or platform certification."
+}

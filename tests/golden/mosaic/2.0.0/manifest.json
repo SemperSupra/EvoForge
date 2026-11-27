@@ -1,0 +1,192 @@
+{
+  "recipeFormatVersion": 1,
+  "engineId": "mosaic",
+  "engineVersion": "2.0.0",
+  "fixtures": [
+    {
+      "name": "medallion",
+      "recipePath": "fixtures/medallion.json",
+      "renders": [
+        {
+          "kind": "thumb",
+          "w": 320,
+          "h": 180,
+          "lod": 1,
+          "sha256": "0c2a07282d904dc3c48f152d1075d81ed5e880d6d9f5b03e1aff6e4e027c769f"
+        },
+        {
+          "kind": "full",
+          "w": 640,
+          "h": 360,
+          "lod": 2,
+          "format": "png",
+          "sha256": "0dd4fc6fcf71e18ca7e9da952938e6b73038f53ed95f8d86f48bb53704e5de2f"
+        },
+        {
+          "kind": "full",
+          "w": 360,
+          "h": 360,
+          "lod": 2,
+          "format": "png",
+          "sha256": "e51124e23c7452cd7c27089e4f83684713ef475de35359a6b67fb5796bf1b70a"
+        },
+        {
+          "kind": "full",
+          "w": 360,
+          "h": 640,
+          "lod": 2,
+          "format": "png",
+          "sha256": "93d77c089919ddf142a54eeb2bdad2d13abf67ac8dc8f4e62c2c8d05dd7e6988"
+        }
+      ]
+    },
+    {
+      "name": "star-cross",
+      "recipePath": "fixtures/star-cross.json",
+      "renders": [
+        {
+          "kind": "thumb",
+          "w": 320,
+          "h": 180,
+          "lod": 1,
+          "sha256": "dc0c45bac699c2d959b4d36648bba4a450c5a8d8d1665bac20341a1253067c7a"
+        },
+        {
+          "kind": "full",
+          "w": 640,
+          "h": 360,
+          "lod": 2,
+          "format": "png",
+          "sha256": "888555b65e6dadc55835c1645d3e337cdccaf74c6e4c35f2ced050a631a8451b"
+        },
+        {
+          "kind": "full",
+          "w": 360,
+          "h": 360,
+          "lod": 2,
+          "format": "png",
+          "sha256": "0665695a78376a1c1530bd123f2886c5605a3a6161d064e538c626578b1fcc32"
+        },
+        {
+          "kind": "full",
+          "w": 360,
+          "h": 640,
+          "lod": 2,
+          "format": "png",
+          "sha256": "38711ba5c8020c5ffb35d15583dd4583c7e559a04ef2e49e3804a7030f119e3a"
+        }
+      ]
+    },
+    {
+      "name": "botanical",
+      "recipePath": "fixtures/botanical.json",
+      "renders": [
+        {
+          "kind": "thumb",
+          "w": 320,
+          "h": 180,
+          "lod": 1,
+          "sha256": "4ffb22e58d6aa73fbfc3bebb962e566c4518b1f1b30dfc2f7e0870e9a54ff143"
+        },
+        {
+          "kind": "full",
+          "w": 640,
+          "h": 360,
+          "lod": 2,
+          "format": "png",
+          "sha256": "30629364148c1c470ef101cfa6c213fe660651c22dcd20f2f86c3fadd660d138"
+        },
+        {
+          "kind": "full",
+          "w": 360,
+          "h": 360,
+          "lod": 2,
+          "format": "png",
+          "sha256": "762f7619275385f1f7f98882ce61e4df659ce0809c485afdff5c46f8f000dea3"
+        },
+        {
+          "kind": "full",
+          "w": 360,
+          "h": 640,
+          "lod": 2,
+          "format": "png",
+          "sha256": "637307589eb9b85f0d0e21822c83cb302636825e1de5453368869a395d68020b"
+        }
+      ]
+    },
+    {
+      "name": "tidal-ribbons",
+      "recipePath": "fixtures/tidal-ribbons.json",
+      "renders": [
+        {
+          "kind": "thumb",
+          "w": 320,
+          "h": 180,
+          "lod": 1,
+          "sha256": "81d3ea777b9a891a4488623ac3843cdcd06af78c15b3464649fd5faa69c11e5c"
+        },
+        {
+          "kind": "full",
+          "w": 640,
+          "h": 360,
+          "lod": 2,
+          "format": "png",
+          "sha256": "98b5efd1ddc3d1b8d3e18b87161e990c06b659eac0aea380755cd2f9b9c974ab"
+        },
+        {
+          "kind": "full",
+          "w": 360,
+          "h": 360,
+          "lod": 2,
+          "format": "png",
+          "sha256": "3c95151be3bdd750feb42e5eb0a7b6851339fc3481a587709e3a0b2fb9382d74"
+        },
+        {
+          "kind": "full",
+          "w": 360,
+          "h": 640,
+          "lod": 2,
+          "format": "png",
+          "sha256": "8586fdee360108e7b3191d297dd8743308a6ebfe4d3599693e7f4f682980147a"
+        }
+      ]
+    },
+    {
+      "name": "marine-life",
+      "recipePath": "fixtures/marine-life.json",
+      "renders": [
+        {
+          "kind": "thumb",
+          "w": 320,
+          "h": 180,
+          "lod": 1,
+          "sha256": "6bbe9b70f19dd0bc9461470adbb5e05e5ab532269102fa24bbdafd9e12d2879a"
+        },
+        {
+          "kind": "full",
+          "w": 640,
+          "h": 360,
+          "lod": 2,
+          "format": "png",
+          "sha256": "49bd4a07648abdca5bc74df76b18b7de486a142c0cc831271400bd0eba5f9526"
+        },
+        {
+          "kind": "full",
+          "w": 360,
+          "h": 360,
+          "lod": 2,
+          "format": "png",
+          "sha256": "6b75ecb9beb4b91a702bd9fa7e6306b05b20188364de348c892b0bd4a8f2c976"
+        },
+        {
+          "kind": "full",
+          "w": 360,
+          "h": 640,
+          "lod": 2,
+          "format": "png",
+          "sha256": "2b6295041c8ee89ee35a0762fc748771115fc61bd03b3af6c2595cac8512c9e2"
+        }
+      ]
+    }
+  ]
+}

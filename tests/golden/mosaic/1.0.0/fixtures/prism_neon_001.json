@@ -1,0 +1,27 @@
+{
+  "recipeFormatVersion": 1,
+  "engineId": "mosaic",
+  "engineVersion": "1.0.0",
+  "createdAt": "2026-02-10T00:00:00.000Z",
+  "genomeQ16": {
+    "encoding": "base64-u16le",
+    "length": 64,
+    "data": "OTAuVyN+GKUNzALz9xnsQOFn1o7LtcDctQOqKp9RlHiJn37Gc+1oFF07UmJHiTywMdcm/hslEEwFc/qZ78Dk59kOzjXDXLiDraqi0Zf4jB+BRnZta5Rgu1XiSgk/MDRXKX4epRPMCPP9GfJA52fcjtG1xty7A7AqpVGaeI+fhMY="
+  },
+  "engineConfig": {
+    "paletteId": "neon",
+    "paletteAttract": 0.6,
+    "paletteRepel": 0.2,
+    "stability": 0.7
+  },
+  "renderIntent": {
+    "kind": "full",
+    "width": 1920,
+    "height": 1080,
+    "lod": 2,
+    "format": "png"
+  },
+  "provenance": {
+    "note": "starter golden fixture"
+  }
+}
