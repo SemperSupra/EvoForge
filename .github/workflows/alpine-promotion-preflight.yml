@@ -1,8 +1,21 @@
-name: Release promotion preflight and worker boundary diagnostics
+name: Guarded EvoForge Pages promotion
 on:
   push:
     branches: [rdte/readiness-probe-r19]
     paths: ['.github/workflows/alpine-promotion-preflight.yml']
+  workflow_dispatch:
+    inputs:
+      promotion:
+        description: 'Promote exact RC source 86755c2 and signed subject 2fbb903e, or preflight only'
+        type: choice
+        required: true
+        default: preflight-only
+        options:
+          - preflight-only
+          - deploy-86755c2-2fbb903e
+concurrency:
+  group: evoforge-guarded-pages-promotion
+  cancel-in-progress: false
 permissions:
   contents: read
   actions: read
@@ -13,8 +26,11 @@ env:
   MANIFEST_SHA: 762d7277073c626f9f4a6a72554529b3e5d4f1a2a66692d191eb9f8aabdaa7ec
 jobs:
   promotion-preflight:
+    if: github.repository == 'SemperSupra/EvoForge'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
+    outputs:
+      pages_ready: ${{ steps.pages.outputs.ready }}
     permissions:
       contents: read
       actions: read
@@ -109,8 +125,10 @@ jobs:
           print('PASS signed tar equals exact allowlisted site; descriptor is not promotion-approved')
           PY
       - name: Read Pages configuration without modifying it
+        id: pages
         env:
           GH_TOKEN: ${{ github.token }}
+          PROMOTION_REQUEST: ${{ github.event_name == 'workflow_dispatch' && inputs.promotion == 'deploy-86755c2-2fbb903e' }}
         run: |
           set -euo pipefail
           if gh api "repos/$GITHUB_REPOSITORY/pages" --jq '{build_type,html_url,status,source}' > preflight/pages.json; then
@@ -123,14 +141,125 @@ jobs:
             printf '%s\n' '{"status":"CONFIGURATION_UNAVAILABLE","release_authorized":false}' > preflight/pages.json
           fi
           printf '%s\n' 'Read-only preflight; no Pages mutation, deployment approval or blanket legal/security clearance.' > preflight/SCOPE.txt
+          ready="$(python3 -c 'import json; p=json.load(open("preflight/pages.json")); print(str(p.get("build_type")=="workflow").lower())')"
+          printf 'ready=%s\n' "$ready" >> "$GITHUB_OUTPUT"
+          if [ "$PROMOTION_REQUEST" = true ]; then
+            test "$GITHUB_REF" = refs/heads/gh-pages
+            test "$ready" = true
+          fi
           cp verified-package/dist-1.sha256 preflight/
           printf '%s\n' "$RELEASE_SOURCE" > preflight/source.txt
           printf '%s\n' "$RELEASE_RUN" > preflight/qualified-run.txt
           printf '%s\n' "$SUBJECT_SHA" > preflight/subject.txt
           printf '%s\n' 'PASS_ARTIFACT_PREFLIGHT' > preflight/result.txt
+      - name: Configure Pages only for an authorized deployment request
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/gh-pages' && inputs.promotion == 'deploy-86755c2-2fbb903e' && steps.pages.outputs.ready == 'true'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
+        with:
+          enablement: false
+      - name: Package verified public site with official Pages action
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+        with:
+          path: site
+          name: github-pages
+          retention-days: 1
+      - name: Independently verify exact contents of official Pages upload
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,tarfile,hashlib,os,json
+          expected={line.split('  ',1)[1][2:]:line.split('  ',1)[0] for line in pathlib.Path('preflight/dist-1.sha256').read_text().splitlines()}
+          found={}
+          with tarfile.open(pathlib.Path(os.environ['RUNNER_TEMP'])/'artifact.tar','r:') as t:
+              for member in t:
+                  path=member.name.removeprefix('./')
+                  if member.isdir():
+                      assert path in ('','.','assets','experiences','experiences/alife'),path
+                      continue
+                  assert member.isfile() and path in expected and path not in found,path
+                  found[path]=hashlib.sha256(t.extractfile(member).read()).hexdigest()
+          assert found==expected and len(found)==13
+          pathlib.Path('preflight/pages-package.json').write_text(json.dumps({'file_count':len(found),'manifest_match':True,'source':os.environ['RELEASE_SOURCE']},indent=2))
+          print('PASS official Pages archive: exactly 13 verified website files')
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: release-promotion-preflight
           path: preflight/
+          retention-days: 30
+  deploy:
+    needs: promotion-preflight
+    if: github.repository == 'SemperSupra/EvoForge' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/gh-pages' && inputs.promotion == 'deploy-86755c2-2fbb903e' && needs.promotion-preflight.outputs.pages_ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Reject drift immediately before deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/release-source" --jq .object.sha)" = "$RELEASE_SOURCE"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type)" = workflow
+      - name: Deploy exact owner-selected qualified candidate
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
+  live-acceptance:
+    needs: [promotion-preflight, deploy]
+    if: needs.deploy.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: release-promotion-preflight
+          path: preflight
+          digest-mismatch: error
+      - name: Verify all deployed files over HTTPS
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          mkdir live-evidence
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,hashlib,pathlib,json,time,os
+          base='https://sempersupra.github.io/EvoForge/'
+          assert os.environ['PAGE_URL'].rstrip('/')==base.rstrip('/')
+          expected={line.split('  ',1)[1][2:]:line.split('  ',1)[0] for line in pathlib.Path('preflight/dist-1.sha256').read_text().splitlines()}
+          assert len(expected)==13
+          results={}
+          for attempt in range(12):
+              results={}
+              for path,digest in expected.items():
+                  url=base+urllib.parse.quote(path,safe='/')+'?qualification='+os.environ['RELEASE_SOURCE']
+                  try:
+                      req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'EvoForge-live-acceptance'})
+                      with urllib.request.urlopen(req,timeout=8) as r:
+                          final=urllib.parse.urlsplit(r.url)
+                          assert final.scheme=='https' and final.netloc=='sempersupra.github.io' and final.path.startswith('/EvoForge/')
+                          actual=hashlib.sha256(r.read(2*1024*1024+1)).hexdigest()
+                          results[path]={'expected':digest,'actual':actual,'pass':actual==digest}
+                  except Exception as exc:
+                      results[path]={'expected':digest,'pass':False,'error':str(exc)}
+              if all(r['pass'] for r in results.values()): break
+              time.sleep(10)
+          report={'url':base,'source':os.environ['RELEASE_SOURCE'],'qualified_run':os.environ['RELEASE_RUN'],'files':results,'pass':all(r['pass'] for r in results.values())}
+          pathlib.Path('live-evidence/acceptance.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report))
+          assert report['pass'],'Deployed site not yet accepted; inspect evidence before recovery'
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: live-pages-acceptance
+          path: live-evidence/
           retention-days: 30
