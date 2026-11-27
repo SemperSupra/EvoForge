@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   actions: read
+  pages: read
 
 concurrency:
   group: evoforge-pages-promotion
@@ -47,6 +48,13 @@ jobs:
           path: evidence
           github-token: ${{ github.token }}
           run-id: ${{ github.event.workflow_run.id }}
+      - name: Download the same run's dependency audit
+        uses: actions/download-artifact@v4
+        with:
+          name: dependency-audit
+          path: audit
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
       - name: Independently validate scope, source, gate receipt and artifact
         id: validate
         env:
@@ -60,6 +68,13 @@ jobs:
           expected=['install','chromium','typecheck','unit','build','dist','golden','smoke']
           assert pathlib.Path('evidence/result.txt').read_text().strip()=='PASS source='+sha
           assert pathlib.Path('evidence/native-source.txt').read_text().strip()=='source='+sha
+          assert pathlib.Path('evidence/metal-result.txt').read_text().strip()=='PASS backend=mac-metal source='+sha
+          runtime=json.loads(pathlib.Path('audit/runtime.json').read_text())
+          all_audit=pathlib.Path('audit/all.json').read_bytes()
+          full=json.loads(all_audit)
+          for a in (runtime,full):
+              assert 'error' not in a and 'vulnerabilities' in a['metadata']
+          assert runtime['metadata']['vulnerabilities']['high']==0 and runtime['metadata']['vulnerabilities']['critical']==0
           assert pathlib.Path('evidence/gates.tsv').read_text().splitlines()==[g+'\tPASS' for g in expected]
           required={'LICENSE','release.json','index.html','experiences.json','experiences/alife/index.html','experiences/alife/manifest.webmanifest','experiences/alife/sw.js'}
           found={}
@@ -82,7 +97,12 @@ jobs:
           descriptor=json.loads(pathlib.Path(os.environ['RUNNER_TEMP'],'release-descriptor.json').read_text())
           assert descriptor==json.loads((root/'release.json').read_text()),'release descriptor mismatch'
           assert descriptor['schema']==1 and re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?',descriptor['version'])
-          approved=descriptor.get('promotion')=='approved'
+          counts=full['metadata']['vulnerabilities']
+          review=descriptor.get('toolchainAdvisoryReview',{})
+          reviewed=(review.get('disposition')=='accepted' and review.get('auditSha256')==hashlib.sha256(all_audit).hexdigest() and isinstance(review.get('rationale'),str) and len(review['rationale'].strip())>=20)
+          toolchain_clear=(counts['high']==0 and counts['critical']==0) or reviewed
+          approved=descriptor.get('promotion')=='approved' and toolchain_clear
+          print('Development advisory gate:',toolchain_clear,'high:',counts['high'],'critical:',counts['critical'])
           with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('approved='+str(approved).lower()+'\n')
           print('Verified exact candidate',descriptor['version'],'promotion approved:',approved)
           PY
