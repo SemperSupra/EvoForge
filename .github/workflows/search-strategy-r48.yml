@@ -1,0 +1,29 @@
+name: R48 equal-budget exploration strategy bakeoff
+on:
+  push:
+    branches: [rdte/search-strategy-r48]
+permissions:
+  contents: read
+jobs:
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [emblem, motif, craft]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.3'
+          package-manager-cache: false
+      - run: node experiments/search-strategy-r48/compare.mjs ${{ matrix.engine }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r48-${{ matrix.engine }}-strategy
+          path: strategy-evidence/
+          retention-days: 30
