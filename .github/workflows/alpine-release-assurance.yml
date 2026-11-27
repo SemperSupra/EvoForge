@@ -1,0 +1,299 @@
+name: Alpine release assurance and evidence preservation
+on:
+  push:
+    branches: [rdte/readiness-probe-r19]
+    paths: ['.github/workflows/alpine-release-assurance.yml']
+permissions:
+  contents: read
+  actions: read
+env:
+  QUALIFIED_RUN: '46026217148'
+  QUALIFIED_SOURCE: 8a63604273641209d159bb0d916c653522e6b3c7
+  BASE: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
+jobs:
+  preserve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8a63604273641209d159bb0d916c653522e6b3c7
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-compiler-evidence
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: prior
+      - name: Preserve exact base and signed APK delta
+        run: |
+          set -euo pipefail
+          test "$(cat prior/source.txt)" = "$QUALIFIED_SOURCE"
+          mkdir -p preserved/apk context/apk evidence
+          docker pull "$BASE"
+          docker tag "$BASE" evoforge-alpine-preserved-base:3.24.4
+          docker save evoforge-alpine-preserved-base:3.24.4 | gzip -n > preserved/base.docker.tar.gz
+          docker inspect "$BASE" > evidence/base.json
+          docker run --rm --network none --entrypoint sh "$BASE" -ec 'apk info -v' | LC_ALL=C sort > evidence/base-packages.txt
+          LC_ALL=C sort prior/packages-1.txt > evidence/expected-packages.txt
+          comm -13 evidence/base-packages.txt evidence/expected-packages.txt > evidence/apk-delta.txt
+          python3 - <<'PY'
+          import pathlib,re
+          p=pathlib.Path('evidence/apk-delta.txt')
+          specs=[]
+          for line in p.read_text().splitlines():
+              m=re.fullmatch(r'(.+?)-(\d.+-r\d+)',line)
+              assert m,line
+              specs.append(m.group(1)+'='+m.group(2))
+          assert specs
+          pathlib.Path('evidence/apk-specs.txt').write_text('\n'.join(specs)+'\n')
+          PY
+          cid="$(docker create --entrypoint sh "$BASE" -ec 'mkdir /archive; while IFS= read -r spec; do apk fetch --no-cache --output /archive "$spec"; done </tmp/specs; apk verify /archive/*.apk')"
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          docker cp evidence/apk-specs.txt "$cid:/tmp/specs"
+          docker start -a "$cid"
+          test "$(docker inspect "$cid" --format '{{.State.ExitCode}}')" = 0
+          docker cp "$cid:/archive/." preserved/apk/
+          docker rm "$cid"
+          trap - EXIT
+          cp prior/npm.tgz preserved/npm.tgz
+          printf '%s  %s\n' fa0711dd513fa1386bbad3962a292cb813461cb57dedf07d6eb7efe76dffe897 preserved/npm.tgz | sha256sum -c -
+          cp preserved/apk/*.apk context/apk/
+          cp preserved/npm.tgz context/
+          python3 - <<'PY'
+          import pathlib
+          s=pathlib.Path('prior/Dockerfile').read_text()
+          old=next(x for x in s.splitlines() if x.startswith('RUN apk add --no-cache '))
+          s=s.replace(old,'COPY apk/ /tmp/apk/\nRUN apk verify /tmp/apk/*.apk && apk add --no-network --no-cache /tmp/apk/*.apk && rm -rf /tmp/apk')
+          pathlib.Path('context/Dockerfile').write_text(s)
+          pathlib.Path('preserved/Dockerfile').write_text(s)
+          PY
+          (cd preserved && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > evidence/preserved.sha256
+      - name: Offline reconstruct exact package and toolchain closure
+        run: |
+          set -euo pipefail
+          docker build --network none --no-cache --pull=false --build-arg BASE=evoforge-alpine-preserved-base:3.24.4 --iidfile evidence/image.txt -f context/Dockerfile context
+          image="$(cat evidence/image.txt)"
+          docker run --rm --network none --entrypoint sh "$image" -ec 'apk info -v' | LC_ALL=C sort > evidence/actual-packages.txt
+          cmp evidence/actual-packages.txt evidence/expected-packages.txt
+          docker run --rm --network none --entrypoint sh "$image" -ec 'node --version; npm --version; sha256sum /usr/bin/node; find /usr/local/lib/node_modules/npm -type f -exec sha256sum {} + | sort' > evidence/toolchain.txt
+          cmp evidence/toolchain.txt prior/toolchain-1.txt
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          git archive HEAD | tar -x -C "$scratch"
+          docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch:/workspace" -w /workspace --entrypoint sh "$image" -ec 'npm ci --ignore-scripts; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist; npm audit --audit-level=low' 2>&1 | tee evidence/workload.log
+          node scripts/verify-artifact.mjs "$scratch/dist" prior/dist-1.sha256
+          docker inspect "$image" > evidence/image.json
+          docker run --rm --network none --entrypoint sh "$image" -ec 'cat /lib/apk/db/installed' > evidence/apk-installed.txt
+          printf '%s\n' "$QUALIFIED_SOURCE" > evidence/source.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: alpine-preservation-evidence
+          path: evidence/
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: success()
+        with:
+          name: alpine-offline-inputs
+          path: preserved/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+  licenses:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8a63604273641209d159bb0d916c653522e6b3c7
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.3'
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-compiler-evidence
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: prior
+      - name: Inventory actual compiler and application licenses
+        run: |
+          set -euo pipefail
+          mkdir license-evidence
+          npm sbom --package-lock-only --sbom-format cyclonedx > license-evidence/application-all.json
+          npm sbom --package-lock-only --omit=dev --sbom-format cyclonedx > license-evidence/application-runtime.json
+          python3 - <<'PY'
+          import json,pathlib,tarfile,collections
+          out=pathlib.Path('license-evidence')
+          inputs={'compiler':'prior/sbom-1.json','application-all':out/'application-all.json','application-runtime':out/'application-runtime.json'}
+          result={}
+          with tarfile.open('prior/npm.tgz','r:gz') as t:
+              q='package/node_modules/qrcode-terminal/package.json'
+              try:
+                  meta=json.load(t.extractfile(q))
+                  qmeta={'name':meta.get('name'),'version':meta.get('version'),'license':meta.get('license'),'licenses':meta.get('licenses')}
+                  (out/'qrcode-terminal-metadata.json').write_text(json.dumps(qmeta,indent=2))
+                  for member in t.getmembers():
+                      if member.isfile() and member.name.startswith('package/node_modules/qrcode-terminal/') and member.name.rsplit('/',1)[-1].lower().startswith(('license','copying','notice')):
+                          if member.size<1000000:
+                              (out/('qrcode-terminal-'+member.name.rsplit('/',1)[-1])).write_bytes(t.extractfile(member).read())
+              except KeyError:
+                  (out/'qrcode-terminal-metadata.json').write_text('{"status":"not found at expected path"}')
+          for name,path in inputs.items():
+              data=json.load(open(path))
+              entries=data.get('components',[])
+              rows=[{'name':c.get('name'),'version':c.get('version'),'purl':c.get('purl'),'licenses':c.get('licenses',[])} for c in entries]
+              result[name]={'entries':len(rows),'missing':[x for x in rows if not x['licenses']],'inventory':rows}
+          result['disposition']='Inventory only. Missing metadata, source/notice obligations, custom license labels and redistribution conditions require review; no release clearance.'
+          (out/'license-inventory.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps({k:{'entries':v['entries'],'missing':v['missing']} for k,v in result.items() if isinstance(v,dict)},indent=2))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: alpine-license-inventory
+          path: license-evidence/
+          retention-days: 14
+  provenance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8a63604273641209d159bb0d916c653522e6b3c7
+          persist-credentials: false
+      - name: Verify exact successful rehearsal identity and jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p signed
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$QUALIFIED_RUN" > signed/prior-run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$QUALIFIED_RUN/jobs?per_page=100" > signed/prior-jobs.json
+          python3 - <<'PY'
+          import json,os
+          a=json.load(open('signed/prior-run.json'))
+          assert a['head_sha']==os.environ['QUALIFIED_SOURCE'] and a['conclusion']=='success'
+          assert a['head_branch']=='rdte/readiness-probe-r19' and a['head_repository']['full_name']==os.environ['GITHUB_REPOSITORY']
+          j=json.load(open('signed/prior-jobs.json'))['jobs']
+          assert {x['name'] for x in j}=={'build','restored-workload','qualify (ubuntu-24.04)','qualify (macos-26)'}
+          assert all(x['conclusion']=='success' for x in j)
+          PY
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-site
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: site
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-compiler-evidence
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: prior
+      - name: Verify and assemble deterministic site archive
+        run: |
+          set -euo pipefail
+          test "$(cat prior/source.txt)" = "$QUALIFIED_SOURCE"
+          node scripts/verify-artifact.mjs site prior/dist-1.sha256
+          node scripts/verify-dist.mjs site
+          printf '%s  %s\n' 4f269bfce25085ada3fcc63441f6c7a116fe7439ceeeac4e7d3188dcda07f39a prior/dist-1.sha256 | sha256sum -c -
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf signed/evoforge-site.tar -C site .
+          cp prior/dist-1.sha256 signed/
+          printf '%s\n' "$QUALIFIED_SOURCE" > signed/qualified-source.txt
+          printf '%s\n' "$QUALIFIED_RUN" > signed/qualified-run.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        id: attest
+        with:
+          subject-path: signed/evoforge-site.tar
+      - name: Verify signature and record packaging scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh attestation verify signed/evoforge-site.tar --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/alpine-release-assurance.yml" --format json > signed/provenance-verification.json
+          printf '%s\n' 'Attestation covers deterministic packaging of a previously qualified artifact; original build identity is the recorded rehearsal source/run, not the packaging workflow commit. Not production approval.' > signed/SCOPE.txt
+          sha256sum signed/evoforge-site.tar > signed/archive.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: signed-rehearsal-site
+          path: |
+            signed/
+            ${{ steps.attest.outputs.bundle-path }}
+          retention-days: 14
+  runner-inventory:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8a63604273641209d159bb0d916c653522e6b3c7
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=low
+      - if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+      - if: runner.os == 'macOS'
+        run: npx playwright install chromium
+      - name: Collect scoped browser qualification environment inventory
+        run: |
+          set -euo pipefail
+          mkdir runner-evidence
+          printf '%s\n' "$RUNNER_OS" "${ImageOS:-unknown}" "${ImageVersion:-unknown}" > runner-evidence/runner.txt
+          node --version > runner-evidence/node.txt
+          npm --version > runner-evidence/npm.txt
+          npx playwright --version > runner-evidence/playwright.txt
+          node --input-type=module -e 'import {chromium} from "@playwright/test";import{createHash}from"node:crypto";import{readFileSync}from"node:fs";const p=chromium.executablePath();console.log(JSON.stringify({path:p.split("/").slice(-3).join("/"),sha256:createHash("sha256").update(readFileSync(p)).digest("hex")}))' > runner-evidence/browser.json
+          if [ "$RUNNER_OS" = Linux ]; then
+            dpkg-query -W -f='${binary:Package}\t${Version}\n' | LC_ALL=C sort > runner-evidence/dpkg.tsv
+            cp /etc/os-release runner-evidence/os-release
+          else
+            sw_vers > runner-evidence/macos-version.txt
+            uname -m > runner-evidence/arch.txt
+          fi
+      - name: Scan scoped Ubuntu package database
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          root="$(mktemp -d)"
+          trap 'rm -rf "$root"' EXIT
+          mkdir -p "$root/etc" "$root/var/lib/dpkg"
+          cp -L /etc/os-release "$root/etc/os-release"
+          cp /var/lib/dpkg/status "$root/var/lib/dpkg/status"
+          curl -fsSL --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          "$RUNNER_TEMP/trivy" rootfs --scanners vuln --pkg-types os --list-all-pkgs --format json --output runner-evidence/ubuntu-os-audit.json "$root"
+          python3 - <<'PY'
+          import json,collections
+          a=json.load(open('runner-evidence/ubuntu-os-audit.json'))
+          r=[x for x in a.get('Results',[]) if x.get('Class')=='os-pkgs']
+          assert r and any(x.get('Packages') for x in r),'OS coverage absent'
+          counts=collections.Counter(v['Severity'] for x in r for v in x.get('Vulnerabilities') or [])
+          print(json.dumps({'counts':dict(counts),'packages':sum(len(x.get('Packages') or []) for x in r),'scope':'Ephemeral qualification host package database only; not full browser/Node binary or macOS security coverage. Review required.'}))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: browser-runner-inventory-${{ matrix.os }}
+          path: runner-evidence/
+          retention-days: 14
