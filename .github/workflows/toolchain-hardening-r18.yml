@@ -37,7 +37,15 @@ jobs:
           npm audit --omit=dev --audit-level=low
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
-      - run: npm run typecheck && npm test && npm run build && npm run verify:dist && npm run golden:test
+      - run: npm run typecheck && npm test && npm run build && npm run verify:dist
+      - name: Browser goldens
+        run: |
+          set -euo pipefail
+          npm run dev -- --host 127.0.0.1 --port 5173 --strictPort > evidence/vite.log 2>&1 &
+          vite_pid=$!
+          trap 'kill "$vite_pid" 2>/dev/null || true; wait "$vite_pid" 2>/dev/null || true' EXIT
+          ./node_modules/.bin/wait-on --timeout 60000 http://127.0.0.1:5173/
+          npm run golden:test | tee evidence/golden.log
       - name: Development advisory gate
         run: npm audit --audit-level=low
       - uses: actions/upload-artifact@v4
