@@ -30,3 +30,11 @@ body{margin:0;background:var(--ws-bg);color:var(--ws-fg);font:400 1rem/1.5 syste
 .ws-skip:focus{transform:none}
 @media(forced-colors:active){:root{--ws-bg:Canvas;--ws-panel:Canvas;--ws-fg:CanvasText;--ws-muted:CanvasText;--ws-border:ButtonText;--ws-accent:Highlight;--ws-focus:Highlight}.ws-actions button[aria-pressed=true]{border:3px solid Highlight}.ws-body svg{forced-color-adjust:auto}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* Permit native controls and their containers to shrink without clipping text. */
+.ws-toolbar label,.ws-settings label,.ws-settings,.ws-actions,.ws-body,.ws-pane,.ws-toolbar{min-inline-size:0;max-inline-size:100%}
+.ws-toolbar select,.ws-toolbar button,.ws-actions button,.ws-body button,.ws-body select{min-inline-size:0;max-inline-size:100%;white-space:normal;overflow-wrap:anywhere}
+.ws-toolbar label>select,.ws-settings label>select{flex:0 1 auto}
+.ws-pane-head,.ws-pane-head h2,.ws-status{min-inline-size:0;max-inline-size:100%;overflow-wrap:anywhere}
+.ws-body table{max-inline-size:100%;table-layout:fixed;overflow-wrap:anywhere}
+@media(max-width:30rem){.ws-pane{padding:.5rem}.ws-toolbar,.ws-actions{gap:.35rem}}
