@@ -15,3 +15,7 @@ Release-source CI runs on standard public hosted Ubuntu. Qualification artifacts
 ## Native browser RDTE
 
 The companion browser workflow runs on standard Ubuntu, Windows and macOS. Its canaries distinguish desktop engine, viewport/touch emulation, actual WebGPU execution, adapter and software fallback. Browser availability and functional support are reported, not inferred from runner names. It is a capability experiment, not a substitute for release or physical device qualification.
+
+## Targeted runtime diagnostics
+
+Run `node scripts/arena-runtime-rdte.mjs linux-swiftshader` or use the `mac-headed` / `mac-headless` profiles on the appropriate disposable native OS runner after installing the locked dependencies and Chromium. The test executes a synthetic compute/readback oracle, then traces the actual shipped ALife startup and first 15 telemetry ticks in a fresh page. This is diagnostic instrumentation, not the full release smoke. The separate `node scripts/storage-rdte.mjs chromium|firefox|webkit` probe exercises atomic IndexedDB abort/reopen, two-page Web Locks exclusion, Cache Storage, OPFS and offline Service Worker behavior in a fresh test context. Unsupported APIs or failed checks remain visible; these are not evidence of the complete product installer or its crash recovery. All results appear under runtime-evidence/ and in the public runtime workflow.

@@ -1,0 +1,69 @@
+name: Public runtime RDTE
+on:
+  push:
+    branches: [release-source]
+    paths: ['scripts/arena-runtime-rdte.mjs','scripts/storage-rdte.mjs','scripts/browser-probe.mjs','public/experiences/alife/**','.github/workflows/runtime-rdte.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gpu:
+    if: ${{ github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/release-source' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, profile: linux-swiftshader }
+          - { runner: macos-26, profile: mac-headed }
+          - { runner: macos-26, profile: mac-headless }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+      - if: runner.os == 'macOS'
+        run: npx playwright install chromium
+      - run: node scripts/arena-runtime-rdte.mjs ${{ matrix.profile }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-${{ matrix.profile }}
+          path: runtime-evidence/
+          retention-days: 3
+  storage:
+    if: ${{ github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/release-source' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, engine: chromium }
+          - { runner: ubuntu-24.04, engine: firefox }
+          - { runner: macos-26, engine: webkit }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - if: runner.os == 'Linux'
+        run: npx playwright install --with-deps ${{ matrix.engine }}
+      - if: runner.os == 'macOS'
+        run: npx playwright install ${{ matrix.engine }}
+      - run: node scripts/storage-rdte.mjs ${{ matrix.engine }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: storage-${{ matrix.engine }}
+          path: runtime-evidence/
+          retention-days: 3
