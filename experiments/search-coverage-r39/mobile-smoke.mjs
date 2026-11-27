@@ -24,11 +24,12 @@ try{
  await page.screenshot({path:out+'/03-mobile-craft.png',fullPage:false});
  await page.getByLabel('Preview quality').selectOption('slow');await page.getByRole('slider',{name:'Review speed'}).fill('57');await page.waitForTimeout(250);
  await page.waitForFunction(()=>document.querySelectorAll('.card[data-render-state="ready"]').length===16,{},{timeout:60000});
- const baseline=await page.locator('.grid').evaluate(e=>e.getBoundingClientRect().top+scrollY);
+ const geometry=()=>page.evaluate(()=>({grid:document.querySelector('.grid').getBoundingClientRect().top+scrollY,header:document.querySelector('.header').getBoundingClientRect().height,strip:document.querySelector('.advance-strip').getBoundingClientRect().height}));
+ const initialGeometry=await geometry();const baseline=initialGeometry.grid;
  await page.getByRole('button',{name:'Play',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('.advance-status')?.textContent?.includes('continuing'));
  const during=await page.locator('.grid').evaluate(e=>e.getBoundingClientRect().top+scrollY);
- assert.ok(Math.abs(baseline-during)<=1,JSON.stringify({baseline,during}));
+ assert.ok(Math.abs(baseline-during)<=1,JSON.stringify({baseline,during,initialGeometry,playingGeometry:await geometry()}));
  await page.getByRole('button',{name:'Hold',exact:true}).click();
  const after=await page.locator('.grid').evaluate(e=>e.getBoundingClientRect().top+scrollY);
  assert.ok(Math.abs(baseline-after)<=1,JSON.stringify({baseline,after}));

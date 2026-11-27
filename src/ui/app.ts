@@ -709,6 +709,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     }
 
     const playBtn = document.createElement("button");
+    playBtn.className="playback-toggle";
     playBtn.textContent = (playback === "playing") ? "Pause" : "Play";
     playBtn.onclick = () => setPlayback(playback === "playing" ? "paused" : "playing");
     controls.appendChild(playBtn);
@@ -737,7 +738,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     controls.appendChild(nextBtn);
 
     const picked = document.createElement("div");
-    picked.className = "small";
+    picked.className = "small picked-count";
     picked.textContent = `Picked ${pickedCount()} · optional parents`;
     controls.appendChild(picked);
 
