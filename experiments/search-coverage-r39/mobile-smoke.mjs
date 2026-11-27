@@ -19,7 +19,8 @@ try{
  assert.equal(await page.evaluate(()=>window.gpuRequests),0);
  await page.goto(base+'?experience=mosaic-craft');
  await page.locator('.card').first().waitFor({timeout:30000});
- const layout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1&&e.getBoundingClientRect().width>0).slice(0,15).map(e=>({tag:e.tagName,cls:e.className?.baseVal??e.className,right:e.getBoundingClientRect().right,width:e.getBoundingClientRect().width})),buttons:[...document.querySelectorAll('.card button')].filter(x=>x.getBoundingClientRect().width>0).map(x=>({w:x.getBoundingClientRect().width,h:x.getBoundingClientRect().height}))}));
+ await page.screenshot({path:out+'/03-before-overflow-check.png',fullPage:true});
+ const layout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(e=>(e.getBoundingClientRect().right>innerWidth+1||e.scrollWidth>e.clientWidth+8)&&e.getBoundingClientRect().width>0).slice(0,15).map(e=>({tag:e.tagName,cls:e.className?.baseVal??e.className,right:e.getBoundingClientRect().right,width:e.getBoundingClientRect().width,scroll:e.scrollWidth,client:e.clientWidth,overflow:getComputedStyle(e).overflow})),buttons:[...document.querySelectorAll('.card button')].filter(x=>x.getBoundingClientRect().width>0).map(x=>({w:x.getBoundingClientRect().width,h:x.getBoundingClientRect().height}))}));
  assert.ok(layout.scroll<=layout.width+1,JSON.stringify(layout));assert.ok(layout.buttons.length>0);assert.ok(layout.buttons.every(b=>b.w>=44&&b.h>=44),JSON.stringify(layout));
  await page.screenshot({path:out+'/03-mobile-craft.png',fullPage:false});
  await page.getByLabel('Preview quality').selectOption('slow');await page.getByRole('slider',{name:'Review speed'}).fill('57');await page.waitForTimeout(250);
