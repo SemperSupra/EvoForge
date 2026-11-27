@@ -11,7 +11,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 base=alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 npm_sha=fa0711dd513fa1386bbad3962a292cb813461cb57dedf07d6eb7efe76dffe897
-manifest_sha=f60a0f7e8d0ff594bd6c6d927324e152925576217a5700097341ce51a9cc8bd9
+manifest_sha=cf2799650d74bab55beabc5c57bb022db0432df9c34f0d2ebc38fb70405862da
 printf '%s\n' "$src" > "$out/evidence/source.txt"
 mkdir "$tmp/context" "$tmp/cache" "$tmp/prefetch"
 git show "$src:containers/alpine/Dockerfile.compiler" > "$tmp/context/Dockerfile"
