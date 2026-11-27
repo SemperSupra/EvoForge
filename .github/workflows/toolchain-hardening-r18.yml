@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [compatible, major]
+        mode: [major-audit-fix, major-no-wait-on]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,12 +27,14 @@ jobs:
         run: |
           mkdir -p evidence
           npm audit --json > evidence/baseline-audit.json || test "$?" -eq 1
-          if [ "$MODE" = compatible ]; then
-            npm update --package-lock-only --ignore-scripts
-          else
-            npm install --save-dev --package-lock-only --ignore-scripts vite@latest vitest@latest
+          npm install --save-dev --package-lock-only --ignore-scripts vite@latest vitest@latest
+          if [ "$MODE" = major-no-wait-on ]; then
+            npm uninstall --save-dev --package-lock-only --ignore-scripts wait-on
           fi
+          npm audit fix --package-lock-only --ignore-scripts || test "$?" -eq 1
           cp package.json package-lock.json evidence/
+          node --version > evidence/node-version.txt
+          npm --version > evidence/npm-version.txt
           npm audit --json > evidence/candidate-audit.json || test "$?" -eq 1
           npm audit --omit=dev --audit-level=low
       - run: npm ci --ignore-scripts
@@ -44,7 +46,7 @@ jobs:
           npm run dev -- --host 127.0.0.1 --port 5173 --strictPort > evidence/vite.log 2>&1 &
           vite_pid=$!
           trap 'kill "$vite_pid" 2>/dev/null || true; wait "$vite_pid" 2>/dev/null || true' EXIT
-          ./node_modules/.bin/wait-on --timeout 60000 http://127.0.0.1:5173/
+          node --input-type=module -e 'const end=Date.now()+60000; for(;;){try{const r=await fetch("http://127.0.0.1:5173/",{signal:AbortSignal.timeout(1000),redirect:"error"});if(r.ok){await r.body?.cancel();break}await r.body?.cancel()}catch{}if(Date.now()>=end)throw Error("Vite readiness timeout");await new Promise(r=>setTimeout(r,250))}'
           npm run golden:test | tee evidence/golden.log
       - name: Development advisory gate
         run: npm audit --audit-level=low
