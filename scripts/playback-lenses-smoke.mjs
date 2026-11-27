@@ -30,7 +30,7 @@ try{
    await btn('Play').click();await next(g);const fast=Date.now()-fastStarted;assert.ok(fast>=270,'fast pace advanced too early '+fast);
    await btn('Pause').click();await ready();
    await setSpeed(2);await ready();const m=await generation();await sleep(1100);assert.equal(await generation(),m);
-   await btn('Play').click();await setSpeed(8);await ready();await sleep(2000);assert.equal(await generation(),m,'live speed edit must defer advance');await setSpeed(1);await next(m);await btn('Pause').click();await ready();
+   await btn('Play').click();await setSpeed(8);await ready();const slider=await speed().elementHandle();const box=await speed().boundingBox();assert.ok(box);await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await sleep(2000);assert.equal(await generation(),m,'live speed gesture must defer advance');assert.ok(await slider.evaluate(e=>e.isConnected),'slider must survive worker/timer updates');await page.mouse.up();await setSpeed(1);await next(m);await btn('Pause').click();await ready();
    // Manual selections remain optional; verify a selected parent remains represented.
    const parentId=await page.locator('.grid .card').first().getAttribute('data-candidate-id');
    await page.locator('.grid .card').first().getByRole('button',{name:'Pick',exact:true}).click();

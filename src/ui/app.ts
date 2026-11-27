@@ -100,7 +100,10 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   window.addEventListener("pointercancel",()=>{if(interactionHeld)releaseInteraction();},true);
   el.addEventListener("focusin",e=>{const target=actionable(e.target);if(target?.matches("select,input:not([type=range])")){editingControl=target;holdInteraction();}},true);
   el.addEventListener("focusout",e=>{if(editingControl===e.target)releaseInteraction();},true);
-  el.addEventListener("change",()=>{if(interactionHeld)releaseInteraction();},true);
+  // A committed click/change can update synchronously, but never replace the control mid-gesture.
+  function commitInteraction(){if(!interactionHeld)return;interactionHeld=false;editingControl=null;releaseInteraction();}
+  el.addEventListener("click",e=>{const target=actionable(e.target);if(target?.matches("button,summary,canvas,[role=button]"))commitInteraction();},true);
+  el.addEventListener("change",()=>commitInteraction(),true);
   el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
   // First session seed is derived from favorites (if any). App() can't be async, so bootstrap.
   void startNewSession();
