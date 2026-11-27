@@ -1,0 +1,42 @@
+name: R44 persistent coverage qualification
+on:
+  push:
+    branches: [rdte/coverage-persistence-r44]
+permissions:
+  contents: read
+jobs:
+  index:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.3'
+          package-manager-cache: false
+      - run: node --test experiments/coverage-browser-r43/persistence.node-check.mjs
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: |
+          set -euo pipefail
+          npm run dev -- --host 127.0.0.1 --port 5173 --strictPort >/tmp/r44.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          node scripts/wait-for-server.mjs http://127.0.0.1:5173/
+          node experiments/coverage-browser-r43/persistence-smoke.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r44-resume-evidence
+          path: r44-evidence/
+          retention-days: 30
