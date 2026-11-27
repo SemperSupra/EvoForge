@@ -52,7 +52,7 @@ export function renderEvolutionLenses(candidates:Candidate[],previews:Map<string
  const host=document.createElement("section");host.className="evolution-lenses";host.setAttribute("aria-label","Evolution lenses");
  const make=(tag:string,text:string)=>{const n=document.createElement(tag);n.textContent=text;return n;};
  const button=(label:string,fn:()=>void)=>{const b=document.createElement("button");b.type="button";b.textContent=label;b.onclick=fn;return b;};
- const details=(label:string,open:boolean,toggle:(v:boolean)=>void)=>{const d=document.createElement("details");d.open=open;d.append(make("summary",label));d.addEventListener("toggle",()=>toggle(d.open));return d;};
+ const details=(label:string,open:boolean,toggle:(v:boolean)=>void)=>{const d=document.createElement("details");d.open=open;const summary=make("summary",label);d.append(summary);summary.addEventListener("click",event=>{event.preventDefault();d.open=!d.open;toggle(d.open);});d.addEventListener("toggle",()=>{if(d.isConnected)toggle(d.open);});return d;};
  const rings=details("Reality Rings · live selection",state.ringsOpen,v=>state.ringsOpen=v);
  rings.append(make("p","Outer exploration → render readiness → eligibility → optional view filters → human picks. View-only; excluded candidates remain in the population. No automated critic or intent scores."));
  const stages=lensStages(candidates,previews,state.filters);state.stage=Math.max(0,Math.min(state.stage,stages.length-1));

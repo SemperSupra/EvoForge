@@ -46,7 +46,7 @@ try{
    await rings.locator('summary').click();await radar.locator('summary').click();
    await rings.getByRole('combobox',{name:'Reality Rings layout'}).selectOption('rings');
    const ringMap=rings.locator('.ring-visual svg');
-   assert.ok(await ringMap.isVisible());assert.ok(await radar.locator('.population-plot').isVisible());
+   await ringMap.waitFor({state:'visible'});await radar.locator('.population-plot').waitFor({state:'visible'});assert.equal(await radar.getAttribute('open'),'');
    assert.equal(await ringMap.locator('[data-candidate-id]').count(),16);
    assert.equal(await radar.locator('.population-plot [data-candidate-id]').count(),16);
    await rings.getByRole('combobox',{name:'View filter metric'}).selectOption('contrast');
