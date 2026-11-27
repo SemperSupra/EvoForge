@@ -49,14 +49,21 @@ jobs:
           assert specs
           pathlib.Path('evidence/apk-specs.txt').write_text('\n'.join(specs)+'\n')
           PY
-          cid="$(docker create --entrypoint sh "$BASE" -ec 'mkdir /archive; while IFS= read -r spec; do apk fetch --no-cache --output /archive "$spec"; done </tmp/specs; apk verify /archive/*.apk')"
-          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
-          docker cp evidence/apk-specs.txt "$cid:/tmp/specs"
-          docker start -a "$cid"
-          test "$(docker inspect "$cid" --format '{{.State.ExitCode}}')" = 0
-          docker cp "$cid:/archive/." preserved/apk/
-          docker rm "$cid"
-          trap - EXIT
+          # Use the host HTTPS path rather than Docker DNS for fetching public signed APKs.
+          while IFS= read -r package; do
+            [[ "$package" =~ ^[A-Za-z0-9_.+-]+$ ]]
+            found=0
+            for repository in main community; do
+              url="https://dl-cdn.alpinelinux.org/alpine/v3.24/$repository/x86_64/$package.apk"
+              if curl --fail --silent --show-error --location --proto '=https' --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 180 "$url" -o "preserved/apk/$package.apk"; then
+                found=1
+                break
+              fi
+              rm -f "preserved/apk/$package.apk"
+            done
+            test "$found" = 1
+          done < evidence/apk-delta.txt
+          docker run --rm --network none -v "$PWD/preserved/apk:/archive:ro" --entrypoint sh "$BASE" -ec 'apk verify /archive/*.apk'
           cp prior/npm.tgz preserved/npm.tgz
           printf '%s  %s\n' fa0711dd513fa1386bbad3962a292cb813461cb57dedf07d6eb7efe76dffe897 preserved/npm.tgz | sha256sum -c -
           cp preserved/apk/*.apk context/apk/
@@ -276,13 +283,24 @@ jobs:
           set -euo pipefail
           root="$(mktemp -d)"
           trap 'rm -rf "$root"' EXIT
-          mkdir -p "$root/etc" "$root/var/lib/dpkg"
+          mkdir -p "$root/etc" "$root/usr/lib" "$root/var/lib/dpkg"
           cp -L /etc/os-release "$root/etc/os-release"
+          cp -L /etc/os-release "$root/usr/lib/os-release"
+          if [ -f /etc/lsb-release ]; then cp /etc/lsb-release "$root/etc/lsb-release"; fi
+          if [ -f /etc/debian_version ]; then cp /etc/debian_version "$root/etc/debian_version"; fi
           cp /var/lib/dpkg/status "$root/var/lib/dpkg/status"
+          . /etc/os-release
+          test "$ID" = ubuntu
+          test "$VERSION_ID" = 24.04
           curl -fsSL --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
           printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
-          "$RUNNER_TEMP/trivy" rootfs --scanners vuln --pkg-types os --list-all-pkgs --format json --output runner-evidence/ubuntu-os-audit.json "$root"
+          "$RUNNER_TEMP/trivy" rootfs --help > runner-evidence/trivy-rootfs-help.txt
+          if grep -q -- "--distro" runner-evidence/trivy-rootfs-help.txt; then
+            "$RUNNER_TEMP/trivy" rootfs --distro ubuntu/24.04 --scanners vuln --pkg-types os --list-all-pkgs --format json --output runner-evidence/ubuntu-os-audit.json "$root"
+          else
+            "$RUNNER_TEMP/trivy" rootfs --scanners vuln --pkg-types os --list-all-pkgs --format json --output runner-evidence/ubuntu-os-audit.json "$root"
+          fi
           python3 - <<'PY'
           import json,collections
           a=json.load(open('runner-evidence/ubuntu-os-audit.json'))
