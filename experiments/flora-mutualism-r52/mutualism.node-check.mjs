@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {run} from './mutualism.mjs';
+test('autonomous movement yields pollination and gut dispersal across seeds',()=>{for(const seed of [42,1337,2026]){const a=run(seed,true);assert.ok(a.metrics.pollinations>0);assert.ok(a.metrics.fruitEaten>0);assert.ok(a.metrics.gutSeeds>0);assert.ok(a.metrics.gutGerminations>0);assert.ok(a.frames.every(f=>f.plants.length<=128&&f.animals.length<=64));}});
+test('animal exclusion blocks animal-dependent reproduction',()=>{for(const seed of [42,1337,2026]){const a=run(seed,false);assert.equal(a.metrics.pollinations,0);assert.equal(a.metrics.fruitEaten,0);assert.equal(a.metrics.gutGerminations,0);assert.equal(a.metrics.windGerminations,0);}});
+test('repeatable fixed seed and bounded inputs',()=>{assert.deepEqual(run(42,true,64),run(42,true,64));assert.throws(()=>run(42,true,1001));});
