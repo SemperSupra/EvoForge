@@ -30,5 +30,8 @@ export function testArenaNumerics(html){
  }
  assert('fragment derivative is evaluated before discard',render.indexOf('let gridWidth = max(fwidth')<render.indexOf('if (r > cam.arena.radius + 0.2) { discard; }'));
  assert('degenerate SDF gradient guarded',compute.includes('if(dot(gradient,gradient)<1e-12)'));
+ assert('shared head snapshot precedes integration',html.includes('cpass.setPipeline(snapshotPipe);cpass.dispatchWorkgroups(groups);\n    cpass.setPipeline(integratePipe)')&&compute.includes('let senseP=nodes[params.totalNodes+creatures[cid].firstNode].pos.xyz;'));
+ assert('constraint displacement does not inject momentum',compute.includes('nodes[idx].prev.xyz+(p-preCorrection)'));
+ assert('scaled ecology and terrain agree',compute.includes('params.arena.radius*2.0+1.0')&&render.includes('cam.arena.radius*2.0+1.0')&&render.includes('cam.arena.radius+0.5'));
  return {checks,tested,legacyMisses,correctedMisses:0};
 }

@@ -42,7 +42,7 @@ export async function testGpuHost(html,Params,clone){
  assert('template upload',h.writes.some(w=>w.b===h.buffers[0]&&w.o===e.activeNodes*96&&w.len===e.activeNodes*48));
  await h.frame();
  const cmd=h.submissions.at(-1);
- assert('compute pass sequence',cmd.calls.map(x=>x[0]).join(',')===['clearGrid','updateEcology','reproduce','integrateVerlet','initCarrionClaims',...Array.from({length:4},()=>['clearHash','snapshotNodes','buildSpatialHash','relaxConstraints']).flat(),'finalizeCarrion','collectStats'].join(','),cmd.calls);
+ assert('compute pass sequence',cmd.calls.map(x=>x[0]).join(',')===['clearGrid','updateEcology','reproduce','snapshotNodes','integrateVerlet','initCarrionClaims',...Array.from({length:4},()=>['clearHash','snapshotNodes','buildSpatialHash','relaxConstraints']).flat(),'finalizeCarrion','collectStats'].join(','),cmd.calls);
  assert('node coverage',cmd.calls.filter(x=>['integrateVerlet','initCarrionClaims','snapshotNodes','buildSpatialHash','relaxConstraints','finalizeCarrion'].includes(x[0])).every(x=>x[1]===Math.ceil(e.activeNodes/64)));
  assert('one render, one scheduled successor',cmd.renders===1&&h.frames.length===1&&h.state.simTick===1);
  const sim=h.buffers.find(b=>b.size===288&&b.usage===18),cam=h.buffers.find(b=>b.size===176&&b.usage===18);
