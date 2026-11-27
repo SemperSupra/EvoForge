@@ -1,0 +1,154 @@
+name: Alpine compiler npm remediation bakeoff
+on:
+  push:
+    branches: [rdte/readiness-probe-r19]
+    paths: ['.github/workflows/alpine-npm-remediation.yml']
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: node22-updated-npm, major: '22', mode: registry11 }
+          - { name: node24-apk-native, major: '24', mode: apk }
+          - { name: node24-updated-npm, major: '24', mode: registryLatest }
+    env:
+      CANDIDATE: ${{ matrix.name }}
+      NODE_MAJOR: ${{ matrix.major }}
+      MODE: ${{ matrix.mode }}
+      BASE: alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
+      DONOR: node@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Resolve exact npm input without executing inherited npm
+        run: |
+          set -euo pipefail
+          mkdir -p evidence candidate
+          git rev-parse HEAD > evidence/source.txt
+          printf '%s  %s\n' 7552f1df20b233b04da2040c36eb5a992a262d7558149d1092c6deb9bb8e5812 package.json 65b6c770ed63455930bdc84c42aa9d00bd57f66ce6dd13943aa6af5baf2f8214 package-lock.json | sha256sum -c -
+          if [ "$MODE" != apk ]; then
+            python3 - <<'PY'
+          import urllib.request,urllib.parse,json,hashlib,base64,re,os,pathlib
+          req=urllib.request.Request('https://registry.npmjs.org/npm',headers={'Accept':'application/vnd.npm.install-v1+json'})
+          with urllib.request.urlopen(req,timeout=60) as r:
+              assert urllib.parse.urlsplit(r.url).hostname=='registry.npmjs.org'
+              data=json.load(r)
+          if os.environ['MODE']=='registry11':
+              versions=[v for v in data['versions'] if re.fullmatch(r'11\.\d+\.\d+',v)]
+              ver=max(versions,key=lambda v:tuple(map(int,v.split('.'))))
+          else:
+              ver=data['dist-tags']['latest']
+              assert re.fullmatch(r'\d+\.\d+\.\d+',ver)
+          pkg=data['versions'][ver]
+          dist=pkg['dist']
+          url=dist['tarball']; parsed=urllib.parse.urlsplit(url)
+          assert parsed.scheme=='https' and parsed.hostname=='registry.npmjs.org'
+          expected='https://registry.npmjs.org/npm/-/npm-'+ver+'.tgz'
+          assert url==expected
+          with urllib.request.urlopen(url,timeout=60) as r:
+              assert r.url==url
+              raw=r.read(20*1024*1024+1)
+          assert len(raw)<=20*1024*1024
+          assert dist['integrity']=='sha512-'+base64.b64encode(hashlib.sha512(raw).digest()).decode()
+          pathlib.Path('candidate/npm.tgz').write_bytes(raw)
+          pathlib.Path('evidence/npm-release.json').write_text(json.dumps({'version':ver,'dist':dist,'engines':pkg.get('engines'),'license':pkg.get('license'),'sha256':hashlib.sha256(raw).hexdigest()},indent=2))
+          print('resolved npm',ver,pkg.get('engines'))
+          PY
+          fi
+      - name: Construct independent Alpine compiler candidate
+        run: |
+          set -euo pipefail
+          cat > candidate/Dockerfile <<'DOCKER'
+          ARG BASE
+          ARG DONOR
+          FROM ${DONOR} AS donor
+          FROM ${BASE} AS base
+          RUN addgroup -g 10001 app && adduser -D -u 10001 -G app -h /home/app app
+          WORKDIR /workspace
+          FROM base AS runtime22
+          RUN apk add --no-cache ca-certificates=20261020-r0 libgcc=15.2.0-r5 libstdc++=15.2.0-r5
+          COPY --from=donor /usr/local/bin/node /usr/local/bin/node
+          COPY --from=donor /usr/local/LICENSE /usr/share/licenses/node/LICENSE
+          FROM base AS runtime24
+          RUN apk add --no-cache nodejs=24.22.3-r0 ca-certificates=20261020-r0
+          FROM base AS unpack
+          COPY npm.tgz /tmp/npm.tgz
+          RUN mkdir /npm && tar -xzf /tmp/npm.tgz -C /npm --strip-components=1
+          FROM runtime22 AS registry11
+          COPY --from=unpack /npm /usr/local/lib/node_modules/npm
+          RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+          USER 10001:10001
+          CMD ["node"]
+          FROM runtime24 AS registryLatest
+          COPY --from=unpack /npm /usr/local/lib/node_modules/npm
+          RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+          USER 10001:10001
+          CMD ["node"]
+          FROM runtime24 AS apk
+          RUN apk add --no-cache npm=11.12.1-r0
+          USER 10001:10001
+          CMD ["node"]
+          DOCKER
+          cp candidate/Dockerfile evidence/Dockerfile
+          docker build --no-cache --target "$MODE" --build-arg BASE="$BASE" --build-arg DONOR="$DONOR" --iidfile evidence/image-id.txt candidate
+          image="$(cat evidence/image-id.txt)"
+          docker image inspect "$image" > evidence/image.json
+          docker run --rm --network none --entrypoint sh "$image" -ec 'apk info -v | sort; node --version; npm --version; sha256sum "$(command -v node)"; npm root -g' > evidence/toolchain.txt
+          cat evidence/toolchain.txt
+          docker run --rm --network none --entrypoint sh "$image" -ec 'test "$(id -u)" = 10001; ! command -v curl; ! command -v strace; ! command -v chromium'
+      - name: Assess complete compiler OS and language packages
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          image="$(cat evidence/image-id.txt)"
+          "$RUNNER_TEMP/trivy" image --image-src docker --scanners vuln --pkg-types os,library --list-all-pkgs --format json --output evidence/audit.json --exit-code 0 "$image"
+          "$RUNNER_TEMP/trivy" image --image-src docker --format cyclonedx --output evidence/sbom.json "$image"
+          python3 - <<'PY'
+          import json,collections,pathlib
+          a=json.load(open('evidence/audit.json'))
+          r=a.get('Results',[])
+          assert any(x.get('Class')=='os-pkgs' and x.get('Packages') for x in r),'OS coverage missing'
+          npm=[x for x in r if x.get('Type')=='node-pkg' and x.get('Packages')]
+          v=[x for y in r for x in y.get('Vulnerabilities') or []]
+          report={'counts':dict(collections.Counter(x['Severity'] for x in v)),'npm_language_coverage':bool(npm),'high_critical':[{'id':x['VulnerabilityID'],'package':x['PkgName'],'installed':x.get('InstalledVersion'),'fixed':x.get('FixedVersion'),'path':x.get('PkgPath')} for x in v if x['Severity'] in ('HIGH','CRITICAL')]}
+          pathlib.Path('evidence/scan-summary.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report))
+          PY
+      - name: Build exact locked product twice with candidate compiler
+        run: |
+          set -euo pipefail
+          image="$(cat evidence/image-id.txt)"
+          for i in 1 2; do
+            scratch="$(mktemp -d)"
+            trap 'rm -rf "$scratch"' EXIT
+            git archive HEAD | tar -x -C "$scratch"
+            docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -e NODE_MAJOR -v "$scratch:/workspace" -w /workspace --entrypoint sh "$image" -ec 'node --version; npm --version; case "$(node --version)" in v"$NODE_MAJOR".*) ;; *) exit 1;; esac; npm ci --ignore-scripts; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist; npm audit --audit-level=low' 2>&1 | tee "evidence/build-$i.log"
+            (cd "$scratch/dist" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "evidence/dist-$i.sha256"
+            rm -rf "$scratch"
+            trap - EXIT
+          done
+          cmp evidence/dist-1.sha256 evidence/dist-2.sha256
+          printf '%s  %s\n' 4f269bfce25085ada3fcc63441f6c7a116fe7439ceeeac4e7d3188dcda07f39a evidence/dist-1.sha256 | sha256sum -c -
+      - name: Enforce full security and npm coverage gate
+        run: |
+          python3 - <<'PY'
+          import json
+          r=json.load(open('evidence/scan-summary.json'))
+          assert r['npm_language_coverage'], 'npm language coverage missing; independent inventory required'
+          assert not r['high_critical'], 'compiler high/critical findings require remediation'
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: npm-remediation-${{ matrix.name }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 14
