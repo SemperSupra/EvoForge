@@ -1,0 +1,47 @@
+name: Arena preview evidence
+on:
+  push:
+    branches: [rdte/arena-preview-evidence-r18]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    if: github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/rdte/arena-preview-evidence-r18'
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install chromium
+      - run: npm run build && npm run verify:dist
+      - name: Native full smoke and screenshots
+        env:
+          EVOFORGE_SMOKE_BACKEND: mac-metal
+        run: |
+          mkdir -p preview-evidence
+          node --input-type=module <<'JS'
+          import {readFile,writeFile} from 'node:fs/promises';
+          const path='scripts/arena-smoke.mjs';
+          let s=await readFile(path,'utf8');
+          const anchor='const first=await progress(15);';
+          if(!s.includes(anchor))throw Error('Smoke anchor missing');
+          s=s.replace(anchor,anchor+"await page.screenshot({path:'preview-evidence/observe.png'});");
+          const play='await progress(15);\n  for(let family=0;family<7;family++)';
+          if(!s.includes(play))throw Error('Play anchor missing');
+          s=s.replace(play,"await progress(15);await page.screenshot({path:'preview-evidence/play.png'});\n  for(let family=0;family<7;family++)");
+          await writeFile('scripts/arena-preview-instrumented.mjs',s);
+          JS
+          set -o pipefail
+          node scripts/arena-preview-instrumented.mjs | tee preview-evidence/smoke.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arena-preview-evidence
+          path: preview-evidence/
+          retention-days: 7
