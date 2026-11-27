@@ -2317,7 +2317,7 @@ async function init() {
         }
         const eFlora = arr[12], eFauna = arr[13], eCarcass = arr[14];
         const totalE = Math.max(1, eFlora + eFauna + eCarcass);
-        const probe=new Float32Array(statsReadBuffer.getMappedRange());
+        const probe=new Float32Array(arr.buffer,arr.byteOffset,arr.length);
         telemetry.latest.terrainProbe={base:probe[23],surface:probe[24],minerals:probe[25],impactEnergyDebited:arr[26],craters:arr[27]};
         telemetry.latest.tick = sampleTick;
         telemetry.latest.fps = Math.round(1000 / smoothDt);
