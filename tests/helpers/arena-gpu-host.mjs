@@ -48,7 +48,14 @@ export async function testGpuHost(html,Params,clone){
  const sim=h.buffers.find(b=>b.size===288&&b.usage===18),cam=h.buffers.find(b=>b.size===176&&b.usage===18);
  const su=new Uint32Array(sim.bytes.buffer),cu=new Uint32Array(cam.bytes.buffer);
  assert('uniform offsets',su[0]===e.activeNodes&&su[1]===e.totalCreatures&&su[3]===42&&su[4]===1&&cu[25]===e.activeNodes&&cu[26]===1&&cu[27]===42);
- h.api.setPaused(true);let c=h.submissions.length;await h.frame();assert('pause no submissions',h.submissions.length===c&&h.state.simTick===1&&h.frames.length===1);
+ h.api.setPaused(true);let c=h.submissions.length;await h.frame();
+ const pauseRedraw=h.submissions.at(-1);
+ const pauseRenderOnly=h.submissions.length===c+1&&pauseRedraw.calls.length===0&&pauseRedraw.copies.length===0&&pauseRedraw.renders===1&&h.state.simTick===1&&h.frames.length===1;
+ c=h.submissions.length;await h.frame();
+ const idleNoWork=h.submissions.length===c&&h.state.simTick===1&&h.frames.length===1;
+ h.elements['cam-right'].onclick();await h.frame();
+ const cameraRedraw=h.submissions.at(-1);
+ assert('pause freezes compute and tick, permits dirty-view render only, idles when clean',pauseRenderOnly&&idleNoWork&&h.submissions.length===c+1&&cameraRedraw.calls.length===0&&cameraRedraw.copies.length===0&&cameraRedraw.renders===1&&h.state.simTick===1&&h.frames.length===1);
  h.api.setPaused(false);for(let i=0;i<14;i++)await h.frame((i+2)*16);
  assert('telemetry cadence',h.submissions.at(-1).copies.length===1&&h.api.getState().telemetry.tick===15);
  h.api.resetEcosystem();assert('reset tick and stats',h.state.simTick===0&&h.api.getState().telemetry.tick===0&&h.buffers[7].bytes.every(x=>x===0));

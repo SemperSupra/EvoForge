@@ -12,5 +12,5 @@
     "alife-observe",
     "alife-play"
   ],
-  "notes": "Experimental ALife requires functional WebGPU. Candidate status is not stable-release or platform certification."
+  "notes": "R33 feedback preview (not promoted). Experimental ALife requires functional WebGPU. Candidate status is not stable-release or platform certification."
 }

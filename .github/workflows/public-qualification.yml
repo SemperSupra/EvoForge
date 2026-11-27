@@ -176,6 +176,7 @@ jobs:
             npm run golden:test
             node scripts/wait-for-server.mjs http://127.0.0.1:5174/
             node scripts/production-smoke.mjs
+            node scripts/playback-lenses-smoke.mjs
             node scripts/verify-artifact.mjs candidate dist.sha256
           ' 2>&1 | tee browser-evidence/workload.log
           cp -a "$scratch/screenshots" browser-evidence/

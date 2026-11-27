@@ -11,7 +11,7 @@ describe("ux gating", () => {
     expect(shouldShowReadyLatch({ playback: "playing", pace: "medium", gate: "open", readyToAdvance: false })).toBe(false);
   });
 
-  it("auto-advance uses the same gating as the latch", () => {
+  it("auto-advance uses current render readiness, independent of parent selection", () => {
     const a = { playback: "playing" as const, pace: "fast" as const, gate: "open" as const, readyToAdvance: true };
     expect(canAutoAdvance(a)).toBe(true);
     expect(canAutoAdvance({ ...a, readyToAdvance: false })).toBe(false);
