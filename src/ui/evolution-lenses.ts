@@ -6,6 +6,14 @@ export type LensState = { ringsOpen:boolean; radarOpen:boolean; selected:string|
 const names:Record<Metric,string>={brightness:"Brightness",contrast:"Contrast",saturation:"Saturation",edge:"Edge variation"};
 const keys=Object.keys(names) as Metric[];
 const cache=new WeakMap<Uint8ClampedArray,Metrics>();
+const thumbnailCache=new WeakMap<Uint8ClampedArray,string>();
+function markerImage(p:Preview|undefined):string|null{
+ if(!p||p.status!=="ready")return null;const hit=thumbnailCache.get(p.rgba);if(hit)return hit;
+ const src=document.createElement("canvas"),dst=document.createElement("canvas");src.width=p.w;src.height=p.h;dst.width=32;dst.height=18;
+ const a=src.getContext("2d"),b=dst.getContext("2d");if(!a||!b)return null;
+ a.putImageData(new ImageData(new Uint8ClampedArray(p.rgba),p.w,p.h),0,0);b.drawImage(src,0,0,32,18);
+ const url=dst.toDataURL("image/png");thumbnailCache.set(p.rgba,url);return url;
+}
 export function previewMetrics(p:Preview):Metrics|null {
  if(p.status!=="ready"||p.w<1||p.h<1||p.rgba.length!==p.w*p.h*4)return null;
  const prior=cache.get(p.rgba);if(prior)return prior;
@@ -56,13 +64,15 @@ export function renderEvolutionLenses(candidates:Candidate[],previews:Map<string
    const g=svg("g",{transform:"translate("+x+" "+y+")",role:"button",tabindex:0,"aria-label":label,"data-candidate-id":id});
    const t=svg("title",{});t.textContent=label;g.append(t);
    g.append(svg("circle",{r:12,fill:"transparent",stroke:"none"}),svg("circle",{r:7,fill:color,stroke:"white","stroke-width":1}));
-   const n=svg("text",{x:0,y:3,"text-anchor":"middle","font-size":7,fill:"white","pointer-events":"none"});n.textContent=String(candidates.findIndex(c=>c.id===id)+1);g.append(n);
+   const img=markerImage(previews.get(id));
+   if(img){g.append(svg("rect",{x:-13,y:-8,width:26,height:16,rx:2,fill:color,stroke:color,"stroke-width":2}),svg("image",{x:-12,y:-7,width:24,height:14,href:img,"pointer-events":"none"}));}
+   else{const n=svg("text",{x:0,y:3,"text-anchor":"middle","font-size":7,fill:"white","pointer-events":"none"});n.textContent=String(candidates.findIndex(c=>c.id===id)+1);g.append(n);}
    g.addEventListener("click",()=>onInspect(id));g.addEventListener("keydown",e=>{const key=(e as KeyboardEvent).key;if(key==="Enter"||key===" "){e.preventDefault();onInspect(id);}});chart.append(g);
  };
  stages.forEach((s,i)=>{const radius=radiusAt(i);map.append(svg("circle",{cx:160,cy:160,r:radius,fill:"none",stroke:colors[i%colors.length],"stroke-width":i===state.stage?3:1.5}));
   const members=memberships.filter(m=>m.ring===i);members.forEach((m,j)=>{const angle=-Math.PI/2+(j+.5)*2*Math.PI/Math.max(1,members.length);const r=i===stages.length-1?radius*.65:(radius+radiusAt(i+1))/2;inspectMarker(map,m.id,160+Math.cos(angle)*r,160+Math.sin(angle)*r,colors[i%colors.length],m.id+" · "+s.label);});
  });
- rings.append(map,make("p","Each numbered marker is one candidate at the deepest stage it passed. Select a marker to inspect its image."));
+ rings.append(map,make("p","Each thumbnail (or numbered pending marker) is one candidate at the deepest stage it passed. Select it to inspect the image."));
  const list=document.createElement("div");list.className="lens-stage-list";
  stages.forEach((s,i)=>{const b=button(s.label+" · "+s.ids.length+" · "+s.removed.length+" removed",()=>{state.stage=i;onChange();});b.setAttribute("aria-pressed",String(state.stage===i));list.append(b);});rings.append(list);
  const filterRow=document.createElement("div");filterRow.className="lens-stage-list";
