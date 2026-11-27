@@ -1,0 +1,396 @@
+name: License-complete Alpine release candidate
+on:
+  push:
+    branches: [rdte/readiness-probe-r19]
+    paths: ['public/LICENSE', '.github/workflows/alpine-release-candidate.yml']
+permissions:
+  contents: read
+  actions: read
+env:
+  QUALIFIED_SOURCE: 8a63604273641209d159bb0d916c653522e6b3c7
+  COMPILER: evoforge-alpine-compiler:node24-npm12
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: alpine-compiler-docker-image
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          path: image-export
+          digest-mismatch: error
+      - name: Restore exact qualified compiler
+        run: |
+          set -euo pipefail
+          (cd image-export && sha256sum -c SHA256SUMS)
+          test "$(cat image-export/source.txt)" = "$QUALIFIED_SOURCE"
+          gzip -dc image-export/compiler.docker.tar.gz | docker load
+          test "$(docker inspect "$COMPILER" --format '{{.Id}}')" = sha256:f125c2fe011902f77a2c3b378f85c3b38bf7fa197aa5aff581822a8babf7eb63
+          test "$(cat image-export/image-1.txt)" = sha256:f125c2fe011902f77a2c3b378f85c3b38bf7fa197aa5aff581822a8babf7eb63
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: offline-application-dependency-cache
+          run-id: 46045020445
+          github-token: ${{ github.token }}
+          path: cache-export
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-site
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          path: reference-site
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: rehearsal-compiler-evidence
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          path: prior
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: installed-application-licenses
+          run-id: 46045020445
+          github-token: ${{ github.token }}
+          path: license-evidence
+          digest-mismatch: error
+      - name: Refresh full compiler vulnerability assessment
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          curl -fsSL --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          "$RUNNER_TEMP/trivy" image --image-src docker --scanners vuln --pkg-types os,library --list-all-pkgs --format json --output evidence/compiler-audit.json --exit-code 0 "$COMPILER"
+          "$RUNNER_TEMP/trivy" image --image-src docker --format cyclonedx --output evidence/compiler-sbom.json "$COMPILER"
+          python3 - <<'PY'
+          import json,collections
+          a=json.load(open('evidence/compiler-audit.json'))
+          r=a.get('Results',[])
+          assert any(x.get('Class')=='os-pkgs' and x.get('Packages') for x in r)
+          assert any(x.get('Type')=='node-pkg' and x.get('Packages') for x in r)
+          counts=collections.Counter(v['Severity'] for x in r for v in x.get('Vulnerabilities') or [])
+          print(dict(counts))
+          assert not counts['CRITICAL'] and not counts['HIGH']
+          PY
+      - name: Build exact candidate twice offline and verify the only product delta
+        run: |
+          set -euo pipefail
+          mkdir -p evidence site
+          git rev-parse HEAD > evidence/source.txt
+          test "$(cat prior/source.txt)" = "$QUALIFIED_SOURCE"
+          node scripts/verify-artifact.mjs reference-site prior/dist-1.sha256
+          printf '%s  %s\n' 7552f1df20b233b04da2040c36eb5a992a262d7558149d1092c6deb9bb8e5812 package.json 65b6c770ed63455930bdc84c42aa9d00bd57f66ce6dd13943aa6af5baf2f8214 package-lock.json 873a2f333fda393ec3464f4579209b019d98e97c3bf498b10e85f630162fd708 license-evidence/runtime-idb-LICENSE | sha256sum -c -
+          (cd cache-export && sha256sum -c SHA256SUMS)
+          for i in 1 2; do
+            scratch="$(mktemp -d)"
+            trap 'rm -rf "$scratch"' EXIT
+            mkdir "$scratch/src" "$scratch/cache"
+            git archive HEAD | tar -x -C "$scratch/src"
+            tar -xzf cache-export/npm-cacache.tar.gz -C "$scratch/cache"
+            args=(--rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch/src:/workspace" -v "$scratch/cache:/npm-cache" -w /workspace --entrypoint sh)
+            docker run --network none "${args[@]}" "$COMPILER" -ec 'test "$(node --version)" = v24.22.3; test "$(npm --version)" = 12.2.3; npm ci --offline --ignore-scripts --no-audit --cache /npm-cache; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist' 2>&1 | tee "evidence/build-$i.log"
+            # Advisory query is a separate online operation, not part of offline compilation.
+            docker run "${args[@]}" "$COMPILER" -ec 'npm audit --audit-level=low --json' > "evidence/npm-audit-$i.json"
+            (cd "$scratch/src/dist" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > "evidence/dist-$i.sha256"
+            if [ "$i" = 1 ]; then cp -a "$scratch/src/dist/." site/; fi
+            rm -rf "$scratch"
+            trap - EXIT
+          done
+          cmp evidence/dist-1.sha256 evidence/dist-2.sha256
+          node scripts/verify-dist.mjs site
+          node scripts/verify-artifact.mjs site evidence/dist-1.sha256
+          python3 - <<'PY'
+          import pathlib,json,hashlib
+          old=pathlib.Path('reference-site')
+          new=pathlib.Path('site')
+          def files(root): return {x.relative_to(root).as_posix():hashlib.sha256(x.read_bytes()).hexdigest() for x in root.rglob('*') if x.is_file()}
+          a,b=files(old),files(new)
+          assert a.keys()==b.keys() and len(a)==13
+          assert [p for p in a if a[p]!=b[p]]==['LICENSE'],'Unexpected product change'
+          license=(new/'LICENSE').read_bytes()
+          notice=pathlib.Path('license-evidence/runtime-idb-LICENSE').read_bytes()
+          assert license.startswith((old/'LICENSE').read_bytes().rstrip())
+          assert notice in license
+          assert license==pathlib.Path('public/LICENSE').read_bytes()
+          d=json.load(open(new/'release.json'))
+          assert d.get('promotion')!='approved','Rehearsal only'
+          for i in (1,2):
+              v=json.load(open(f'evidence/npm-audit-{i}.json'))['metadata']['vulnerabilities']
+              assert not any(v[k] for k in ('low','moderate','high','critical'))
+          print('PASS: only LICENSE changed; original MIT and exact ISC notice preserved')
+          PY
+          printf '%s\n' "$COMPILER" > evidence/compiler-ref.txt
+          docker inspect "$COMPILER" --format '{{.Id}}' > evidence/compiler-id.txt
+          mkdir -p package
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf package/evoforge-site.tar -C site .
+          (cd package && sha256sum evoforge-site.tar > SHA256SUMS)
+          printf 'PASS\n' > evidence/result.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: candidate-build-evidence
+          path: evidence/
+          retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: candidate-site
+          path: site/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: candidate-build-package
+          path: package/
+          if-no-files-found: error
+          retention-days: 30
+  isolated-browser:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: alpine-compiler-docker-image
+          run-id: 46026217148
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: image-export
+      - name: Restore exact previously tested compiler
+        run: |
+          set -euo pipefail
+          (cd image-export && sha256sum -c SHA256SUMS)
+          test "$(cat image-export/source.txt)" = "$QUALIFIED_SOURCE"
+          gzip -dc image-export/compiler.docker.tar.gz | docker load
+          test "$(docker inspect "$COMPILER" --format '{{.Id}}')" = "$(cat image-export/image-1.txt)"
+          test "$(cat image-export/image-1.txt)" = sha256:f125c2fe011902f77a2c3b378f85c3b38bf7fa197aa5aff581822a8babf7eb63
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: candidate-site
+          path: qualified-site
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: candidate-build-evidence
+          path: prior
+          digest-mismatch: error
+      - name: Construct separate Alpine Chromium qualification candidate
+        run: |
+          set -euo pipefail
+          test "$(cat prior/source.txt)" = "$GITHUB_SHA"
+          mkdir -p browser-context browser-evidence
+          cat > browser-context/Dockerfile <<'DOCKER'
+          ARG COMPILER
+          FROM ${COMPILER}
+          USER 0
+          # Chromium needs full ICU; explicitly remove only the competing world constraint.
+          RUN sed -i '/^icu-data-en\(=.*\)\?$/d' /etc/apk/world \
+              && apk add --no-cache icu-data-full=78.1-r0 chromium=158.0.8127.36-r0 font-dejavu font-noto font-noto-cjk \
+              && apk info -e icu-data-full && ! apk info -e icu-data-en
+          USER 10001:10001
+          DOCKER
+          cp browser-context/Dockerfile browser-evidence/
+          docker build --no-cache --build-arg COMPILER="$COMPILER" --iidfile browser-evidence/image.txt -f browser-context/Dockerfile browser-context
+          image="$(cat browser-evidence/image.txt)"
+          docker image inspect "$image" > browser-evidence/image.json
+          docker run --rm --network none --entrypoint sh "$image" -ec 'apk info -v | sort; chromium --version; node --version; npm --version' > browser-evidence/packages-and-versions.txt
+      - name: Scan actual browser candidate and retain full inventory
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          image="$(cat browser-evidence/image.txt)"
+          "$RUNNER_TEMP/trivy" image --image-src docker --scanners vuln --pkg-types os,library --list-all-pkgs --format json --output browser-evidence/audit.json --exit-code 0 "$image"
+          "$RUNNER_TEMP/trivy" image --image-src docker --format cyclonedx --output browser-evidence/sbom.json "$image"
+          python3 - <<'PY'
+          import json,collections,pathlib
+          r=json.load(open('browser-evidence/audit.json'))['Results']
+          assert any(x.get('Class')=='os-pkgs' and x.get('Packages') for x in r)
+          assert any(x.get('Type')=='node-pkg' and x.get('Packages') for x in r)
+          v=[v for x in r for v in x.get('Vulnerabilities') or []]
+          summary={'counts':dict(collections.Counter(x['Severity'] for x in v)),'high_critical':[{'id':x['VulnerabilityID'],'package':x['PkgName'],'fixed':x.get('FixedVersion')} for x in v if x['Severity'] in ('HIGH','CRITICAL')]}
+          pathlib.Path('browser-evidence/scan-summary.json').write_text(json.dumps(summary,indent=2))
+          print(json.dumps(summary))
+          PY
+      - name: Exercise actual browser workload in a network-isolated container
+        run: |
+          set -euo pipefail
+          image="$(cat browser-evidence/image.txt)"
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          git archive HEAD | tar -x -C "$scratch"
+          mkdir "$scratch/candidate" "$scratch/screenshots"
+          cp -a qualified-site/. "$scratch/candidate/"
+          cp prior/dist-1.sha256 "$scratch/dist.sha256"
+          # Only adapt the test harness to select the system Chromium; no application changes.
+          python3 - "$scratch" <<'PY'
+          import pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          p=root/'scripts/golden-test.mjs'
+          s=p.read_text()
+          old='chromium.launch({args:isRoot?["--no-sandbox","--disable-dev-shm-usage"]:[]})'
+          assert old in s
+          p.write_text(s.replace(old,'chromium.launch({executablePath:process.env.EVOFORGE_CHROMIUM_EXECUTABLE,args:["--disable-dev-shm-usage"]})'))
+          p=root/'scripts/production-smoke.mjs'
+          s=p.read_text()
+          assert 'chromium.launch()' in s
+          p.write_text(s.replace('chromium.launch()','chromium.launch({executablePath:process.env.EVOFORGE_CHROMIUM_EXECUTABLE,args:["--disable-dev-shm-usage"]})'))
+          PY
+          cp "$scratch/scripts/golden-test.mjs" "$scratch/scripts/production-smoke.mjs" browser-evidence/
+          args=(--rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch:/workspace" -w /workspace --entrypoint sh)
+          docker run "${args[@]}" "$image" -ec 'npm ci --ignore-scripts; npm audit --audit-level=low'
+          docker run --network none "${args[@]}" "$image" -ec '
+            export EVOFORGE_CHROMIUM_EXECUTABLE="$(command -v chromium || command -v chromium-browser)"
+            export EVOFORGE_SCREENSHOT_DIR=/workspace/screenshots
+            node scripts/verify-artifact.mjs candidate dist.sha256
+            npm run dev -- --host 127.0.0.1 --port 5173 --strictPort >/tmp/oracle.log 2>&1 & p1=$!
+            npm run preview -- --host 127.0.0.1 --port 5174 --strictPort --outDir /workspace/candidate >/tmp/site.log 2>&1 & p2=$!
+            trap "kill $p1 $p2 2>/dev/null || true" EXIT
+            node scripts/wait-for-server.mjs
+            npm run golden:test
+            node scripts/wait-for-server.mjs http://127.0.0.1:5174/
+            node scripts/production-smoke.mjs
+            node scripts/verify-artifact.mjs candidate dist.sha256
+          ' 2>&1 | tee browser-evidence/workload.log
+          cp -a "$scratch/screenshots" browser-evidence/
+      - name: Require full candidate security coverage
+        run: |
+          set -euo pipefail
+          python3 -c 'import json; assert not json.load(open("browser-evidence/scan-summary.json"))["high_critical"], "browser candidate has unresolved high/critical findings"'
+          printf '%s\n' "$GITHUB_SHA" > browser-evidence/source.txt
+          cp prior/dist-1.sha256 browser-evidence/
+          printf 'PASS\n' > browser-evidence/result.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: candidate-browser-evidence
+          path: browser-evidence/
+          retention-days: 30
+
+  metal:
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: candidate-site
+          path: candidate
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: candidate-build-evidence
+          path: evidence
+          digest-mismatch: error
+      - name: Verify exact site and run native regression
+        env:
+          EVOFORGE_SMOKE_BACKEND: mac-metal
+          EVOFORGE_DIST_DIR: candidate
+          EVOFORGE_SCREENSHOT_DIR: metal-evidence/screenshots
+        run: |
+          set -euo pipefail
+          test "$(cat evidence/source.txt)" = "$GITHUB_SHA"
+          node scripts/verify-artifact.mjs candidate evidence/dist-1.sha256
+          npm ci --ignore-scripts
+          npm audit --audit-level=low
+          npx playwright install chromium
+          mkdir -p metal-evidence
+          node scripts/arena-smoke.mjs | tee metal-evidence/workload.log
+          node scripts/verify-artifact.mjs candidate evidence/dist-1.sha256
+          printf '%s\n' "$GITHUB_SHA" > metal-evidence/source.txt
+          cp evidence/dist-1.sha256 metal-evidence/
+          sw_vers > metal-evidence/os.txt
+          printf 'PASS\n' > metal-evidence/result.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: candidate-metal-evidence
+          path: metal-evidence/
+          retention-days: 30
+  provenance:
+    needs: [build, isolated-browser, metal]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: candidate-site
+          path: site
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: candidate-build-evidence
+          path: build-evidence
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: candidate-build-package
+          path: package
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: candidate-browser-evidence
+          path: browser-evidence
+          digest-mismatch: error
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: candidate-metal-evidence
+          path: metal-evidence
+          digest-mismatch: error
+      - name: Verify same-run source and artifact receipts
+        run: |
+          set -euo pipefail
+          for dir in build-evidence browser-evidence metal-evidence; do
+            test "$(cat "$dir/source.txt")" = "$GITHUB_SHA"
+            test "$(cat "$dir/result.txt")" = PASS
+            cmp "$dir/dist-1.sha256" build-evidence/dist-1.sha256
+          done
+          (cd package && sha256sum -c SHA256SUMS)
+          mkdir extracted
+          tar -xf package/evoforge-site.tar -C extracted
+          node scripts/verify-artifact.mjs extracted build-evidence/dist-1.sha256
+          node scripts/verify-artifact.mjs site build-evidence/dist-1.sha256
+          cp build-evidence/dist-1.sha256 package/
+          printf '%s\n' "$GITHUB_SHA" > package/source.txt
+          printf '%s\n' "$GITHUB_RUN_ID" > package/run.txt
+          printf '%s\n' 'Built by this exact workflow run; compiler scan, isolated Chromium, native Metal and distribution checks passed. Candidate only; no deployment or approval.' > package/SCOPE.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        id: attest
+        with:
+          subject-path: package/evoforge-site.tar
+      - name: Verify same-run signed build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh attestation verify package/evoforge-site.tar --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/alpine-release-candidate.yml" --format json > package/provenance-verification.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: signed-release-candidate
+          path: |
+            package/
+            ${{ steps.attest.outputs.bundle-path }}
+          retention-days: 30
