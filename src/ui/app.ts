@@ -1,5 +1,6 @@
 import type { Candidate, CandidateStatus, GenerationState, Pace, Playback, GASettingsSnapshot } from "../core/types";
 import { paceProfile } from "../core/pace";
+import { renderEvolutionLenses, type LensState } from "./evolution-lenses";
 import { WorkerPool } from "../workers/pool";
 import type { RenderJob, MainMessage } from "../workers/protocol";
 import { XorShift32, mixU32 } from "../core/prng";
@@ -41,7 +42,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   const el = document.createElement("div");
   if(atelier)el.classList.add("atelier");
 
-  let playback: Playback = "playing";
+  let playback: Playback = "paused";
   let pace: Pace = atelier ? "manual" : "medium";
 
   let sessionSeed = 123456789;
@@ -68,6 +69,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   let focusCandidateId: string | null = null;
   let focusRender: { candidateId: string; w:number; h:number; rgba: Uint8ClampedArray; status: "gen"|"ready"|"err" } | null = null;
 
+  const lensState:LensState={ringsOpen:false,radarOpen:false,selected:null,filters:[],stage:0};
   let libraryOpen = false;
   let libraryItems: FavoriteRecord[] = [];
   // `null` means "all favorites" (default when unset). `[]` means "none".
@@ -101,6 +103,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
 
     const request=++sessionRequest;
     generationIndex = 0;
+    refineHold = false;
     generationId++;
     renderIntentId = 0;
     gen={generationId,renderIntentId,candidates:[]};
@@ -233,11 +236,15 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       if (msg.type === "result") focusRender = { candidateId: msg.candidateId, w: msg.width, h: msg.height, rgba: msg.rgba, status: "ready" };
       else focusRender = { ...focusRender, status: "err" };
     }
+    if (refineHold && gen.candidates.length && gen.candidates.every(c => {
+      const s = thumbMap.get(c.id)?.status;
+      return s === "ready" || s === "err";
+    })) refineHold = false;
     render();
   }
 
   function pickedCount(): number { return gen.candidates.filter(c => c.status === "picked").length; }
-  function readyToAdvance(): boolean { return pickedCount() >= settings.pickN; }
+  function readyToAdvance(): boolean { return gen.candidates.length > 0 && gen.candidates.every(c => thumbMap.get(c.id)?.status === "ready"); }
 
   function cancelReadyTimer() { if (readyTimer !== null) { clearTimeout(readyTimer); readyTimer = null; } }
 
@@ -312,19 +319,21 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function currentGate(): AdvanceGate {
-    if (focusCandidateId !== null) return "focus_open";
+    if (focusCandidateId !== null || libraryOpen) return "focus_open";
     if (playback === "paused") return "paused";
     if (refineHold) return "hold_refine";
     return "open";
   }
 
   function armReadyTimerIfNeeded() {
-    cancelReadyTimer();
     const prof = paceProfile(pace);
-    if (!canAutoAdvance({ playback, pace, gate: currentGate(), readyToAdvance: readyToAdvance() })) return;
-
+    if (!canAutoAdvance({ playback, pace, gate: currentGate(), readyToAdvance: readyToAdvance() })) { cancelReadyTimer(); return; }
+    // Rendering/status refreshes must not indefinitely postpone a valid deadline.
+    if (readyTimer !== null) return;
+    const expectedGeneration = gen.generationId, expectedIntent = gen.renderIntentId;
     readyTimer = window.setTimeout(() => {
       readyTimer = null;
+      if (gen.generationId !== expectedGeneration || gen.renderIntentId !== expectedIntent) return;
       if (!canAutoAdvance({ playback, pace, gate: currentGate(), readyToAdvance: readyToAdvance() })) return;
       advanceOneGeneration();
     }, prof.autoAdvanceDelayMs ?? 0);
@@ -350,7 +359,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function refreshDesign() {
-    cancelReadyTimer(); focusCandidateId=null; focusRender=null;
+    cancelReadyTimer(); refineHold=false; focusCandidateId=null; focusRender=null;
     activeFocusJob=null;
     replaceGalleryPool();
     renderIntentId++;gen={...gen,renderIntentId};
@@ -360,30 +369,27 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   function setPlayback(p: Playback) {
     playback = p;
     cancelReadyTimer();
+    if (p === "playing" && pace === "manual") { setPace("medium"); return; }
     render();
   }
 
   function setPace(newPace: Pace) {
     pace = newPace;
-    refineHold = playback === "playing";
+    if (newPace === "manual") playback = "paused";
+    refineHold = playback === "playing" && gen.candidates.length > 0;
 
     activeFocusJob=null;
     replaceGalleryPool();
 
     renderIntentId++;
     gen = { ...gen, renderIntentId };
-    // Progressive thumbs: keep existing thumbnails visible while new ones render.
+    // A new intent cannot inherit ready receipts from the old raster budget.
+    thumbMap.clear();
     scheduleThumbs();
     if (focusCandidateId) {
       focusRender = null;
       scheduleFocusRender(focusCandidateId);
     }
-
-    window.setTimeout(() => {
-      if (!refineHold) return;
-      refineHold = false;
-      render();
-    }, 350);
 
     cancelReadyTimer();
     render();
@@ -522,6 +528,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
 
   function openLibrary() {
     libraryOpen = true;
+    cancelReadyTimer();
     void refreshLibrary();
     render();
   }
@@ -704,7 +711,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
 
     const picked = document.createElement("div");
     picked.className = "small";
-    picked.textContent = `Picked ${pickedCount()}/${settings.pickN}`;
+    picked.textContent = `Picked ${pickedCount()} · optional parents`;
     controls.appendChild(picked);
 
     const spacer = document.createElement("div"); spacer.className = "spacer"; controls.appendChild(spacer);
@@ -730,8 +737,8 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       const hold = document.createElement("button"); hold.textContent = "Hold"; hold.onclick = () => setPlayback("paused"); latch.appendChild(hold);
       const adv = document.createElement("button"); adv.textContent = "Advance now"; adv.onclick = () => advanceOneGeneration(); latch.appendChild(adv);
       el.appendChild(latch);
-      armReadyTimerIfNeeded();
     }
+    armReadyTimerIfNeeded();
 
     if (currentGate() === "hold_refine") {
       const refine = document.createElement("div");
@@ -740,7 +747,9 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       el.appendChild(refine);
     }
 
+    el.append(renderEvolutionLenses(gen.candidates,thumbMap,lensState,()=>{cancelReadyTimer();render();},openFocus));
     const grid = document.createElement("div"); grid.className = "grid";
+    grid.dataset.playback = playback; grid.dataset.pace = pace; grid.dataset.advanceGate = currentGate();
     grid.dataset.engineId=engineRef.engineId;grid.dataset.engineVersion=engineRef.engineVersion;grid.dataset.generation=String(gen.generationId);
 
     for (const c of gen.candidates) {

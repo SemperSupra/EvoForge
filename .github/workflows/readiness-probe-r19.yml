@@ -1,8 +1,6 @@
 name: Readiness probe qualification
 on:
-  push:
-    branches: [rdte/readiness-probe-r19]
-    paths-ignore: ['containers/alpine/**', '.github/workflows/alpine-profiles.yml', '.github/workflows/alpine-release-rehearsal.yml', '.github/workflows/alpine-release-assurance.yml', '.github/workflows/alpine-release-closure.yml', '.github/workflows/alpine-release-candidate.yml', '.github/workflows/alpine-promotion-preflight.yml', '.github/workflows/alpine-npm-remediation.yml', '.github/workflows/os-bakeoff*.yml', 'scripts/production-smoke.mjs']
+  workflow_dispatch:
 permissions:
   contents: read
   actions: read

@@ -27,7 +27,13 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
       overflow: hidden; user-select: none;
     }
-    canvas#canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+    canvas#canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none; }
+    canvas#canvas:active { cursor: grabbing; }
+    #camera-controls { position: fixed; z-index: 21; bottom: 12px; left: 50%; transform: translateX(-50%); display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:4px; max-width:calc(100vw - 170px); padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--panel); }
+    #camera-controls button { font-size:12px; min-height:30px; padding:4px 8px; }
+    #camera-controls output { font-size:11px; min-width:7em; text-align:center; }
+    @media(max-width:850px){#camera-controls{bottom:48px;max-width:95vw;width:max-content;}}
+    #audio-status { font-size:10px; color:var(--muted); }
     #hud-left, #hud-right {
       position: fixed; top: calc(var(--toolbar-height) + 16px); bottom: 52px; width: 345px;
       background: var(--panel); border: 1px solid var(--border);
@@ -111,6 +117,16 @@
   </nav>
   <section id="arena-message" role="status" hidden><p id="arena-error"></p><a href="../../">Return to EvoForge</a></section>
   <button id="hud-toggle">Toggle HUD (H)</button>
+  <div id="camera-controls" role="group" aria-label="Arena camera">
+    <button id="cam-orbit" aria-pressed="true" title="Drag to rotate the view">Orbit</button>
+    <button id="cam-pan" aria-pressed="false" title="Drag to move the view across the world">Pan</button>
+    <button id="cam-interact" aria-pressed="false" title="Tap terrain to intervene in Play mode">Interact</button>
+    <button id="cam-left" aria-label="Rotate camera left">←</button><button id="cam-right" aria-label="Rotate camera right">→</button>
+    <button id="cam-up" aria-label="Tilt camera up">↑</button><button id="cam-down" aria-label="Tilt camera down">↓</button>
+    <button id="cam-in" aria-label="Zoom in">+</button><button id="cam-out" aria-label="Zoom out">−</button>
+    <button id="cam-top">Top</button><button id="cam-home">Reset view</button>
+    <output id="camera-status">Orbit</output>
+  </div>
 
   <div id="hud-left">
     <h1>
@@ -168,8 +184,10 @@
         <button id="btn-apply-rec">Apply</button>
         <button id="btn-auto-director">Auto: OFF</button>
         <button id="btn-auto-chaos">Surprises: OFF</button>
-        <button id="btn-audio">Audio: OFF</button>
+        <button id="btn-audio" aria-pressed="false">Audio: OFF</button>
       </div>
+      <div id="audio-status">Ecology soundscape: off</div>
+      <label>Sound level <select id="audio-level" aria-label="Sound level"><option value="0.10">Quiet</option><option value="0.20" selected>Normal</option><option value="0.32">Higher</option></select></label>
       <div class="btn-row">
         <button class="surprise" id="surp-bloom">Bloom</button>
         <button class="surprise" id="surp-drought">Drought</button>
@@ -228,12 +246,13 @@ const launchQuery = new URLSearchParams(location.search);
 const mode = launchQuery.get('mode') === 'play' ? 'play' : 'observe';
 const initialSeed = launchQuery.get('seed');
 const validSeed = initialSeed !== null && /^\d{1,10}$/.test(initialSeed) && Number(initialSeed) <= 0xffffffff;
-const experience = { id: 'alife', version: '0.1.0-rdte.4', upstream: 'gemini-v7', mode, phase: 'initializing', error: null };
-let paused = false, stopped = false, resetEpoch = 0;
+const experience = { id: 'alife', version: '0.1.0-rdte.5', upstream: 'gemini-v7', mode, phase: 'initializing', error: null };
+let paused = false, stopped = false, resetEpoch = 0, viewDirty = true;
 document.getElementById('experience-mode').textContent = mode === 'play' ? 'Play • experimental' : 'Observe • experimental';
 function setPaused(value) {
   if (typeof value !== 'boolean') throw new TypeError('pause requires a boolean');
-  paused = value;
+  paused = value; viewDirty = true;
+  syncAudioGain();
   document.getElementById('btn-pause').textContent = paused ? 'Resume' : 'Pause';
   if (experience.phase === 'running' || experience.phase === 'paused') experience.phase = paused ? 'paused' : 'running';
 }
@@ -301,6 +320,7 @@ const state = {
   camYaw: 0.65,
   camPitch: 0.72,
   camDist: 21.0,
+  camCenterX: 0, camCenterZ: 0, camMode: "orbit", viewRevision: 0,
   targetX: 0,
   targetZ: 0,
   blastX: 0,
@@ -309,7 +329,7 @@ const state = {
   simTick: 0,
   autoDirector: false,
   autoSurprises: false,
-  audioEnabled: false
+  audioEnabled: false, audioCueCount: 0, audioLastCue: "none"
 };
 
 document.getElementById('seed-label').textContent = 'SEED #' + state.seed;
@@ -318,22 +338,71 @@ function seededRandom() {
   randomState ^= randomState << 13; randomState ^= randomState >>> 17; randomState ^= randomState << 5;
   randomState >>>= 0; return randomState / 4294967296;
 }
-let audioCtx = null, oscDrone = null, gainDrone = null;
-function toggleAudio() {
-  state.audioEnabled = !state.audioEnabled;
-  const btn = document.getElementById('btn-audio');
-  btn.textContent = `Audio: ${state.audioEnabled ? 'ON' : 'OFF'}`;
-  btn.classList.toggle('active', state.audioEnabled);
-  if (state.audioEnabled && !audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    oscDrone = audioCtx.createOscillator(); gainDrone = audioCtx.createGain();
-    oscDrone.type = 'triangle'; oscDrone.frequency.value = 110; gainDrone.gain.value = 0.03;
-    oscDrone.connect(gainDrone).connect(audioCtx.destination); oscDrone.start();
-  } else if (gainDrone) {
-    gainDrone.gain.value = state.audioEnabled ? 0.03 : 0.0;
+let audioCtx = null, audioMaster = null, audioLastTime = -Infinity, audioPrevious = null, audioVoiceCount = 0, audioRequest = 0;
+const audioLevel = document.getElementById('audio-level');
+function syncAudioGain() {
+  if (audioCtx && audioMaster && audioCtx.state !== 'closed') {
+    audioMaster.gain.setTargetAtTime(state.audioEnabled && !paused ? Number(audioLevel.value) : 0, audioCtx.currentTime, 0.035);
   }
 }
-document.getElementById('btn-audio').addEventListener('click', toggleAudio);
+function audioStatus(message) {
+  const btn=document.getElementById('btn-audio');
+  btn.textContent='Audio: '+(state.audioEnabled?'ON':'OFF');
+  btn.setAttribute('aria-pressed',String(state.audioEnabled));
+  btn.classList.toggle('active',state.audioEnabled);
+  document.getElementById('audio-status').textContent=message;
+}
+async function toggleAudio() {
+  const request=++audioRequest;
+  if (state.audioEnabled) {state.audioEnabled=false;syncAudioGain();audioStatus('Ecology soundscape: off');return;}
+  try {
+    if (!audioCtx) {
+      const Ctor=window.AudioContext||window.webkitAudioContext;
+      if(!Ctor)throw Error('Web Audio unavailable');
+      audioCtx=new Ctor();
+      audioMaster=audioCtx.createGain();audioMaster.gain.value=0;
+      const limiter=audioCtx.createDynamicsCompressor();
+      audioMaster.connect(limiter).connect(audioCtx.destination);
+    }
+    await audioCtx.resume();
+    if(request!==audioRequest||stopped)return;
+    state.audioEnabled=true;audioPrevious=null;audioLastTime=-Infinity;
+    syncAudioGain();audioStatus('Ecology soundscape: active');
+  } catch(e) {state.audioEnabled=false;syncAudioGain();audioStatus('Audio unavailable: '+String(e.message||e));}
+}
+audioLevel.addEventListener('change',syncAudioGain);
+document.getElementById('btn-audio').addEventListener('click',()=>void toggleAudio());
+// Short, bounded sonification cues based on measured ecosystem changes.
+// No continuous oscillator and no consumption of the simulation PRNG.
+function ecologyAudio(sample) {
+  if(!state.audioEnabled||paused||!audioCtx||audioCtx.state!=='running'||audioVoiceCount>=4)return;
+  const now=audioCtx.currentTime;
+  if(now-audioLastTime<0.30)return;
+  const populations=Object.values(sample.populations);
+  const previous=audioPrevious;
+  audioPrevious={populations:[...populations],bonds:sample.dynamicBonds,energy:sample.energy.flora};
+  let kind='activity',species=sample.tick%6,delta=0;
+  if(previous){
+    for(let i=0;i<6;i++){const d=populations[i]-previous.populations[i];if(Math.abs(d)>Math.abs(delta)){species=i;delta=d;}}
+    if(delta>0)kind='birth';else if(delta<0)kind='loss';else if(sample.dynamicBonds>previous.bonds)kind='bond';
+    else if(sample.energy.flora>previous.energy*1.08)kind='bloom';
+  }
+  if(kind==='activity' && previous && now-audioLastTime<0.85)return;
+  if(!populations.some(n=>n>0)&&kind==='activity')return;
+  if(!populations[species]&&kind==='activity')species=populations.findIndex(n=>n>0);
+  const freq=[210,340,270,480,155,620][Math.max(0,species)],dur=kind==='loss'?0.28:kind==='birth'?0.18:0.14;
+  const osc=audioCtx.createOscillator(),gain=audioCtx.createGain(),filter=audioCtx.createBiquadFilter();
+  osc.type=['sine','triangle','triangle','sine','sine','triangle'][Math.max(0,species)];
+  const endFreq=kind==='loss'?freq*.62:kind==='birth'?freq*1.65:kind==='bloom'?freq*1.35:kind==='bond'?freq*1.2:freq*.88;
+  osc.frequency.setValueAtTime(freq,now);osc.frequency.exponentialRampToValueAtTime(endFreq,now+dur);
+  filter.type='lowpass';filter.frequency.value=1800;
+  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(0.22,now+0.018);gain.gain.exponentialRampToValueAtTime(0.001,now+dur);
+  osc.connect(filter).connect(gain).connect(audioMaster);
+  audioVoiceCount++;osc.onended=()=>{audioVoiceCount--;osc.disconnect();filter.disconnect();gain.disconnect();};
+  osc.start(now);osc.stop(now+dur+0.02);
+  audioLastTime=now;state.audioCueCount++;state.audioLastCue=kind;
+  audioStatus('Ecology soundscape: '+kind+' cue · '+state.audioCueCount);
+}
 
 const telemetry = {
   history: [],
@@ -1244,6 +1313,8 @@ struct VSOut {
   @location(0) localUV: vec2<f32>,
   @location(1) worldPos: vec3<f32>,
   @location(2) color: vec3<f32>,
+  @location(3) @interpolate(flat) species: u32,
+  @location(4) @interpolate(flat) part: u32,
 };
 
 fn square(x: f32) -> f32 { return x * x; }
@@ -1292,74 +1363,98 @@ fn speciesColor(sp: u32, lid: u32, cid: u32) -> vec3<f32> {
   return vec3<f32>(0.68, 0.52, 0.24);
 }
 
+// Render-only phenotypes: tapered body ribbons and species-specific surface silhouettes.
+// Existing node simulation, bonds, genome, collision and reproduction remain unchanged.
 @vertex
 fn vsLink(@builtin(vertex_index) vIdx: u32) -> VSOut {
-  let nodeIdx = vIdx / 2u;
-  let endSel = vIdx % 2u;
-  let node = nodes[nodeIdx];
-  let linkA = node.nodeMeta.z;
-  let sp = u32(node.prev.w);
+  let nodeIdx = vIdx / 6u;
+  let k = vIdx % 6u;
+  let n = nodes[nodeIdx];
+  let linkA = n.nodeMeta.z;
+  let sp = u32(n.prev.w);
   var out: VSOut;
-  if (sp >= 6u || node.pos.w <= 0.05 || linkA == 0xffffffffu || linkA >= cam.totalNodes || u32(nodes[linkA].prev.w) != sp) {
-    out.clipPos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
-    return out;
+  if (sp >= 6u || n.pos.w <= 0.05 || linkA == 0xffffffffu || linkA >= cam.totalNodes) {
+    out.clipPos = vec4<f32>(2.0,2.0,2.0,1.0); return out;
   }
-  let p = select(node.pos.xyz, nodes[linkA].pos.xyz, endSel == 1u);
-  out.clipPos = cam.viewProj * vec4<f32>(p, 1.0);
-  out.localUV = vec2<f32>(0.0);
-  out.worldPos = p;
-  let isHybridBond = (nodes[linkA].nodeMeta.x != node.nodeMeta.x);
-  out.color = select(speciesColor(sp, node.nodeMeta.y, node.nodeMeta.x) * 0.85, vec3<f32>(1.0, 1.0, 1.0), isHybridBond);
-  return out;
+  let other = nodes[linkA];
+  if (u32(other.prev.w) != sp || other.pos.w <= 0.05 || length(other.pos.xyz-n.pos.xyz)<0.0001) {
+    out.clipPos = vec4<f32>(2.0,2.0,2.0,1.0); return out;
+  }
+  var corners = array<vec2<f32>,6>(vec2<f32>(0.0,-1.0),vec2<f32>(1.0,-1.0),vec2<f32>(0.0,1.0),vec2<f32>(0.0,1.0),vec2<f32>(1.0,-1.0),vec2<f32>(1.0,1.0));
+  let uv = corners[k];
+  let direction = normalize(other.pos.xyz-n.pos.xyz);
+  let middle = (n.pos.xyz+other.pos.xyz)*0.5;
+  var side = cross(direction,cam.camPos.xyz-middle);
+  if(length(side)<0.0001){side=cross(direction,vec3<f32>(0.0,1.0,0.0));}
+  if(length(side)<0.0001){side=cross(direction,vec3<f32>(1.0,0.0,0.0));}
+  side=normalize(side);
+  let hybrid = n.nodeMeta.x != other.nodeMeta.x;
+  var width = 0.115;
+  if(sp==0u){width=0.13;}
+  if(sp==1u){width=0.055;}
+  if(sp==2u){width=select(0.14,0.055,n.nodeMeta.y>=6u);}
+  if(sp==3u){width=0.19;}
+  if(sp==4u){width=0.08;}
+  if(sp==5u){width=0.06;}
+  if(hybrid){width=0.018;}
+  let p = mix(n.pos.xyz,other.pos.xyz,uv.x)+side*uv.y*width*mix(0.82,1.0,uv.x);
+  out.clipPos=cam.viewProj*vec4<f32>(p,1.0);out.localUV=uv;out.worldPos=p;
+  out.color=select(speciesColor(sp,n.nodeMeta.y,n.nodeMeta.x),vec3<f32>(1.0),hybrid);
+  out.species=sp;out.part=n.nodeMeta.y;return out;
 }
-
 @fragment
-fn fsLink(in: VSOut) -> @location(0) vec4<f32> { return vec4<f32>(in.color, 1.0); }
-
+fn fsLink(in: VSOut)->@location(0) vec4<f32>{
+  let edge=abs(in.localUV.y);
+  let shade=0.45+0.55*sqrt(max(0.0,1.0-edge*edge));
+  return vec4<f32>(in.color*shade,1.0);
+}
 @vertex
-fn vsNode(@builtin(vertex_index) vIdx: u32, @builtin(instance_index) iIdx: u32) -> VSOut {
-  var quad = array<vec2<f32>, 6>(
-    vec2<f32>(-1.0, -1.0), vec2<f32>( 1.0, -1.0), vec2<f32>(-1.0,  1.0),
-    vec2<f32>(-1.0,  1.0), vec2<f32>( 1.0, -1.0), vec2<f32>( 1.0,  1.0)
-  );
-  let uv = quad[vIdx];
-  let node = nodes[iIdx];
-  var out: VSOut;
-  if (node.pos.w <= 0.01) {
-    out.clipPos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
-    return out;
+fn vsNode(@builtin(vertex_index) vIdx:u32,@builtin(instance_index) iIdx:u32)->VSOut{
+  var quad=array<vec2<f32>,6>(vec2<f32>(-1.0,-1.0),vec2<f32>(1.0,-1.0),vec2<f32>(-1.0,1.0),vec2<f32>(-1.0,1.0),vec2<f32>(1.0,-1.0),vec2<f32>(1.0,1.0));
+  let uv=quad[vIdx];let n=nodes[iIdx];var out:VSOut;
+  if(n.pos.w<=0.01){out.clipPos=vec4<f32>(2.0,2.0,2.0,1.0);return out;}
+  let p=n.pos.xyz;let sp=u32(n.prev.w);let lid=n.nodeMeta.y;
+  var axes=vec2<f32>(0.16,0.13);
+  if(sp==0u){axes=select(vec2<f32>(0.19,0.13),vec2<f32>(0.22,0.16),lid==0u);}
+  if(sp==1u){axes=select(vec2<f32>(0.11,0.075),vec2<f32>(0.26,0.26),lid==0u);}
+  if(sp==2u){axes=select(vec2<f32>(0.20,0.13),vec2<f32>(0.10,0.055),lid>=6u);}
+  if(sp==3u){axes=vec2<f32>(0.24,0.20);}
+  if(sp==4u){axes=select(vec2<f32>(0.13,0.08),vec2<f32>(0.28,0.19),lid==0u);}
+  if(sp==5u){axes=select(vec2<f32>(0.11,0.075),vec2<f32>(0.27,0.20),lid==0u);}
+  if(sp>=6u){axes=vec2<f32>(0.11);}
+  let forward=normalize(cam.camPos.xyz-p);
+  var right=cross(vec3<f32>(0.0,1.0,0.0),forward);
+  if(length(right)<0.0001){right=cross(vec3<f32>(1.0,0.0,0.0),forward);}
+  right=normalize(right);
+  var up=cross(forward,right);
+  let linkA=n.nodeMeta.z;
+  if(linkA<cam.totalNodes && sp!=1u){
+    let d=nodes[linkA].pos.xyz-p;
+    let projected=d-forward*dot(d,forward);
+    if(length(projected)>0.0001){right=normalize(projected);up=normalize(cross(forward,right));}
   }
-  let p = node.pos.xyz;
-  let sp = u32(node.prev.w);
-  let lid = node.nodeMeta.y;
-
-  var radius = 0.14;
-  if (sp == 1u) { radius = select(0.12, 0.21, lid == 0u); }
-  else if (sp == 2u) { radius = select(0.15, 0.09, lid >= 6u); }
-  else if (sp == 4u) { radius = select(0.16, 0.12, lid == 0u); }
-  else if (sp == 6u) { radius = 0.11; }
-
-  let forward = normalize(cam.camPos.xyz - p);
-  let right = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), forward));
-  let up = cross(forward, right);
-  let worldP = p + (right * uv.x + up * uv.y) * radius;
-
-  out.clipPos = cam.viewProj * vec4<f32>(worldP, 1.0);
-  out.localUV = uv;
-  out.worldPos = worldP;
-  out.color = speciesColor(sp, lid, node.nodeMeta.x);
-  return out;
+  let worldP=p+right*uv.x*axes.x+up*uv.y*axes.y;
+  out.clipPos=cam.viewProj*vec4<f32>(worldP,1.0);out.localUV=uv;out.worldPos=worldP;
+  out.color=speciesColor(sp,lid,n.nodeMeta.x);out.species=sp;out.part=lid;return out;
 }
-
 @fragment
-fn fsNode(in: VSOut) -> @location(0) vec4<f32> {
-  let r2 = dot(in.localUV, in.localUV);
-  if (r2 > 1.0) { discard; }
-  let z = sqrt(1.0 - r2);
-  let n = normalize(vec3<f32>(in.localUV.x, in.localUV.y, z));
-  let lightDir = normalize(vec3<f32>(0.45, 0.85, 0.35));
-  let diff = max(dot(n, lightDir), 0.22);
-  return vec4<f32>(in.color * diff, 1.0);
+fn fsNode(in:VSOut)->@location(0) vec4<f32>{
+  let uv=in.localUV;let r=length(uv);let angle=atan2(uv.y,uv.x);var limit=1.0;
+  if(in.species==1u&&in.part==0u){limit=0.72+0.25*pow(abs(cos(angle*6.0)),5.0);}
+  if(in.species==3u){limit=0.90+0.08*cos(angle*5.0)+0.02*sin(angle*9.0);}
+  if(in.species==5u&&in.part==0u&&uv.y<0.0){limit=0.72+0.23*abs(cos(angle*3.0));}
+  if(r>limit){discard;}
+  let z=sqrt(max(0.0,1.0-r*r));let normal=normalize(vec3<f32>(uv,z));
+  let shade=max(dot(normal,normalize(vec3<f32>(0.45,0.85,0.35))),0.28);
+  var color=in.color*shade;
+  if(in.species==2u&&in.part<6u){color*=0.78+0.22*cos(uv.x*12.0);}
+  if(in.species==3u){color*=0.87+0.13*sin(uv.x*17.0+uv.y*11.0);}
+  if(in.part==0u&&(in.species==0u||in.species==2u||in.species==4u)){
+    let eye=length(vec2<f32>((uv.x+0.35)*1.2,(abs(uv.y)-0.34)*1.5));
+    if(eye<0.18){color=vec3<f32>(0.92,0.94,0.84);}
+    if(eye<0.085){color=vec3<f32>(0.04,0.06,0.08);}
+  }
+  return vec4<f32>(color,1.0);
 }
 
 @vertex
@@ -1845,7 +1940,7 @@ async function init() {
   const rLayout = device.createPipelineLayout({ bindGroupLayouts: [renderBGL] });
   const depthStencil = { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' };
   const terrainPipe = device.createRenderPipeline({ layout: rLayout, vertex: { module: renderModule, entryPoint: 'vsTerrain' }, fragment: { module: renderModule, entryPoint: 'fsTerrain', targets: [{ format }] }, primitive: { topology: 'triangle-list' }, depthStencil });
-  const linkPipe = device.createRenderPipeline({ layout: rLayout, vertex: { module: renderModule, entryPoint: 'vsLink' }, fragment: { module: renderModule, entryPoint: 'fsLink', targets: [{ format }] }, primitive: { topology: 'line-list' }, depthStencil });
+  const linkPipe = device.createRenderPipeline({ layout: rLayout, vertex: { module: renderModule, entryPoint: 'vsLink' }, fragment: { module: renderModule, entryPoint: 'fsLink', targets: [{ format }] }, primitive: { topology: 'triangle-list' }, depthStencil });
   const nodePipe = device.createRenderPipeline({ layout: rLayout, vertex: { module: renderModule, entryPoint: 'vsNode' }, fragment: { module: renderModule, entryPoint: 'fsNode', targets: [{ format }] }, primitive: { topology: 'triangle-list' }, depthStencil });
 
   let renderBundle = null;
@@ -1854,7 +1949,7 @@ async function init() {
     const be = device.createRenderBundleEncoder({ colorFormats: [format], depthStencilFormat: 'depth24plus' });
     be.setBindGroup(0, renderBG);
     be.setPipeline(terrainPipe); be.draw(64 * 64 * 6, 1, 0, 0);
-    be.setPipeline(linkPipe);    be.draw(eco.activeNodes * 2, 1, 0, 0);
+    be.setPipeline(linkPipe);    be.draw(eco.activeNodes * 6, 1, 0, 0);
     be.setPipeline(nodePipe);    be.draw(6, eco.activeNodes, 0, 0);
     renderBundle = be.finish();
   }
@@ -1876,14 +1971,14 @@ async function init() {
     device.queue.writeBuffer(creatureBuffer, 0, eco.creatureBuf);
     device.queue.writeBuffer(floraBuffer, 0, eco.initialFlora);
     device.queue.writeBuffer(scentBuffer, 0, new Uint32Array(GRID_DIM * GRID_DIM));
-    rebuildRenderBundle();
+    rebuildRenderBundle(); viewDirty = true; audioPrevious = null;
   }
   resetFnRef = uploadEcosystem;
   uploadEcosystem();
   document.getElementById('btn-respawn').addEventListener('click', uploadEcosystem);
 
   let depthTex = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
-  window.addEventListener('resize', () => { if(stopped)return; depthTex.destroy(); depthTex = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT }); });
+  window.addEventListener('resize', () => { if(stopped)return; viewDirty=true; depthTex.destroy(); depthTex = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT }); });
 
   let lastTime = performance.now(), smoothDt = 16.6, readingStats = false;
 
@@ -1894,7 +1989,10 @@ async function init() {
   document.getElementById('btn-pause').disabled = false;
   function frame(now) {
     if (stopped) return;
-    if (paused) { lastTime=now; requestAnimationFrame(frame); return; }
+    if (paused && !viewDirty) { lastTime=now; requestAnimationFrame(frame); return; }
+    const stepping = !paused;
+    viewDirty = false;
+    if (stepping) {
     const rawDt = Math.min(now - lastTime, 33.3);
     lastTime = now;
     smoothDt = smoothDt * 0.9 + rawDt * 0.1;
@@ -1928,9 +2026,10 @@ async function init() {
       f32[40 + s*4 + 3] = speciesConfig[s].split;
     }
     device.queue.writeBuffer(simParamBuffer, 0, simBuf);
+    } else lastTime=now;
 
-    const eye = [Math.cos(state.camYaw)*Math.cos(state.camPitch)*state.camDist, Math.sin(state.camPitch)*state.camDist, Math.sin(state.camYaw)*Math.cos(state.camPitch)*state.camDist];
-    const viewProj = multiplyMat4(perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 120.0), lookAt(eye, [0, 0.4, 0], [0, 1, 0]));
+    const eye = cameraEye();
+    const viewProj = multiplyMat4(perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 120.0), lookAt(eye, [state.camCenterX, 0.4, state.camCenterZ], [0, 1, 0]));
     const camBuf = new ArrayBuffer(176);
     const cf32 = new Float32Array(camBuf), cu32 = new Uint32Array(camBuf);
     cf32.set(viewProj, 0);
@@ -1944,6 +2043,7 @@ async function init() {
     device.queue.writeBuffer(camParamBuffer, 0, camBuf);
 
     const encoder = device.createCommandEncoder();
+    if (stepping) {
     const cpass = encoder.beginComputePass();
     const groups = Math.ceil(eco.activeNodes / 64);
     cpass.setBindGroup(0, computeBG);
@@ -1963,6 +2063,7 @@ async function init() {
     cpass.end();
 
     if (!readingStats && state.simTick % 15 === 0) encoder.copyBufferToBuffer(statsBuffer, 0, statsReadBuffer, 0, 96);
+    }
 
     const rpass = encoder.beginRenderPass({
       colorAttachments: [{ view: context.getCurrentTexture().createView(), clearValue: { r: 0.028, g: 0.035, b: 0.047, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }],
@@ -1972,14 +2073,15 @@ async function init() {
     else {
       rpass.setBindGroup(0, renderBG);
       rpass.setPipeline(terrainPipe); rpass.draw(64 * 64 * 6, 1, 0, 0);
-      rpass.setPipeline(linkPipe);    rpass.draw(eco.activeNodes * 2, 1, 0, 0);
+      rpass.setPipeline(linkPipe);    rpass.draw(eco.activeNodes * 6, 1, 0, 0);
       rpass.setPipeline(nodePipe);    rpass.draw(6, eco.activeNodes, 0, 0);
     }
     rpass.end();
 
     device.queue.submit([encoder.finish()]);
+    state.viewRevision++;
 
-    if (!readingStats && state.simTick % 15 === 0) {
+    if (stepping && !readingStats && state.simTick % 15 === 0) {
       readingStats = true;
       const sampleEpoch = resetEpoch, sampleTick = state.simTick;
       statsReadBuffer.mapAsync(GPUMapMode.READ).then(() => {
@@ -2018,10 +2120,7 @@ async function init() {
         document.getElementById('bar-flora').style.width = `${(eFlora / totalE) * 100}%`;
         document.getElementById('bar-carcass').style.width = `${(eCarcass / totalE) * 100}%`;
 
-        if (state.audioEnabled && oscDrone && audioCtx) {
-          const ratio = (arr[16] + 1) / (arr[15] + 1);
-          oscDrone.frequency.setTargetAtTime(90 + Math.min(220, ratio * 95), audioCtx.currentTime, 0.2);
-        }
+        ecologyAudio(telemetry.latest);
 
         telemetry.history.push({ tick: state.simTick, populations: { ...telemetry.latest.populations } });
         if (telemetry.history.length > 100) telemetry.history.shift();
@@ -2039,22 +2138,91 @@ async function init() {
 }
 
 const canvasEl = document.getElementById('canvas');
-let dragging = false, lastMX = 0, lastMY = 0;
-canvasEl.addEventListener('contextmenu', e => e.preventDefault());
-canvasEl.addEventListener('mousedown', e => {
-  if (e.button === 2) { dragging = true; lastMX = e.clientX; lastMY = e.clientY; }
-  else if (e.button === 0 && mode === 'play') { state.blastX = state.targetX; state.blastZ = state.targetZ; state.blastPower = 1.0; }
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+function cameraEye() {
+  return [state.camCenterX+Math.cos(state.camYaw)*Math.cos(state.camPitch)*state.camDist,
+    0.4+Math.sin(state.camPitch)*state.camDist,
+    state.camCenterZ+Math.sin(state.camYaw)*Math.cos(state.camPitch)*state.camDist];
+}
+function updateCamera() {
+  state.camPitch=clamp(state.camPitch,0.14,1.54); // 2.5D arena: no underside or singular pole.
+  state.camDist=clamp(state.camDist,3.5,42);
+  state.camCenterX=clamp(state.camCenterX,-state.arenaRadius,state.arenaRadius);
+  state.camCenterZ=clamp(state.camCenterZ,-state.arenaRadius,state.arenaRadius);
+  state.camYaw=((state.camYaw%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
+  viewDirty=true;
+  document.getElementById('camera-status').textContent=state.camMode+' · '+Math.round(state.camDist)+' units';
+}
+function cameraMode(m) {
+  if(m==='interact'&&mode!=='play')return;
+  state.camMode=m;
+  for(const id of ['orbit','pan','interact'])document.getElementById('cam-'+id).setAttribute('aria-pressed',String(id===m));
+  canvasEl.style.cursor=m==='interact'?'crosshair':'grab';updateCamera();
+}
+function panView(dx,dy) {
+  const scale=2*state.camDist*Math.tan(Math.PI/8)/Math.max(1,canvasEl.clientHeight);
+  state.camCenterX+=(-Math.sin(state.camYaw)*dx+Math.cos(state.camYaw)*dy)*scale;
+  state.camCenterZ+=(Math.cos(state.camYaw)*dx+Math.sin(state.camYaw)*dy)*scale;
+  updateCamera();
+}
+function worldPointer(e) {
+  const rect=canvasEl.getBoundingClientRect(), nx=2*(e.clientX-rect.left)/rect.width-1,ny=1-2*(e.clientY-rect.top)/rect.height;
+  const sy=Math.sin(state.camYaw),cy=Math.cos(state.camYaw),sp=Math.sin(state.camPitch),cp=Math.cos(state.camPitch),f=Math.tan(Math.PI/8);
+  const right=[sy,0,-cy],up=[-cy*sp,cp,-sy*sp],forward=[-cy*cp,-sp,-sy*cp];
+  const ray=forward.map((v,i)=>v+right[i]*nx*f*rect.width/rect.height+up[i]*ny*f);
+  if(ray[1]>=-0.0001)return false;
+  const eye=cameraEye(),t=(0.4-eye[1])/ray[1];
+  state.targetX=clamp(eye[0]+ray[0]*t,-state.arenaRadius,state.arenaRadius);
+  state.targetZ=clamp(eye[2]+ray[2]*t,-state.arenaRadius,state.arenaRadius);return true;
+}
+for(const id of ['orbit','pan','interact'])document.getElementById('cam-'+id).onclick=()=>cameraMode(id);
+document.getElementById('cam-interact').disabled=mode!=='play';
+for(const [id,fn] of Object.entries({
+  left:()=>{if(state.camMode==='pan')panView(-36,0);else state.camYaw-=0.18;},
+  right:()=>{if(state.camMode==='pan')panView(36,0);else state.camYaw+=0.18;},
+  up:()=>{if(state.camMode==='pan')panView(0,-36);else state.camPitch+=0.12;},
+  down:()=>{if(state.camMode==='pan')panView(0,36);else state.camPitch-=0.12;},
+  in:()=>state.camDist*=0.82,out:()=>state.camDist/=0.82,
+  top:()=>state.camPitch=1.50,
+  home:()=>{state.camYaw=0.65;state.camPitch=0.72;state.camDist=21;state.camCenterX=0;state.camCenterZ=0;}
+}))document.getElementById('cam-'+id).onclick=()=>{fn();updateCamera();};
+const pointers=new Map();
+let moved=false,gestureDistance=0;
+canvasEl.addEventListener('contextmenu',e=>e.preventDefault());
+canvasEl.addEventListener('pointerdown',e=>{
+  if(e.button!==0&&e.button!==2)return;
+  if(pointers.size===0)moved=false;
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,button:e.button});
+  canvasEl.setPointerCapture(e.pointerId);
+  if(pointers.size===2){const [a,b]=pointers.values();gestureDistance=Math.hypot(a.x-b.x,a.y-b.y);moved=true;}
 });
-window.addEventListener('mouseup', () => dragging = false);
-window.addEventListener('mousemove', e => {
-  if (dragging) { state.camYaw += (e.clientX - lastMX) * 0.006; state.camPitch = Math.max(0.15, Math.min(1.45, state.camPitch + (e.clientY - lastMY) * 0.006)); lastMX = e.clientX; lastMY = e.clientY; }
-  else if (mode === 'play') { state.targetX = ((e.clientX / window.innerWidth) * 2 - 1) * (state.arenaRadius * 0.85); state.targetZ = ((e.clientY / window.innerHeight) * 2 - 1) * (state.arenaRadius * 0.85); }
+canvasEl.addEventListener('pointermove',e=>{
+  const old=pointers.get(e.pointerId);
+  if(!old){if(mode==='play'&&state.camMode==='interact')worldPointer(e);return;}
+  const dx=e.clientX-old.x,dy=e.clientY-old.y;
+  if(Math.abs(dx)+Math.abs(dy)>1)moved=true;
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,button:old.button});
+  if(pointers.size===2){const [a,b]=pointers.values(),d=Math.hypot(a.x-b.x,a.y-b.y);if(d>5&&gestureDistance>5)state.camDist*=gestureDistance/d;gestureDistance=d;updateCamera();return;}
+  if(pointers.size!==1)return;
+  if(state.camMode==='pan'||e.shiftKey)panView(dx,dy);
+  else if(state.camMode==='orbit'||old.button===2){state.camYaw-=dx*0.006;state.camPitch+=dy*0.006;updateCamera();}
+  else if(mode==='play')worldPointer(e);
 });
-canvasEl.addEventListener('wheel', e => { state.camDist = Math.max(7.0, Math.min(34.0, state.camDist + e.deltaY * 0.01)); });
+function endPointer(e,allowAction) {
+  const old=pointers.get(e.pointerId);pointers.delete(e.pointerId);gestureDistance=0;
+  if(old&&allowAction&&!moved&&old.button===0&&pointers.size===0&&mode==='play'&&state.camMode==='interact'&&worldPointer(e)){
+    state.blastX=state.targetX;state.blastZ=state.targetZ;state.blastPower=1;
+  }
+}
+canvasEl.addEventListener('pointerup',e=>endPointer(e,true));
+canvasEl.addEventListener('pointercancel',e=>endPointer(e,false));
+canvasEl.addEventListener('lostpointercapture',e=>endPointer(e,false));
+canvasEl.addEventListener('wheel',e=>{e.preventDefault();state.camDist*=Math.exp(clamp(e.deltaY,-300,300)*0.0018);updateCamera();},{passive:false});
+updateCamera();
 
 ['mode-species', 'mode-guild', 'mode-temp'].forEach((id, idx) => {
   document.getElementById(id).addEventListener('click', () => {
-    state.renderMode = idx;
+    state.renderMode = idx; viewDirty=true;
     ['mode-species', 'mode-guild', 'mode-temp'].forEach(k => document.getElementById(k).classList.remove('active'));
     document.getElementById(id).classList.add('active');
   });

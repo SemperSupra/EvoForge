@@ -42,3 +42,14 @@ button, select { font: inherit; }
 .atelier .card .header{gap:6px;padding:8px 12px}
 .atelier .card button,.atelier .controls button,.atelier .controls select,.atelier .controls input{min-height:32px}
 .atelier button:focus-visible,.atelier select:focus-visible,.atelier input:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+
+/* Live diagnostic lenses: actual candidates; view-only controls. */
+.evolution-lenses{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem;padding:.65rem 12px}
+.evolution-lenses details{min-width:0;border:1px solid rgba(127,127,127,.4);border-radius:8px;padding:.65rem;overflow-wrap:anywhere}
+.evolution-lenses summary{cursor:pointer;font-weight:600;min-height:32px;display:list-item}
+.evolution-lenses svg{width:100%;height:auto;max-height:240px;display:block}
+.evolution-lenses p,.evolution-lenses li{font-size:.875rem;line-height:1.45}
+.lens-stage-list{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center}
+.evolution-lenses button,.evolution-lenses select,.evolution-lenses input{max-width:100%;min-height:32px}
+.evolution-lenses input{width:5em}.evolution-lenses [aria-pressed=true]{outline:2px solid #0d9488}
+@media(max-width:640px){.evolution-lenses{grid-template-columns:minmax(0,1fr)}}

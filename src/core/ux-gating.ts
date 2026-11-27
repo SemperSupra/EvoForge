@@ -20,7 +20,7 @@ export function canAutoAdvance(args: {
   gate: AdvanceGate;
   readyToAdvance: boolean;
 }): boolean {
-  // Today, auto-advance uses the same gating as the latch being visible.
+  // Readiness is completed current-generation rendering, not a manual pick quota.
   return shouldShowReadyLatch(args);
 }
 

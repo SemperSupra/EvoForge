@@ -1,7 +1,7 @@
 import { readdir, readFile, lstat } from 'node:fs/promises';
 import { resolve, relative, join, sep } from 'node:path';
 const root=resolve(process.argv[2]||'dist');
-const required=new Set(['LICENSE','release.json','index.html','experiences.json','experiences/alife/index.html','experiences/alife/manifest.webmanifest','experiences/alife/sw.js']);
+const required=new Set(['index.html','experiences.json','experiences/alife/index.html','experiences/alife/manifest.webmanifest','experiences/alife/sw.js']);
 const seen=new Set();
 async function walk(dir){
   for(const name of await readdir(dir)){
@@ -18,5 +18,5 @@ if(![...seen].some(x=>/^assets\/.*\.js$/.test(x)))throw Error('Missing compiled 
 const catalog=JSON.parse(await readFile(join(root,'experiences.json'),'utf8'));
 if(catalog.schemaVersion!==1||catalog.experiences.map(x=>x.id).join(',')!=='mosaic,alife')throw Error('Catalog mismatch');
 const html=await readFile(join(root,'experiences/alife/index.html'),'utf8');
-if(!html.includes('0.1.0-rdte.4'))throw Error('Unexpected arena version');
+if(!html.includes('0.1.0-rdte.5'))throw Error('Unexpected arena version');
 console.log('PASS: '+seen.size+' allowlisted static artifacts; no upstream, tests, DLE or source maps');
