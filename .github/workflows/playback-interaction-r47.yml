@@ -25,13 +25,10 @@ jobs:
           mkdir -p r47-desktop mobile-evidence
           npm run preview -- --host 127.0.0.1 --port 5174 --strictPort --base / > r47-desktop/server.log 2>&1 &
           p1=$!
-          npm run preview -- --host 127.0.0.1 --port 4173 --strictPort --base / > mobile-evidence/server.log 2>&1 &
-          p2=$!
-          trap 'kill "$p1" "$p2" 2>/dev/null || true' EXIT
+          trap 'kill "$p1" 2>/dev/null || true' EXIT
           node scripts/wait-for-server.mjs http://127.0.0.1:5174/ || { cat r47-desktop/server.log; exit 1; }
-          node scripts/wait-for-server.mjs http://127.0.0.1:4173/ || { cat mobile-evidence/server.log; exit 1; }
           EVOFORGE_SCREENSHOT_DIR=r47-desktop node scripts/playback-lenses-smoke.mjs
-          node experiments/search-coverage-r39/mobile-smoke.mjs
+          EVOFORGE_PREVIEW_BASE=http://127.0.0.1:5174/ node experiments/search-coverage-r39/mobile-smoke.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:

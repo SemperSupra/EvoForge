@@ -6,7 +6,7 @@ try{
  const context=await browser.newContext({...devices['iPhone 13'],serviceWorkers:'block'});
  const page=await context.newPage();const failures=[];page.on('pageerror',e=>failures.push(e.message));
  await page.addInitScript(()=>{window.gpuRequests=0;Object.defineProperty(navigator,'gpu',{configurable:true,value:{requestAdapter:async()=>{window.gpuRequests++;return null}}})});
- const base='http://127.0.0.1:4173/';
+ const base=process.env.EVOFORGE_PREVIEW_BASE??'http://127.0.0.1:4173/';
  await page.goto(base+'experiences/alife/index.html?mode=observe');
  await page.locator('#mobile-start').waitFor({state:'visible'});
  assert.equal(await page.evaluate(()=>window.gpuRequests),0);
