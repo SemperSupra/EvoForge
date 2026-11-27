@@ -4,6 +4,7 @@ on:
     branches: [rdte/readiness-probe-r19]
 permissions:
   contents: read
+  actions: read
 jobs:
   probe:
     if: github.repository == 'SemperSupra/EvoForge'
@@ -175,60 +176,49 @@ jobs:
             provenance-verification.json
             ${{ steps.attest.outputs.bundle-path }}
           retention-days: 14
-  os-remediation:
+  vendor-assessment:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        mode: [build-only, browser-minimal]
+        include:
+          - { name: build-only, artifact: os-remediation-build-only, digest: "6f6c6c15fee183618d5286c30e2c1aa94990f78eebe9cdef0ac3140f4f050235" }
+          - { name: browser-minimal, artifact: os-remediation-browser-minimal, digest: "5f9c3c6e843a79fd3308f07f9c9a1591aebd651b91cc8305ccef982665d7c60b" }
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          persist-credentials: false
-      - name: Build isolated OS remediation candidate
-        env:
-          MODE: ${{ matrix.mode }}
+          name: ${{ matrix.artifact }}
+          run-id: 45998251952
+          github-token: ${{ github.token }}
+          path: prior
+          digest-mismatch: error
+      - name: Correlate Debian source-package findings
         run: |
           set -euo pipefail
-          mkdir -p os-evidence
+          mkdir -p vendor-evidence
+          curl --fail --silent --show-error --location --proto '=https' https://security-tracker.debian.org/tracker/data/json -o "$RUNNER_TEMP/debian.json"
+          sha256sum "$RUNNER_TEMP/debian.json" > vendor-evidence/tracker.sha256
+          date -u +%FT%TZ > vendor-evidence/retrieved.txt
           python3 - <<'PY'
-          import os,pathlib
-          s=pathlib.Path('Dockerfile.tooling').read_text()
-          s=s.replace('RUN apt-get update', 'RUN apt-get update && apt-get -y upgrade')
-          if os.environ['MODE']=='build-only':
-              first=s.splitlines()[0]
-              s=first+'\nRUN apt-get update && apt-get -y upgrade && rm -rf /var/lib/apt/lists/*\nWORKDIR /workspace\nCMD ["bash"]\n'
-          else:
-              for pkg in ('xvfb','git','curl','fonts-unifont','fonts-wqy-zenhei','fonts-ipafont-gothic','fonts-tlwg-loma-otf','fonts-freefont-ttf'):
-                  s=s.replace('    '+pkg+' '+chr(92)+'\n','')
-          pathlib.Path('os-evidence/Dockerfile.candidate').write_text(s)
-          PY
-          docker build --iidfile os-evidence/image-id.txt -f os-evidence/Dockerfile.candidate .
-          image="$(cat os-evidence/image-id.txt)"
-          docker run --rm --network none "$image" dpkg-query -W > os-evidence/packages.tsv
-          docker run --rm "$image" node --version > os-evidence/node.txt
-      - name: Scan candidate and classify fix availability
-        run: |
-          set -euo pipefail
-          curl --fail --silent --show-error --location --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
-          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
-          "$RUNNER_TEMP/trivy" image --image-src docker --scanners vuln --pkg-types os --format json --output os-evidence/audit.json --exit-code 0 "$(cat os-evidence/image-id.txt)"
-          python3 - <<'PY'
-          import json,collections,pathlib
-          a=json.load(open('os-evidence/audit.json'))
-          assert any(r.get('Class')=='os-pkgs' for r in a.get('Results',[]))
-          v=[x for r in a['Results'] for x in (r.get('Vulnerabilities') or [])]
-          counts=collections.Counter(x['Severity'] for x in v)
-          fixes=collections.Counter(x['Severity'] for x in v if x.get('FixedVersion'))
-          report={'counts':dict(counts),'with_fixed_version':dict(fixes),'release_eligible':not any(x['Severity'] in ('HIGH','CRITICAL') for x in v)}
-          pathlib.Path('os-evidence/summary.json').write_text(json.dumps(report,indent=2))
-          print(json.dumps(report))
+          import json,pathlib,os,collections
+          a=json.load(open('prior/audit.json'))
+          db=json.load(open(pathlib.Path(os.environ['RUNNER_TEMP'])/'debian.json'))
+          rows=[]
+          for r in a['Results']:
+              for v in r.get('Vulnerabilities') or []:
+                  if v['Severity'] not in ('HIGH','CRITICAL'): continue
+                  src=v.get('SrcName') or v['PkgName']
+                  entry=db.get(src,{}).get(v['VulnerabilityID'],{})
+                  release=entry.get('releases',{}).get('trixie',{})
+                  rows.append(dict(id=v['VulnerabilityID'],package=v['PkgName'],source=src,installed=v.get('InstalledVersion'),scanner_severity=v['Severity'],scanner_fixed=v.get('FixedVersion'),vendor_status=release.get('status','unknown'),vendor_urgency=release.get('urgency','unknown'),vendor_fixed=release.get('fixed_version'),vendor_nodsa=release.get('nodsa'),vendor_nodsa_reason=release.get('nodsa_reason')))
+          assert rows
+          pathlib.Path('vendor-evidence/assessment.json').write_text(json.dumps(rows,indent=2))
+          print(dict(collections.Counter((x['vendor_status']+' / '+x['vendor_urgency']) for x in rows)))
           PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
-          name: os-remediation-${{ matrix.mode }}
-          path: os-evidence/
+          name: vendor-assessment-${{ matrix.name }}
+          path: vendor-evidence/
           retention-days: 14
