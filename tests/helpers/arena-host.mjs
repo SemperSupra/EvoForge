@@ -9,7 +9,7 @@ export function qualifyArenaHost(html, sw, Params, clone) {
   check('exact startup boundary', script.split(boot).length===2 && script.split(boot)[1].includes('else beginArena();'));
   function start(search) {
     const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
-    const elements = Object.fromEntries(ids.map(id => [id, {id, disabled:false, classList:{add(){},remove(){},toggle(){}}, addEventListener(){}}]));
+    const elements = Object.fromEntries(ids.map(id => [id, {id, disabled:false, classList:{add(){},remove(){},toggle(){}}, addEventListener(){},getContext(){return {}},setAttribute(){}}]));
     const document = {getElementById(id){if(!elements[id])throw Error('Missing DOM id: '+id);return elements[id];},querySelectorAll(){return Object.values(elements).filter(e=>e.id.startsWith('sl-')||e.id.startsWith('surp-')||e.id.startsWith('fam-')||['btn-apply-rec','btn-auto-director','btn-auto-chaos','btn-respawn'].includes(e.id));}};
     const window={addEventListener(){}};
     const host=new Function('document','window','navigator','location','isSecureContext','URLSearchParams','structuredClone',script.split(boot)[0]+'\nreturn {buildEcosystem,seededRandom,experience,state,paused:()=>paused};')(document,window,{}, {search},false,Params,clone);
@@ -44,5 +44,7 @@ export function qualifyArenaHost(html, sw, Params, clone) {
   check('pause resume and strict boolean',(()=>{small.api.setPaused(true);const yes=small.paused();small.api.setPaused(false);return yes&&!small.paused()&&throws(()=>small.api.setPaused('yes'));})());
   check('unknown surprise rejected',throws(()=>small.api.triggerSurprise('unknown')));
   check('known surprise updates state',small.api.triggerSurprise('lowg').ok&&small.state.gravityScale===0.35);
+  check('observe denies both strike APIs and disables targeting controls',throws(()=>def.api.armMeteor(0,0))&&throws(()=>def.api.lightning(0,0))&&def.elements['strike-place'].disabled&&def.elements['strike-lightning'].disabled);
+  check('unstarted play cannot admit impacts',throws(()=>small.api.armMeteor(0,0))&&throws(()=>small.api.lightning(0,0)));
   return checks;
 }

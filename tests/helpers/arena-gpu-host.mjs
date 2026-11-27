@@ -9,7 +9,7 @@ export async function testGpuHost(html,Params,clone){
   const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(x=>x[1]);
   const frames=[],buffers=[],writes=[],groups=[],pipes=[],submissions=[],retired=[],events={};let lost;
   const ctx={configure(){},getCurrentTexture(){return{createView(){return{}}}}};
-  const elements=Object.fromEntries(ids.map(id=>[id,{id,style:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},getContext(k){return k==='webgpu'?ctx:{clearRect(){},beginPath(){},moveTo(){},lineTo(){},stroke(){}}}}]));
+  const elements=Object.fromEntries(ids.map(id=>[id,{id,style:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},setAttribute(){},getContext(k){return k==='webgpu'?ctx:{clearRect(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},closePath(){},arc(){},fill(){},fillText(){}}}}]));
   const doc={getElementById(id){if(!elements[id])throw Error('missing DOM id '+id);return elements[id]},querySelectorAll(){return Object.values(elements)},body:{classList:{toggle(){}}}};
   const win={innerWidth:960,innerHeight:640,addEventListener(k,fn){events[k]=fn}};
   const noop=()=>{}, makeRender=()=>({setBindGroup:noop,setPipeline:noop,draw:noop,executeBundles:noop,end:noop,finish(){return{}}});
@@ -45,7 +45,7 @@ export async function testGpuHost(html,Params,clone){
  assert('compute pass sequence',cmd.calls.map(x=>x[0]).join(',')===['clearGrid','updateEcology','reproduce','snapshotNodes','integrateVerlet','initCarrionClaims',...Array.from({length:4},()=>['clearHash','snapshotNodes','buildSpatialHash','relaxConstraints']).flat(),'finalizeCarrion','collectStats'].join(','),cmd.calls);
  assert('node coverage',cmd.calls.filter(x=>['integrateVerlet','initCarrionClaims','snapshotNodes','buildSpatialHash','relaxConstraints','finalizeCarrion'].includes(x[0])).every(x=>x[1]===Math.ceil(e.activeNodes/64)));
  assert('one render, one scheduled successor',cmd.renders===1&&h.frames.length===1&&h.state.simTick===1);
- const sim=h.buffers.find(b=>b.size===288&&b.usage===18),cam=h.buffers.find(b=>b.size===176&&b.usage===18);
+ const sim=h.buffers.find(b=>b.size===608&&b.usage===18),cam=h.buffers.find(b=>b.size===432&&b.usage===18);
  const su=new Uint32Array(sim.bytes.buffer),cu=new Uint32Array(cam.bytes.buffer);
  assert('uniform offsets',su[0]===e.activeNodes&&su[1]===e.totalCreatures&&su[3]===42&&su[4]===1&&cu[25]===e.activeNodes&&cu[26]===1&&cu[27]===42);
  h.api.setPaused(true);let c=h.submissions.length;await h.frame();
@@ -59,6 +59,7 @@ export async function testGpuHost(html,Params,clone){
  h.api.setPaused(false);for(let i=0;i<14;i++)await h.frame((i+2)*16);
  assert('telemetry cadence',h.submissions.at(-1).copies.length===1&&h.api.getState().telemetry.tick===15);
  h.api.resetEcosystem();assert('reset tick and stats',h.state.simTick===0&&h.api.getState().telemetry.tick===0&&h.buffers[7].bytes.every(x=>x===0));
+ h.api.armMeteor(3,0,true);assert('arm and cancel receipt',h.api.getState().interventions.pending.phase==='countdown'&&h.api.cancelMeteor()===true&&h.api.getState().interventions.pending===null);
  h.events.pagehide({persisted:true});assert('bfcache pause',h.api.getState().phase==='paused');
  h.events.pagehide({persisted:false});assert('navigation releases GPU',h.retired.includes('device'));
  const no=await start('?mode=observe',{noGpu:true});assert('no GPU failure',no.experience.phase==='error'&&!no.elements['arena-message'].hidden&&no.frames.length===0);

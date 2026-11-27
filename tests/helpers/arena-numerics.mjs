@@ -33,5 +33,6 @@ export function testArenaNumerics(html){
  assert('shared head snapshot precedes integration',html.includes('cpass.setPipeline(snapshotPipe);cpass.dispatchWorkgroups(groups);\n    cpass.setPipeline(integratePipe)')&&compute.includes('let senseP=nodes[params.totalNodes+creatures[cid].firstNode].pos.xyz;'));
  assert('constraint displacement does not inject momentum',compute.includes('nodes[idx].prev.xyz+(p-preCorrection)'));
  assert('scaled ecology and terrain agree',compute.includes('params.arena.radius*2.0+1.0')&&render.includes('cam.arena.radius*2.0+1.0')&&render.includes('cam.arena.radius+0.5'));
+ assert('crater uniforms and motion telemetry stay separate',html.includes('packCraters(f32,72);packImpacts(f32,136)')&&html.includes('packCraters(cf32,44)')&&html.includes('fastMovingNodes = arr[23]')&&html.includes('craters:arr[28]'));
  return {checks,tested,legacyMisses,correctedMisses:0};
 }
