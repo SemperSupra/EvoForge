@@ -1,0 +1,103 @@
+name: Alpine capability profile experiments
+on:
+  push:
+    branches: [rdte/readiness-probe-r19]
+    paths: ['containers/alpine/**', '.github/workflows/alpine-profiles.yml']
+permissions:
+  contents: read
+jobs:
+  profiles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [base, runtime, compiler, debug, apk-compiler]
+    env:
+      PROFILE: ${{ matrix.profile }}
+      DONOR: node@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
+      SOURCE: dde7f1d29d5ec2798eae87546dbc773da85ef894
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Construct and inventory exact capability image
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          docker pull alpine:3.24.4
+          base="$(docker image inspect alpine:3.24.4 --format '{{index .RepoDigests 0}}')"
+          printf '%s\n' "$base" > evidence/base.txt
+          printf '%s\n' "$DONOR" > evidence/donor.txt
+          git rev-parse HEAD > evidence/profile-source.txt
+          docker build --target "$PROFILE" --build-arg ALPINE_BASE="$base" --build-arg NODE_DONOR="$DONOR" --iidfile evidence/image-id.txt -f containers/alpine/Dockerfile containers/alpine
+          image="$(cat evidence/image-id.txt)"
+          docker image inspect "$image" > evidence/image.json
+          docker run --rm --network none --entrypoint /bin/sh "$image" -ec 'apk info -v' | sort > evidence/packages.txt
+          docker run --rm --network none --entrypoint /bin/sh "$image" -ec 'apk info -a; for p in $(apk info); do apk info -L "$p"; done' > evidence/package-detail.txt
+          docker run --rm --network none --entrypoint /bin/sh "$image" -ec 'if command -v node >/dev/null; then node --version; sha256sum "$(command -v node)"; ldd "$(command -v node)"; fi; if command -v npm >/dev/null; then npm --version; fi' > evidence/toolchain.txt
+          cid="$(docker create "$image")"
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          docker export "$cid" | tar -tvf - > evidence/files.txt
+          docker save "$image" | gzip -n | wc -c > evidence/compressed-tar-bytes.txt
+          docker rm "$cid"
+          trap - EXIT
+          cat evidence/toolchain.txt
+          python3 -c 'import json; print("image_bytes",json.load(open("evidence/image.json"))[0]["Size"]);print("packages",len(open("evidence/packages.txt").readlines()))'
+      - name: Profile boundary and rootless smoke
+        run: |
+          set -euo pipefail
+          image="$(cat evidence/image-id.txt)"
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint /bin/sh "$image" -ec 'test "$(id -u)" = 10001; test ! -w /etc'
+          case "$PROFILE" in
+            base) docker run --rm --network none "$image" sh -ec '! command -v node && ! command -v npm && ! command -v curl && ! command -v strace';;
+            runtime) docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges "$image" -e 'if(process.getuid()!==10001||process.versions.node.split(".")[0]!=="22")process.exit(1);console.log("runtime pass")'; docker run --rm --network none --entrypoint sh "$image" -ec '! command -v npm && ! command -v curl && ! command -v strace';;
+            compiler|apk-compiler) docker run --rm --network none --entrypoint sh "$image" -ec 'command -v node; command -v npm; ! command -v curl && ! command -v strace';;
+            debug) docker run --rm --network none --entrypoint sh "$image" -ec 'curl --version; strace --version; node --version; npm --version';;
+          esac
+      - name: Inventory SBOM and OS vulnerability assessment
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          t="$RUNNER_TEMP/trivy"; image="$(cat evidence/image-id.txt)"
+          "$t" image --image-src docker --scanners vuln --pkg-types os --list-all-pkgs --format json --output evidence/audit.json --exit-code 0 "$image"
+          "$t" image --image-src docker --format cyclonedx --output evidence/sbom.json "$image"
+          python3 - <<'PY'
+          import json,collections,pathlib
+          a=json.load(open('evidence/audit.json'))
+          os=[r for r in a.get('Results',[]) if r.get('Class')=='os-pkgs']
+          assert os and any(r.get('Packages') for r in os),'OS package coverage missing'
+          v=[x for r in os for x in r.get('Vulnerabilities') or []]
+          result={'counts':dict(collections.Counter(x['Severity'] for x in v)),'packages_scanned':sum(len(r.get('Packages') or []) for r in os),'os_gate':not any(x['Severity'] in ('HIGH','CRITICAL') for x in v)}
+          pathlib.Path('evidence/scan-summary.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result))
+          PY
+      - name: Reproduce locked EvoForge compiler output twice
+        if: matrix.profile == 'compiler' || matrix.profile == 'apk-compiler'
+        run: |
+          set -euo pipefail
+          image="$(cat evidence/image-id.txt)"
+          for i in 1 2; do
+            scratch="$(mktemp -d)"
+            trap 'rm -rf "$scratch"' EXIT
+            git archive "$SOURCE" | tar -x -C "$scratch"
+            start="$(date +%s)"
+            docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch:/workspace" -w /workspace --entrypoint sh "$image" -ec 'node --version; npm --version; case "$(node --version)" in v22.*) ;; *) exit 1;; esac; npm ci --ignore-scripts; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist; npm audit --audit-level=low' 2>&1 | tee "evidence/build-$i.log"
+            echo "$(($(date +%s)-start))" > "evidence/seconds-$i.txt"
+            (cd "$scratch/dist" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "evidence/dist-$i.sha256"
+            rm -rf "$scratch"
+            trap - EXIT
+          done
+          cmp evidence/dist-1.sha256 evidence/dist-2.sha256
+          printf '%s  %s\n' 4f269bfce25085ada3fcc63441f6c7a116fe7439ceeeac4e7d3188dcda07f39a evidence/dist-1.sha256 | sha256sum -c -
+      - name: Enforce existing OS severity gate
+        run: python3 -c 'import json; assert json.load(open("evidence/scan-summary.json"))["os_gate"], "high/critical findings require remediation"'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: alpine-profile-${{ matrix.profile }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 14

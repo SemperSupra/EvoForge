@@ -2,6 +2,7 @@ name: Readiness probe qualification
 on:
   push:
     branches: [rdte/readiness-probe-r19]
+    paths-ignore: ['containers/alpine/**', '.github/workflows/alpine-profiles.yml', '.github/workflows/os-bakeoff*.yml', 'scripts/production-smoke.mjs']
 permissions:
   contents: read
   actions: read
