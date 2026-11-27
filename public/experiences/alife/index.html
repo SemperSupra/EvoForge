@@ -8,6 +8,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <style>
     :root {
+      --toolbar-height: 48px;
       --bg: #07090c;
       --panel: rgba(13, 17, 23, 0.93);
       --border: rgba(255, 255, 255, 0.13);
@@ -28,11 +29,11 @@
     }
     canvas#canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
     #hud-left, #hud-right {
-      position: fixed; top: 10px; width: 345px;
+      position: fixed; top: calc(var(--toolbar-height) + 16px); bottom: 52px; width: 345px;
       background: var(--panel); border: 1px solid var(--border);
       border-radius: 10px; padding: 10px 12px; backdrop-filter: blur(12px);
       font-size: 10px; line-height: 1.36; box-shadow: 0 12px 32px rgba(0,0,0,0.72);
-      max-height: calc(100vh - 20px); overflow-y: auto; z-index: 10;
+      min-height: 0; overflow-y: auto; z-index: 10;
     }
     #hud-left { left: 10px; }
     #hud-right { right: 10px; width: 350px; }
@@ -84,7 +85,7 @@
     canvas#sparkline { width: 100%; height: 44px; background: rgba(0,0,0,0.42); border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; display: block; margin-top: 3px; }
     .director-box { background: rgba(163, 113, 247, 0.08); border: 1px solid rgba(163, 113, 247, 0.30); border-radius: 6px; padding: 5px 7px; margin-top: 4px; font-size: 9px; }
     .event-log { max-height: 44px; overflow-y: auto; font-size: 8.5px; color: var(--muted); background: rgba(0,0,0,0.35); padding: 3px 5px; border-radius: 4px; margin-top: 3px; }
-    #experience-toolbar { position: fixed; z-index: 30; top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content:center; max-width: min(92vw, 420px); background: var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px; font-size:12px; }
+    #experience-toolbar { position: fixed; z-index: 30; top: 8px; left: 10px; right: 10px; height: var(--toolbar-height); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content:center; overflow-y:auto; background: var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px; font-size:12px; }
     #experience-toolbar a { color:#9ce5ff; }
     #experience-toolbar button { font-size:12px; }
     #arena-message { position:fixed; z-index:40; top:50%; left:50%; transform:translate(-50%,-50%); width:min(88vw,480px); padding:20px; background:#131c27; color:white; border:1px solid #687b91; border-radius:12px; font-size:14px; }
@@ -92,7 +93,12 @@
     #arena-message a { display:block; color:#9ce5ff; margin-top:12px; }
     button:focus-visible,a:focus-visible,input:focus-visible { outline:2px solid #38bdf8; outline-offset:2px; }
     button:disabled,input:disabled { opacity:.45; cursor:not-allowed; }
-    @media(max-width:850px){ #experience-toolbar { top:auto; bottom:48px; } #hud-left,#hud-right{width:calc(50vw - 12px);max-height:44vh;top:5px;padding:6px;} #hud-left{left:5px;} #hud-right{right:5px;} .roster-grid,.guild-bar{grid-template-columns:1fr 1fr;} }
+    @media(max-width:850px){
+      #hud-left,#hud-right{width:calc(50vw - 12px);bottom:auto;max-height:min(44vh,calc(100vh - var(--toolbar-height) - 72px));padding:6px;}
+      #hud-left{left:5px;} #hud-right{right:5px;}
+      .roster-grid,.guild-bar{grid-template-columns:1fr 1fr;}
+    }
+    @media(max-width:600px){ :root{--toolbar-height:88px;} #experience-toolbar{gap:5px;padding:6px;} }
   </style>
 </head>
 <body>
@@ -222,7 +228,7 @@ const launchQuery = new URLSearchParams(location.search);
 const mode = launchQuery.get('mode') === 'play' ? 'play' : 'observe';
 const initialSeed = launchQuery.get('seed');
 const validSeed = initialSeed !== null && /^\d{1,10}$/.test(initialSeed) && Number(initialSeed) <= 0xffffffff;
-const experience = { id: 'alife', version: '0.1.0-rdte.3', upstream: 'gemini-v7', mode, phase: 'initializing', error: null };
+const experience = { id: 'alife', version: '0.1.0-rdte.4', upstream: 'gemini-v7', mode, phase: 'initializing', error: null };
 let paused = false, stopped = false, resetEpoch = 0;
 document.getElementById('experience-mode').textContent = mode === 'play' ? 'Play • experimental' : 'Observe • experimental';
 function setPaused(value) {

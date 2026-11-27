@@ -96,6 +96,16 @@ try{
     await progress(15);
   }
   await page.evaluate(()=>window.__ARENA_RPC__.setPaused(true));
+  // Exercise actual pointer actionability at narrow portrait and landscape sizes.
+  // Never bypass overlay interception with force clicks.
+  for(const viewport of [{width:390,height:844},{width:844,height:390}]){
+    await page.setViewportSize(viewport);
+    await page.locator('#fam-0').click({trial:true,timeout:10000});
+    await page.locator('#fam-6').click({trial:true,timeout:10000});
+    await page.getByRole('link',{name:'All experiences',exact:true}).click({trial:true,timeout:10000});
+    console.log('Responsive pointer targets PASS '+JSON.stringify(viewport));
+  }
+  await page.setViewportSize({width:960,height:640});
   assert.equal((await page.evaluate(()=>window.__ARENA_RPC__.setKnobs({ambientTemp:33}))).knobs.state.ambientTemp,33);
   await page.goto(base+'experiences/alife/index.html?mode=observe&seed=42');
   await progress(15);
