@@ -6,13 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       promotion:
-        description: 'Promote exact RC source 86755c2 and signed subject 2fbb903e, or preflight only'
+        description: 'Promote exact RC source 4868538 and signed subject 3f25a79d, or preflight only'
         type: choice
         required: true
         default: preflight-only
         options:
           - preflight-only
-          - deploy-86755c2-2fbb903e
+          - deploy-4868538-3f25a79d
 concurrency:
   group: evoforge-guarded-pages-promotion
   cancel-in-progress: false
@@ -20,10 +20,10 @@ permissions:
   contents: read
   actions: read
 env:
-  RELEASE_SOURCE: 86755c2bf87dd5230141d84ece273b3b43575eee
-  RELEASE_RUN: '46046303072'
-  SUBJECT_SHA: 2fbb903e0897c62df5552d9757a9a642a807350695c562f957156d639721bcf5
-  MANIFEST_SHA: 762d7277073c626f9f4a6a72554529b3e5d4f1a2a66692d191eb9f8aabdaa7ec
+  RELEASE_SOURCE: 48685389758792d26e58f531e22d7f2d2f4aca5f
+  RELEASE_RUN: '46056100441'
+  SUBJECT_SHA: 3f25a79dd50247c0281fbefc82e2779f91b904f9e73c0da00ad92479d4d2bdc7
+  MANIFEST_SHA: e8de245ab0b8152dea1ed2ff7585b1d4fd8688be1808945aca3928e8dcb69824
 jobs:
   promotion-preflight:
     if: github.repository == 'SemperSupra/EvoForge'
@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 86755c2bf87dd5230141d84ece273b3b43575eee
+          ref: 48685389758792d26e58f531e22d7f2d2f4aca5f
           persist-credentials: false
       - name: Bind exact current release source, workflow and successful jobs
         env:
@@ -64,7 +64,7 @@ jobs:
           assert {j['name'] for j in jobs}=={'build','isolated-browser','metal','provenance'}
           assert all(j['conclusion']=='success' for j in jobs)
           a={x['name']:x for x in json.load(open('preflight/artifacts.json'))['artifacts']}
-          expected={'signed-release-candidate':(15222632423,'sha256:3790a72dac90bf4961f610b82fca767142b2b62a906c5f7867794089b530aa8f'),'candidate-site':(15223410739,'sha256:f674b23117712e456cdfd575cc0a305af01c1ac7b170d8b2fee928350b31393b'),'candidate-build-evidence':(15223100890,'sha256:e2ad4ef3327f78a05413f9aff29eeff5c8d7f5a2f7896e745d323eba808bbc8a')}
+          expected={'signed-release-candidate':(15225599416,'sha256:25e0765bbe6384c65aa473952d1c5e9bff7bfa65e1846ab3dcbb6bd709f2d71b'),'candidate-site':(15226302443,'sha256:7cb1896d9b7d3816a9eea05b112076bdf540af84d3c8d6f4642bff917023a901'),'candidate-build-evidence':(15226871979,'sha256:c438ea7c03ffffd87812cbb56348cfa3b2992d415ef2ab5c7dfe29db11bb8a78')}
           for name,(ident,digest) in expected.items():
               assert a[name]['id']==ident and a[name]['digest']==digest and not a[name]['expired']
           print('PASS exact release source, successful job graph and artifact identity')
@@ -72,14 +72,14 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: signed-release-candidate
-          run-id: 46046303072
+          run-id: 46056100441
           github-token: ${{ github.token }}
           digest-mismatch: error
           path: signed
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: candidate-site
-          run-id: 46046303072
+          run-id: 46056100441
           github-token: ${{ github.token }}
           digest-mismatch: error
           path: site
@@ -128,7 +128,7 @@ jobs:
         id: pages
         env:
           GH_TOKEN: ${{ github.token }}
-          PROMOTION_REQUEST: ${{ github.event_name == 'workflow_dispatch' && inputs.promotion == 'deploy-86755c2-2fbb903e' }}
+          PROMOTION_REQUEST: ${{ github.event_name == 'workflow_dispatch' && inputs.promotion == 'deploy-4868538-3f25a79d' }}
         run: |
           set -euo pipefail
           if gh api "repos/$GITHUB_REPOSITORY/pages" --jq '{build_type,html_url,status,source}' > preflight/pages.json; then
@@ -153,7 +153,7 @@ jobs:
           printf '%s\n' "$SUBJECT_SHA" > preflight/subject.txt
           printf '%s\n' 'PASS_ARTIFACT_PREFLIGHT' > preflight/result.txt
       - name: Configure Pages only for an authorized deployment request
-        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/gh-pages' && inputs.promotion == 'deploy-86755c2-2fbb903e' && steps.pages.outputs.ready == 'true'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/gh-pages' && inputs.promotion == 'deploy-4868538-3f25a79d' && steps.pages.outputs.ready == 'true'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
         with:
           enablement: false
@@ -190,7 +190,7 @@ jobs:
           retention-days: 30
   deploy:
     needs: promotion-preflight
-    if: github.repository == 'SemperSupra/EvoForge' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/gh-pages' && inputs.promotion == 'deploy-86755c2-2fbb903e' && needs.promotion-preflight.outputs.pages_ready == 'true'
+    if: github.repository == 'SemperSupra/EvoForge' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/gh-pages' && inputs.promotion == 'deploy-4868538-3f25a79d' && needs.promotion-preflight.outputs.pages_ready == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     permissions:
@@ -263,4 +263,4 @@ jobs:
           name: live-pages-acceptance
           path: live-evidence/
           retention-days: 30
-# R32: read-only re-observation after owner-reported Pages source transition.
+# R37: exact R33 qualified experience-correction artifact; preflight only on integration push.
