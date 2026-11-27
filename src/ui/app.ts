@@ -43,7 +43,10 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   if(atelier)el.classList.add("atelier");
 
   let playback: Playback = "paused";
-  let pace: Pace = atelier ? "manual" : "medium";
+  let pace: Pace = atelier ? "slow" : "medium";
+  let reviewSeconds=20;
+  let interactionHeld=false,interactionRelease:number|null=null;
+  let editingControl:HTMLElement|null=null;
 
   let sessionSeed = 123456789;
   let effectiveSessionSeed=sessionSeed;
@@ -88,6 +91,17 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   pool.onMessage(onWorkerMessage);
   const replaceGalleryPool=()=>{pool.terminate();pool=new WorkerPool(workerCountFromPace(pace));pool.onMessage(onWorkerMessage);};
 
+  // Preserve the live control during pointer gestures, native pickers and keyboard edits.
+  const actionable=(t:EventTarget|null)=>t instanceof Element?t.closest<HTMLElement>("button,select,input,summary,canvas,[role=button]"):null;
+  function holdInteraction(){if(interactionRelease!==null){clearTimeout(interactionRelease);interactionRelease=null;}interactionHeld=true;cancelReadyTimer();}
+  function releaseInteraction(){if(interactionRelease!==null)clearTimeout(interactionRelease);interactionRelease=window.setTimeout(()=>{interactionRelease=null;interactionHeld=false;editingControl=null;render();},180);}
+  el.addEventListener("pointerdown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;}},true);
+  window.addEventListener("pointerup",()=>{if(interactionHeld&&!editingControl)releaseInteraction();},true);
+  window.addEventListener("pointercancel",()=>{if(interactionHeld)releaseInteraction();},true);
+  el.addEventListener("focusin",e=>{const target=actionable(e.target);if(target?.matches("select,input:not([type=range])")){editingControl=target;holdInteraction();}},true);
+  el.addEventListener("focusout",e=>{if(editingControl===e.target)releaseInteraction();},true);
+  el.addEventListener("change",()=>{if(interactionHeld)releaseInteraction();},true);
+  el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
   // First session seed is derived from favorites (if any). App() can't be async, so bootstrap.
   void startNewSession();
 
@@ -320,7 +334,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function currentGate(): AdvanceGate {
-    if (focusCandidateId !== null || libraryOpen) return "focus_open";
+    if (focusCandidateId !== null || libraryOpen || interactionHeld) return "focus_open";
     if (playback === "paused") return "paused";
     if (refineHold) return "hold_refine";
     return "open";
@@ -337,7 +351,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       if (gen.generationId !== expectedGeneration || gen.renderIntentId !== expectedIntent) return;
       if (!canAutoAdvance({ playback, pace, gate: currentGate(), readyToAdvance: readyToAdvance() })) return;
       advanceOneGeneration();
-    }, prof.autoAdvanceDelayMs ?? 0);
+    }, reviewSeconds*1000);
   }
 
   function advanceOneGeneration() {
@@ -615,6 +629,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function render() {
+    if(interactionHeld)return;
     el.innerHTML = "";
 
     const header = document.createElement("div");
@@ -696,14 +711,21 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     controls.appendChild(playBtn);
 
     const paceSel = document.createElement("select");
-    paceSel.setAttribute("aria-label","Evolution pace");
-    for (const p of ["manual","slow","medium","fast","ultra"] as Pace[]) {
+    paceSel.setAttribute("aria-label","Preview quality");
+    paceSel.title="Rendering detail, independent of review speed";
+    for (const p of ["slow","medium","fast","ultra"] as Pace[]) {
       const opt = document.createElement("option");
-      opt.value = p; opt.textContent = p; if (p === pace) opt.selected = true;
+      opt.value = p; opt.textContent = ({slow:"High detail",medium:"Balanced",fast:"Quick preview",ultra:"Lowest detail",manual:"Manual"})[p]; if (p === pace) opt.selected = true;
       paceSel.appendChild(opt);
     }
     paceSel.onchange = () => setPace(paceSel.value as Pace);
     controls.appendChild(paceSel);
+    const speed=document.createElement("div");speed.className="review-speed";
+    const slow=document.createElement("span");slow.textContent="Slow";const fast=document.createElement("span");fast.textContent="Fast";
+    const slider=document.createElement("input");slider.type="range";slider.min="0";slider.max="59";slider.step="1";slider.value=String(60-reviewSeconds);slider.setAttribute("aria-label","Review speed");slider.setAttribute("aria-valuetext",reviewSeconds+" seconds per generation");
+    const reading=document.createElement("output");reading.textContent=reviewSeconds+"s / generation";
+    slider.oninput=()=>{reviewSeconds=60-Number(slider.value);reading.textContent=reviewSeconds+"s / generation";slider.setAttribute("aria-valuetext",reviewSeconds+" seconds per generation");cancelReadyTimer();};slider.onchange=()=>{cancelReadyTimer();if(!interactionHeld)render();};
+    speed.append(slow,slider,fast,reading);controls.append(speed);
 
     const nextBtn = document.createElement("button");
     nextBtn.textContent = "Next";
@@ -734,7 +756,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     const prof = paceProfile(pace);
     const readyLatch=shouldShowReadyLatch({ playback, pace, gate: currentGate(), readyToAdvance: readyToAdvance() });
     const latch=document.createElement("div");latch.className="advance-strip";
-    const status=document.createElement("span");status.className="advance-status";status.textContent=readyLatch?"Ready · continuing in "+((prof.autoAdvanceDelayMs??0)/1000)+"s":currentGate()==="hold_refine"?"Refining generation…":playback==="playing"?"Rendering / exploring":"Paused";
+    const status=document.createElement("span");status.className="advance-status";status.textContent=readyLatch?"Ready · continuing in "+reviewSeconds+"s":currentGate()==="hold_refine"?"Refining generation…":playback==="playing"?"Rendering / exploring":"Paused";
     const hold=document.createElement("button");hold.textContent="Hold";hold.disabled=!readyLatch;hold.onclick=()=>setPlayback("paused");
     const adv=document.createElement("button");adv.textContent="Advance now";adv.disabled=!readyLatch;adv.onclick=()=>advanceOneGeneration();
     latch.append(status,hold,adv);el.append(latch);
@@ -794,24 +816,24 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       }
 
       const footer = document.createElement("div");
-      footer.className = "header";
+      footer.className = "candidate-actions";
       footer.style.borderTop = "1px solid rgba(127,127,127,0.35)";
       footer.style.borderBottom = "none";
 
       const pickBtn = document.createElement("button");
-      pickBtn.textContent = (c.status === "picked") ? "Unpick" : "Pick";
+      pickBtn.textContent = "✓";pickBtn.setAttribute("aria-label",c.status==="picked"?"Unpick":"Pick");pickBtn.title=c.status==="picked"?"Unpick":"Pick";pickBtn.setAttribute("aria-pressed",String(c.status==="picked"));
       pickBtn.disabled = c.status === "retired";
       pickBtn.onclick = () => toggleCandidateStatus(c.id, c.status === "picked" ? "normal" : "picked");
       footer.appendChild(pickBtn);
 
       const skipBtn = document.createElement("button");
-      skipBtn.textContent = (c.status === "skipped") ? "Unskip" : "Skip";
+      skipBtn.textContent = "×";skipBtn.setAttribute("aria-label",c.status==="skipped"?"Unskip":"Skip");skipBtn.title=c.status==="skipped"?"Unskip":"Skip";skipBtn.setAttribute("aria-pressed",String(c.status==="skipped"));
       skipBtn.disabled = c.status === "retired";
       skipBtn.onclick = () => toggleCandidateStatus(c.id, c.status === "skipped" ? "normal" : "skipped");
       footer.appendChild(skipBtn);
 
       const favBtn = document.createElement("button");
-      favBtn.textContent = "Favorite";
+      favBtn.textContent = "☆";favBtn.setAttribute("aria-label","Favorite");favBtn.title="Save to library";
       favBtn.disabled = c.status === "retired";
       favBtn.onclick = () => favoriteCandidate(c);
       footer.appendChild(favBtn);

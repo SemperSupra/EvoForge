@@ -22,7 +22,7 @@ try{
  const layout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,buttons:[...document.querySelectorAll('.card button')].filter(x=>x.getBoundingClientRect().width>0).map(x=>({w:x.getBoundingClientRect().width,h:x.getBoundingClientRect().height}))}));
  assert.ok(layout.scroll<=layout.width+1,JSON.stringify(layout));assert.ok(layout.buttons.length>0);assert.ok(layout.buttons.every(b=>b.w>=44&&b.h>=44),JSON.stringify(layout));
  await page.screenshot({path:out+'/03-mobile-craft.png',fullPage:false});
- await page.getByLabel('Evolution pace').selectOption('slow');
+ await page.getByLabel('Preview quality').selectOption('slow');await page.getByRole('slider',{name:'Review speed'}).fill('57');await page.waitForTimeout(250);
  await page.waitForFunction(()=>document.querySelectorAll('.card[data-render-state="ready"]').length===16,{},{timeout:60000});
  const baseline=await page.locator('.grid').evaluate(e=>e.getBoundingClientRect().top+scrollY);
  await page.getByRole('button',{name:'Play',exact:true}).click();

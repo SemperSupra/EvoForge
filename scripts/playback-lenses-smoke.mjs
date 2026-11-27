@@ -10,7 +10,9 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
 const ready=()=>page.waitForFunction(()=>{const cards=[...document.querySelectorAll('.grid .card')];return cards.length===16&&cards.every(c=>c.getAttribute('data-render-state')==='ready');},null,{timeout:90000});
 const generation=()=>page.locator('.grid').getAttribute('data-generation').then(Number);
 const next=async g=>{await page.waitForFunction(v=>Number(document.querySelector('.grid')?.getAttribute('data-generation'))>v,g,{timeout:90000});return generation();};
-const pace=()=>page.getByRole('combobox',{name:'Evolution pace'});
+const pace=()=>page.getByRole('combobox',{name:'Preview quality'});
+const speed=()=>page.getByRole('slider',{name:'Review speed'});
+const setSpeed=async(seconds)=>{await speed().fill(String(60-seconds));await page.waitForTimeout(250);};
 const btn=name=>page.getByRole('button',{name,exact:true});
 const sleep=ms=>page.waitForTimeout(ms);
 const results=[];
@@ -18,23 +20,23 @@ try{
  for(const route of ['mosaic-legacy','mosaic']){
    await page.goto('http://127.0.0.1:5174/?experience='+route);
    await ready();assert.equal(await page.locator('.grid').getAttribute('data-playback'),'paused');
-   await pace().selectOption('slow');await ready();
+   await pace().selectOption('slow');await setSpeed(3);await ready();
    const initial=await generation(),started=Date.now();
    await btn('Play').click();await next(initial);const slow=Date.now()-started;assert.ok(slow>=2200,'slow pace advanced too early '+slow);
    const current=await generation();await next(current); // No manual picks in either cycle.
    await btn('Pause').click();await ready();const held=await generation();await sleep(2700);assert.equal(await generation(),held);
    await btn('Next').click();await next(held);await ready();
-   await pace().selectOption('fast');await ready();const g=await generation(),fastStarted=Date.now();
+   await pace().selectOption('fast');await setSpeed(1);await ready();const g=await generation(),fastStarted=Date.now();
    await btn('Play').click();await next(g);const fast=Date.now()-fastStarted;assert.ok(fast>=270,'fast pace advanced too early '+fast);
    await btn('Pause').click();await ready();
-   await pace().selectOption('manual');await ready();const m=await generation();await sleep(1100);assert.equal(await generation(),m);
-   await btn('Play').click();assert.equal(await pace().inputValue(),'medium');await next(m);await btn('Pause').click();await ready();
+   await setSpeed(2);await ready();const m=await generation();await sleep(1100);assert.equal(await generation(),m);
+   await btn('Play').click();await setSpeed(8);await ready();await sleep(2000);assert.equal(await generation(),m,'live speed edit must defer advance');await setSpeed(1);await next(m);await btn('Pause').click();await ready();
    // Manual selections remain optional; verify a selected parent remains represented.
    const parentId=await page.locator('.grid .card').first().getAttribute('data-candidate-id');
    await page.locator('.grid .card').first().getByRole('button',{name:'Pick',exact:true}).click();
    const picked=await generation();await btn('Next').click();await next(picked);await ready();
    assert.ok(await page.locator('.grid .card').evaluateAll((cards,id)=>cards.some(c=>c.getAttribute('data-candidate-id')===id),parentId),'picked parent identity not retained');
-   await pace().selectOption('slow');await ready();await btn('Play').click();
+   await pace().selectOption('slow');await setSpeed(3);await ready();await btn('Play').click();
    await page.locator('.grid .card canvas').first().click();const focus=await generation();
    await sleep(2700);assert.equal(await generation(),focus,'focus must hold autoplay');
    await btn('Close').click();await next(focus);await btn('Pause').click();await ready();
