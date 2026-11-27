@@ -1,0 +1,47 @@
+name: Toolchain hardening RDTE
+on:
+  push:
+    branches: [rdte/toolchain-hardening-r18]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  candidate:
+    if: github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/rdte/toolchain-hardening-r18'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [compatible, major]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Audit baseline and propose lock update
+        env:
+          MODE: ${{ matrix.mode }}
+        run: |
+          mkdir -p evidence
+          npm audit --json > evidence/baseline-audit.json || test "$?" -eq 1
+          if [ "$MODE" = compatible ]; then
+            npm update --package-lock-only --ignore-scripts
+          else
+            npm install --save-dev --package-lock-only --ignore-scripts vite@latest vitest@latest
+          fi
+          cp package.json package-lock.json evidence/
+          npm audit --json > evidence/candidate-audit.json || test "$?" -eq 1
+          npm audit --omit=dev --audit-level=low
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck && npm test && npm run build && npm run verify:dist && npm run golden:test
+      - name: Development advisory gate
+        run: npm audit --audit-level=low
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-${{ matrix.mode }}
+          path: evidence/
+          retention-days: 3
