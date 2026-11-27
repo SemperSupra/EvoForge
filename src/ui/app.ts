@@ -70,7 +70,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   let radarCandidateId: string | null = null;
   let focusRender: { candidateId: string; w:number; h:number; rgba: Uint8ClampedArray; status: "gen"|"ready"|"err" } | null = null;
 
-  const lensState:LensState={ringsOpen:false,radarOpen:false,selected:null,filters:[],stage:0};
+  const lensState:LensState={ringsOpen:false,radarOpen:false,selected:null,filters:[],stage:2};
   let libraryOpen = false;
   let libraryItems: FavoriteRecord[] = [];
   // `null` means "all favorites" (default when unset). `[]` means "none".
@@ -867,6 +867,14 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
         ctx2.fillText((focus && focus.status === "err") ? "render error" : "…", 10, 20);
       }
       const frame=document.createElement("div");frame.className="focus-frame";frame.append(canvas2);const panel=renderCandidateRadar(src??undefined);panel.classList.toggle("open",radarCandidateId===c.id);panel.setAttribute("aria-hidden",String(radarCandidateId!==c.id));frame.append(panel);body.append(frame);
+      const actions=document.createElement("div");actions.className="focus-actions";
+      const items=gen.candidates,at=items.findIndex(x=>x.id===c.id);
+      const action=(label:string,fn:()=>void,disabled=false)=>{const b=document.createElement("button");b.textContent=label;b.disabled=disabled;b.onclick=fn;actions.append(b);};
+      action("Previous",()=>openFocus(items[at-1].id),at===0);
+      action(c.status==="picked"?"Unpick":"Pick",()=>toggleCandidateStatus(c.id,c.status==="picked"?"normal":"picked"),c.status==="retired");
+      action(c.status==="skipped"?"Unskip":"Skip",()=>toggleCandidateStatus(c.id,c.status==="skipped"?"normal":"skipped"),c.status==="retired");
+      action("Next image",()=>openFocus(items[at+1].id),at===items.length-1);
+      body.append(actions);
       modal.appendChild(body);
       back.appendChild(modal);
       el.appendChild(back);

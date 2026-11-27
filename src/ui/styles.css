@@ -73,3 +73,23 @@ button, select { font: inherit; }
 .focus-radar.open{transform:translateX(0);visibility:visible}.focus-radar svg{display:block;width:100%;max-height:210px}.focus-radar ul{margin:0;padding-left:20px;font-size:14px}
 @media(max-width:640px){.advance-strip{padding:4px 8px;gap:4px;font-size:13px}.advance-strip button{font-size:14px}.focus-frame{aspect-ratio:auto;min-height:260px}.focus-frame canvas{height:auto;aspect-ratio:16/9;align-self:center}.focus-radar{width:100%}}
 @media(prefers-reduced-motion:reduce){.focus-radar{transition:none}}
+
+/* One membership model, three accessible presentations. Viewport, not device name, selects default. */
+.ring-compact,.ring-lanes,.radar-cards,.radar-plot-toggle{display:none}
+.evolution-lenses .ring-visual svg,.evolution-lenses .population-plot{max-height:min(65vh,600px)}
+.ring-navigation{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px;align-items:center}
+.ring-navigation select{width:100%;min-width:0}
+.ring-cards,.radar-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,132px),1fr));gap:8px;margin-top:8px}
+.radar-cards{display:none}
+.lens-candidate{display:flex;flex-direction:column;align-items:stretch;text-align:left;gap:5px;min-width:0;padding:8px;border:1px solid rgba(127,127,127,.45);border-radius:8px;overflow-wrap:anywhere}
+.lens-candidate img,.lens-placeholder{width:100%;aspect-ratio:16/9;object-fit:contain;background:rgba(127,127,127,.1);image-rendering:auto}
+.ring-lanes{grid-auto-flow:column;grid-auto-columns:minmax(150px,1fr);overflow-x:auto;gap:8px;padding:8px 0}
+.ring-lane{min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:8px;border:1px solid rgba(127,127,127,.35);border-radius:8px}
+.ring-lane h3{font-size:14px;margin:0;min-height:42px}
+.focus-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.focus-actions button{min-height:44px;min-width:0}
+.evolution-lenses details[data-layout=stages] .ring-visual,.evolution-lenses details[data-layout=stages] .ring-stage-legend,.evolution-lenses details[data-layout=lanes] .ring-visual,.evolution-lenses details[data-layout=lanes] .ring-stage-legend{display:none}
+.evolution-lenses details[data-layout=stages] .ring-compact{display:block}
+.evolution-lenses details[data-layout=lanes] .ring-lanes{display:grid}
+@media(min-width:641px) and (max-width:1199px){.evolution-lenses{grid-template-columns:minmax(0,1fr)}.evolution-lenses details[data-layout=auto] .ring-visual,.evolution-lenses details[data-layout=auto] .ring-stage-legend{display:none}.evolution-lenses details[data-layout=auto] .ring-lanes{display:grid}}
+@media(max-width:640px){.evolution-lenses details[data-layout=auto] .ring-visual,.evolution-lenses details[data-layout=auto] .ring-stage-legend{display:none}.evolution-lenses details[data-layout=auto] .ring-compact{display:block}.evolution-lenses .radar-roster{display:none}.evolution-lenses .radar-cards{display:grid}.evolution-lenses .radar-plot-toggle{display:inline-flex}.evolution-lenses details[data-show-plot=false] .population-plot{display:none}.focus-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(pointer:coarse){.evolution-lenses button,.evolution-lenses select,.evolution-lenses summary,.focus-actions button{min-height:44px;min-width:44px}}
