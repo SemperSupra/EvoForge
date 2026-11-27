@@ -1,7 +1,10 @@
 import { chromium } from '@playwright/test';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { resolve, extname, sep } from 'node:path';
+import { readFile,mkdir } from 'node:fs/promises';
+import { resolve, extname, sep,join } from 'node:path';
+const shots=process.env.EVOFORGE_SCREENSHOT_DIR;
+if(shots)await mkdir(shots,{recursive:true});
+const capture=async(page,name)=>{if(shots)await page.screenshot({path:join(shots,name+'.png'),fullPage:true});};
 import assert from 'node:assert/strict';
 const root=resolve(process.env.EVOFORGE_DIST_DIR||'dist');
 const backend=process.env.EVOFORGE_SMOKE_BACKEND||'linux-swiftshader';
@@ -75,6 +78,7 @@ try{
   }
   await page.goto(base+'experiences/alife/index.html?mode=observe&profile=smoke&seed=42');
   const first=await progress(15);assert.equal(first.mode,'observe');assert.ok(first.telemetry.energy.flora>0);
+  await capture(page,'arena-observe');
   const adapterInfo=await page.evaluate(()=>window.__smokeAdapter??null);
   console.log('Native browser '+browser.version()+' backend '+backend+' adapter '+JSON.stringify(adapterInfo));
   if(backend==='mac-metal'){assert.ok(adapterInfo&&adapterInfo.vendor.toLowerCase().includes('apple'),'Expected Apple adapter');assert.equal(adapterInfo.fallback,false,'Software fallback is not Metal qualification');}
@@ -94,6 +98,7 @@ try{
     assert.equal((await snapshot()).knobs.state.arenaFamily,family);
     await page.evaluate(()=>window.__ARENA_RPC__.setPaused(false));
     await progress(15);
+    await capture(page,'arena-family-'+family);
   }
   await page.evaluate(()=>window.__ARENA_RPC__.setPaused(true));
   // Exercise actual pointer actionability at narrow portrait and landscape sizes.

@@ -1,4 +1,9 @@
 import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
+import {join} from 'node:path';
+const shots=process.env.EVOFORGE_SCREENSHOT_DIR;
+if(shots)await mkdir(shots,{recursive:true});
+const capture=async(page,name)=>{if(shots)await page.screenshot({path:join(shots,name+'.png'),fullPage:true});};
 import { chromium } from '@playwright/test';
 const base='http://127.0.0.1:5174/';
 const browser=await chromium.launch();
@@ -10,6 +15,7 @@ try {
   await page.goto(base+'#golden');
   await page.getByRole('heading',{name:'EvoForge',exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>typeof window.__evoforgeGoldenRender),'undefined','Development-only hook must not be exposed');
+  await capture(page,'launcher');
   for(const [label,href] of [
     ['Craft Lab 3.0','./?experience=mosaic-craft'],
     ['Motif & Heraldry Lab','./?experience=mosaic-motifs'],
@@ -27,6 +33,7 @@ try {
     assert.equal(await page.locator('.grid .card[data-render-state="err"]').count(),0,label);
     assert.equal(await page.locator('.grid .card[data-render-state="ready"]').count(),16,label);
     assert.equal(await page.evaluate(()=>typeof window.__evoforgeGoldenRender),'undefined');
+    await capture(page,href.split('=')[1]);
     await page.getByRole('link',{name:'All EvoForge experiences'}).click();
     await page.getByRole('heading',{name:'EvoForge',exact:true}).waitFor();
   }
