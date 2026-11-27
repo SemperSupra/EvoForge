@@ -263,3 +263,4 @@ jobs:
           name: live-pages-acceptance
           path: live-evidence/
           retention-days: 30
+# R32: read-only re-observation after owner-reported Pages source transition.
