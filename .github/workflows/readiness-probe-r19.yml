@@ -84,3 +84,34 @@ jobs:
           (cd "$EVOFORGE_DIST_DIR" && shasum -a 256 -c "$E/dist-sha256.txt")
           node scripts/arena-smoke.mjs
           (cd "$EVOFORGE_DIST_DIR" && shasum -a 256 -c "$E/dist-sha256.txt")
+  supply-chain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - name: Generate lock-bound inventory and resolve base image
+        run: |
+          set -euo pipefail
+          mkdir -p supply-evidence
+          npm sbom --package-lock-only --sbom-format cyclonedx > supply-evidence/npm-all.cdx.json
+          npm sbom --package-lock-only --omit=dev --sbom-format cyclonedx > supply-evidence/npm-runtime.cdx.json
+          npm audit --json > supply-evidence/audit.json
+          docker buildx imagetools inspect node:22-trixie-slim > supply-evidence/base-image.txt
+          docker buildx imagetools inspect --raw node:22-trixie-slim > supply-evidence/base-manifest.json
+          sha256sum package.json package-lock.json Dockerfile.tooling > supply-evidence/inputs.sha256
+          git rev-parse HEAD > supply-evidence/source.txt
+          node --version > supply-evidence/node.txt
+          npm --version > supply-evidence/npm.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: supply-chain-evidence
+          path: supply-evidence/
+          if-no-files-found: error
+          retention-days: 14
