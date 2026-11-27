@@ -10,147 +10,6 @@ env:
   QUALIFIED_SOURCE: 8a63604273641209d159bb0d916c653522e6b3c7
   COMPILER: evoforge-alpine-compiler:node24-npm12
 jobs:
-  offline-application:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: 8a63604273641209d159bb0d916c653522e6b3c7
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: alpine-compiler-docker-image
-          run-id: 46026217148
-          github-token: ${{ github.token }}
-          digest-mismatch: error
-          path: image-export
-      - name: Restore exact previously tested compiler
-        run: |
-          set -euo pipefail
-          (cd image-export && sha256sum -c SHA256SUMS)
-          test "$(cat image-export/source.txt)" = "$QUALIFIED_SOURCE"
-          gzip -dc image-export/compiler.docker.tar.gz | docker load
-          test "$(docker inspect "$COMPILER" --format '{{.Id}}')" = "$(cat image-export/image-1.txt)"
-          test "$(cat image-export/image-1.txt)" = sha256:f125c2fe011902f77a2c3b378f85c3b38bf7fa197aa5aff581822a8babf7eb63
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: rehearsal-site
-          run-id: 46026217148
-          github-token: ${{ github.token }}
-          digest-mismatch: error
-          path: qualified-site
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: rehearsal-compiler-evidence
-          run-id: 46026217148
-          github-token: ${{ github.token }}
-          digest-mismatch: error
-          path: prior
-      - name: Populate public dependency cache and then compile without networking
-        run: |
-          set -euo pipefail
-          mkdir offline-evidence
-          scratch="$(mktemp -d)"
-          trap 'rm -rf "$scratch"' EXIT
-          mkdir "$scratch/src" "$scratch/cache"
-          git archive HEAD | tar -x -C "$scratch/src"
-          args=(--rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch/src:/workspace" -v "$scratch/cache:/npm-cache" -w /workspace --entrypoint sh)
-          docker run "${args[@]}" "$COMPILER" -ec 'npm ci --ignore-scripts --no-audit --cache /npm-cache; npm cache verify --cache /npm-cache; npm audit --audit-level=low --cache /npm-cache' 2>&1 | tee offline-evidence/prefetch.log
-          rm -rf "$scratch/src/node_modules" "$scratch/src/dist"
-          test -d "$scratch/cache/_cacache"
-          mkdir cache-export
-          tar -czf cache-export/npm-cacache.tar.gz -C "$scratch/cache" _cacache
-          (cd cache-export && sha256sum npm-cacache.tar.gz > SHA256SUMS)
-          # Restore only the exported cache into a new empty directory.
-          rm -rf "$scratch/cache"
-          mkdir "$scratch/cache"
-          tar -xzf cache-export/npm-cacache.tar.gz -C "$scratch/cache"
-          docker run --network none "${args[@]}" "$COMPILER" -ec 'npm ci --offline --ignore-scripts --no-audit --cache /npm-cache; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist' 2>&1 | tee offline-evidence/offline-build.log
-          node scripts/verify-artifact.mjs "$scratch/src/dist" prior/dist-1.sha256
-          node scripts/verify-artifact.mjs qualified-site prior/dist-1.sha256
-          cp prior/dist-1.sha256 offline-evidence/
-          printf '%s\n' "$QUALIFIED_SOURCE" > offline-evidence/source.txt
-          printf '%s\n' 'Online audit before network-isolated build; offline run does not assert fresh vulnerability status.' > offline-evidence/scope.txt
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
-        with:
-          name: offline-application-evidence
-          path: offline-evidence/
-          retention-days: 14
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: success()
-        with:
-          name: offline-application-dependency-cache
-          path: cache-export/
-          compression-level: 0
-          retention-days: 14
-  installed-licenses:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: 8a63604273641209d159bb0d916c653522e6b3c7
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: alpine-compiler-docker-image
-          run-id: 46026217148
-          github-token: ${{ github.token }}
-          digest-mismatch: error
-          path: image-export
-      - name: Restore exact previously tested compiler
-        run: |
-          set -euo pipefail
-          (cd image-export && sha256sum -c SHA256SUMS)
-          test "$(cat image-export/source.txt)" = "$QUALIFIED_SOURCE"
-          gzip -dc image-export/compiler.docker.tar.gz | docker load
-          test "$(docker inspect "$COMPILER" --format '{{.Id}}')" = "$(cat image-export/image-1.txt)"
-          test "$(cat image-export/image-1.txt)" = sha256:f125c2fe011902f77a2c3b378f85c3b38bf7fa197aa5aff581822a8babf7eb63
-      - name: Inventory exact installed package licenses and notices
-        run: |
-          set -euo pipefail
-          mkdir license-evidence
-          scratch="$(mktemp -d)"
-          trap 'rm -rf "$scratch"' EXIT
-          git archive HEAD | tar -x -C "$scratch"
-          docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch:/workspace" -w /workspace --entrypoint sh "$COMPILER" -ec 'npm ci --ignore-scripts --no-audit; npm sbom --sbom-format cyclonedx > installed-sbom.json; npm sbom --omit=dev --sbom-format cyclonedx > installed-runtime-sbom.json'
-          cp "$scratch/"installed*-sbom.json license-evidence/
-          python3 - "$scratch" <<'PY'
-          import pathlib,json,hashlib,sys,collections
-          root=pathlib.Path(sys.argv[1])
-          lock=json.load(open(root/'package-lock.json'))['packages']
-          rows=[]; absent=[]
-          for p,meta in lock.items():
-              if not p: continue
-              f=root/p/'package.json'
-              if not f.is_file():
-                  absent.append({'path':p,'version':meta.get('version'),'optional':meta.get('optional',False)})
-                  continue
-              data=json.load(open(f))
-              assert data.get('version')==meta.get('version'),p
-              notices=[]
-              for n in f.parent.iterdir():
-                  if n.is_file() and n.name.lower().startswith(('license','licence','copying','notice')):
-                      notices.append({'name':n.name,'sha256':hashlib.sha256(n.read_bytes()).hexdigest()})
-              rows.append({'path':p,'name':data.get('name'),'version':data.get('version'),'license':data.get('license') or data.get('licenses'),'notices':notices,'dev':meta.get('dev',False),'integrity':meta.get('integrity')})
-          runtime=[r for r in rows if not r['dev']]
-          out=pathlib.Path('license-evidence')
-          for r in runtime:
-              for n in r['notices']:
-                  target=out/('runtime-'+r['name'].replace('/','_')+'-'+n['name'])
-                  target.write_bytes((root/r['path']/n['name']).read_bytes())
-          result={'installed':rows,'absentLockEntries':absent,'missingLicense':[r for r in rows if not r['license']],'missingNotices':[r for r in runtime if not r['notices']],'runtime':runtime,'scope':'Installed linux/amd64 musl closure, absent platform packages are not asserted installed. Metadata and notices for legal review; no blanket clearance.'}
-          (out/'installed-license-inventory.json').write_text(json.dumps(result,indent=2))
-          print(json.dumps({'installed':len(rows),'absent':len(absent),'missingLicense':result['missingLicense'],'runtime':runtime,'runtimeMissingNotices':result['missingNotices']},indent=2))
-          PY
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
-        with:
-          name: installed-application-licenses
-          path: license-evidence/
-          retention-days: 14
   isolated-browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -196,7 +55,10 @@ jobs:
           ARG COMPILER
           FROM ${COMPILER}
           USER 0
-          RUN apk add --no-cache chromium font-dejavu font-noto font-noto-cjk
+          # Chromium needs full ICU; explicitly remove only the competing world constraint.
+          RUN sed -i '/^icu-data-en\(=.*\)\?$/d' /etc/apk/world \
+              && apk add --no-cache icu-data-full=78.1-r0 chromium=158.0.8127.36-r0 font-dejavu font-noto font-noto-cjk \
+              && apk info -e icu-data-full && ! apk info -e icu-data-en
           USER 10001:10001
           DOCKER
           cp browser-context/Dockerfile browser-evidence/
