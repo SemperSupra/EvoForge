@@ -102,8 +102,8 @@ jobs:
           npm sbom --package-lock-only --sbom-format cyclonedx > supply-evidence/npm-all.cdx.json
           npm sbom --package-lock-only --omit=dev --sbom-format cyclonedx > supply-evidence/npm-runtime.cdx.json
           npm audit --json > supply-evidence/audit.json
-          docker buildx imagetools inspect node:22-trixie-slim > supply-evidence/base-image.txt
-          docker buildx imagetools inspect --raw node:22-trixie-slim > supply-evidence/base-manifest.json
+          docker buildx imagetools inspect node:22-trixie-slim@sha256:f0960f8dc047f358e3fb428f36ccba21732194fa5f0cac849f401e63e62fb9e6 > supply-evidence/base-image.txt
+          docker buildx imagetools inspect --raw node:22-trixie-slim@sha256:f0960f8dc047f358e3fb428f36ccba21732194fa5f0cac849f401e63e62fb9e6 > supply-evidence/base-manifest.json
           sha256sum package.json package-lock.json Dockerfile.tooling > supply-evidence/inputs.sha256
           git rev-parse HEAD > supply-evidence/source.txt
           node --version > supply-evidence/node.txt
