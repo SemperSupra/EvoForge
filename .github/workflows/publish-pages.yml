@@ -1,8 +1,8 @@
 name: Guarded EvoForge Pages promotion
 on:
   push:
-    branches: [rdte/readiness-probe-r19]
-    paths: ['.github/workflows/alpine-promotion-preflight.yml']
+    branches: [rdte/readiness-probe-r19, gh-pages]
+    paths: ['.github/workflows/alpine-promotion-preflight.yml', '.github/release-approvals/4868538-3f25a79d.json']
   workflow_dispatch:
     inputs:
       promotion:
@@ -31,6 +31,7 @@ jobs:
     timeout-minutes: 12
     outputs:
       pages_ready: ${{ steps.pages.outputs.ready }}
+      authorized: ${{ steps.authorize.outputs.authorized }}
     permissions:
       contents: read
       actions: read
@@ -41,6 +42,28 @@ jobs:
         with:
           ref: 48685389758792d26e58f531e22d7f2d2f4aca5f
           persist-credentials: false
+      - name: Bind explicit promotion authority to exact candidate
+        id: authorize
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANUAL_REQUEST: ${{ github.event_name == 'workflow_dispatch' && inputs.promotion == 'deploy-4868538-3f25a79d' }}
+          PUSH_REQUEST: ${{ github.event_name == 'push' && github.ref == 'refs/heads/gh-pages' }}
+        run: |
+          set -euo pipefail
+          authorized=false
+          if [ "$MANUAL_REQUEST" = true ]; then
+            test "$GITHUB_REF" = refs/heads/gh-pages
+            authorized=true
+          elif [ "$PUSH_REQUEST" = true ]; then
+            gh api "repos/$GITHUB_REPOSITORY/contents/.github/release-approvals/4868538-3f25a79d.json?ref=$GITHUB_SHA" --jq .content | base64 -d > "$RUNNER_TEMP/evoforge-approval.json"
+            python3 - <<'PY'
+          import json,os,pathlib
+          receipt=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'evoforge-approval.json').read_text())
+          assert receipt=={'action':'promote','source':os.environ['RELEASE_SOURCE'],'qualified_run':os.environ['RELEASE_RUN'],'subject':os.environ['SUBJECT_SHA'],'manifest':os.environ['MANIFEST_SHA']}
+          PY
+            authorized=true
+          fi
+          printf 'authorized=%s\n' "$authorized" >> "$GITHUB_OUTPUT"
       - name: Bind exact current release source, workflow and successful jobs
         env:
           GH_TOKEN: ${{ github.token }}
@@ -128,7 +151,7 @@ jobs:
         id: pages
         env:
           GH_TOKEN: ${{ github.token }}
-          PROMOTION_REQUEST: ${{ github.event_name == 'workflow_dispatch' && inputs.promotion == 'deploy-4868538-3f25a79d' }}
+          PROMOTION_REQUEST: ${{ steps.authorize.outputs.authorized }}
         run: |
           set -euo pipefail
           if gh api "repos/$GITHUB_REPOSITORY/pages" --jq '{build_type,html_url,status,source}' > preflight/pages.json; then
@@ -153,7 +176,7 @@ jobs:
           printf '%s\n' "$SUBJECT_SHA" > preflight/subject.txt
           printf '%s\n' 'PASS_ARTIFACT_PREFLIGHT' > preflight/result.txt
       - name: Configure Pages only for an authorized deployment request
-        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/gh-pages' && inputs.promotion == 'deploy-4868538-3f25a79d' && steps.pages.outputs.ready == 'true'
+        if: github.ref == 'refs/heads/gh-pages' && steps.authorize.outputs.authorized == 'true' && steps.pages.outputs.ready == 'true'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
         with:
           enablement: false
@@ -190,7 +213,7 @@ jobs:
           retention-days: 30
   deploy:
     needs: promotion-preflight
-    if: github.repository == 'SemperSupra/EvoForge' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/gh-pages' && inputs.promotion == 'deploy-4868538-3f25a79d' && needs.promotion-preflight.outputs.pages_ready == 'true'
+    if: github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/gh-pages' && needs.promotion-preflight.outputs.authorized == 'true' && needs.promotion-preflight.outputs.pages_ready == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     permissions:
@@ -263,4 +286,4 @@ jobs:
           name: live-pages-acceptance
           path: live-evidence/
           retention-days: 30
-# R37: exact R33 qualified experience-correction artifact; preflight only on integration push.
+# Exact candidate promotion: protected default-branch approval receipt or explicit manual selection; all integrity and environment gates retained.
