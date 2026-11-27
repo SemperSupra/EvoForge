@@ -1,6 +1,6 @@
 import type { Candidate, CandidateStatus, GenerationState, Pace, Playback, GASettingsSnapshot } from "../core/types";
 import { paceProfile } from "../core/pace";
-import { renderEvolutionLenses, type LensState } from "./evolution-lenses";
+import { renderEvolutionLenses, renderCandidateRadar, type LensState } from "./evolution-lenses";
 import { WorkerPool } from "../workers/pool";
 import type { RenderJob, MainMessage } from "../workers/protocol";
 import { XorShift32, mixU32 } from "../core/prng";
@@ -67,6 +67,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   let gen: GenerationState = { generationId, renderIntentId, candidates: [] };
   const thumbMap = new Map<string, { w:number; h:number; rgba: Uint8ClampedArray; status: "gen"|"ready"|"err" }>();
   let focusCandidateId: string | null = null;
+  let radarCandidateId: string | null = null;
   let focusRender: { candidateId: string; w:number; h:number; rgba: Uint8ClampedArray; status: "gen"|"ready"|"err" } | null = null;
 
   const lensState:LensState={ringsOpen:false,radarOpen:false,selected:null,filters:[],stage:0};
@@ -620,7 +621,8 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     header.className = "header";
 
     const title = document.createElement("div");
-    title.innerHTML = `<b>${motif?"Motif & Heraldry Lab":craft?"Mosaic Atelier - Craft Lab":emblem?"Emblems & Heraldry":atelier?"Mosaic Atelier":"EvoForge — Legacy Mosaic"}</b> <span class="small">Gen ${generationIndex}</span>${lastActionMsg ? ` <span class="small">• ${lastActionMsg}</span>` : ""}`;
+    title.className="gallery-title";
+    title.innerHTML = `<b>${motif?"Motif & Heraldry Lab":craft?"Mosaic Atelier - Craft Lab":emblem?"Emblems & Heraldry":atelier?"Mosaic Atelier":"EvoForge — Legacy Mosaic"}</b> <span class="small">Gen ${generationIndex}</span>`;
     header.appendChild(title);
 
     const controls = document.createElement("div");
@@ -730,22 +732,14 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     el.appendChild(header);
 
     const prof = paceProfile(pace);
-    if (shouldShowReadyLatch({ playback, pace, gate: currentGate(), readyToAdvance: readyToAdvance() })) {
-      const latch = document.createElement("div");
-      latch.className = "header";
-      latch.innerHTML = `<span>Ready • continuing in ${(prof.autoAdvanceDelayMs ?? 0)/1000}s</span>`;
-      const hold = document.createElement("button"); hold.textContent = "Hold"; hold.onclick = () => setPlayback("paused"); latch.appendChild(hold);
-      const adv = document.createElement("button"); adv.textContent = "Advance now"; adv.onclick = () => advanceOneGeneration(); latch.appendChild(adv);
-      el.appendChild(latch);
-    }
+    const readyLatch=shouldShowReadyLatch({ playback, pace, gate: currentGate(), readyToAdvance: readyToAdvance() });
+    const latch=document.createElement("div");latch.className="advance-strip";
+    const status=document.createElement("span");status.className="advance-status";status.textContent=readyLatch?"Ready · continuing in "+((prof.autoAdvanceDelayMs??0)/1000)+"s":currentGate()==="hold_refine"?"Refining generation…":playback==="playing"?"Rendering / exploring":"Paused";
+    const hold=document.createElement("button");hold.textContent="Hold";hold.disabled=!readyLatch;hold.onclick=()=>setPlayback("paused");
+    const adv=document.createElement("button");adv.textContent="Advance now";adv.disabled=!readyLatch;adv.onclick=()=>advanceOneGeneration();
+    latch.append(status,hold,adv);el.append(latch);
+    const notification=document.createElement("div");notification.className="gallery-notice";notification.setAttribute("role","status");notification.textContent=lastActionMsg??"";el.append(notification);
     armReadyTimerIfNeeded();
-
-    if (currentGate() === "hold_refine") {
-      const refine = document.createElement("div");
-      refine.className = "header";
-      refine.textContent = "Refining current generation…";
-      el.appendChild(refine);
-    }
 
     el.append(renderEvolutionLenses(gen.candidates,thumbMap,lensState,()=>{cancelReadyTimer();render();},openFocus));
     const grid = document.createElement("div"); grid.className = "grid";
@@ -851,7 +845,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       const mh = document.createElement("div"); mh.className = "modalHead";
       mh.innerHTML = `<b>Focus</b> <span class="small">${c.id}</span>`;
       const close = document.createElement("button"); close.textContent = "Close"; close.onclick = () => closeFocus();
-      mh.appendChild(close); modal.appendChild(mh);
+      const radarToggle=document.createElement("button");radarToggle.textContent=radarCandidateId===c.id?"Image":"Radar";radarToggle.setAttribute("aria-expanded",String(radarCandidateId===c.id));radarToggle.onclick=()=>{radarCandidateId=radarCandidateId===c.id?null:c.id;render();};mh.append(radarToggle,close); modal.appendChild(mh);
 
       const body = document.createElement("div"); body.className = "modalBody";
       const canvas2 = document.createElement("canvas"); canvas2.width = 960; canvas2.height = 540; canvas2.style.width = "100%";
@@ -872,7 +866,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
         ctx2.fillStyle = "rgba(255,255,255,0.75)";
         ctx2.fillText((focus && focus.status === "err") ? "render error" : "…", 10, 20);
       }
-      body.appendChild(canvas2);
+      const frame=document.createElement("div");frame.className="focus-frame";frame.append(canvas2);const panel=renderCandidateRadar(src??undefined);panel.classList.toggle("open",radarCandidateId===c.id);panel.setAttribute("aria-hidden",String(radarCandidateId!==c.id));frame.append(panel);body.append(frame);
       modal.appendChild(body);
       back.appendChild(modal);
       el.appendChild(back);

@@ -30,6 +30,7 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts
       - run: npm run build
+      - run: npm test -- tests/evolution-lenses.test.ts
   mobile-webkit:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
