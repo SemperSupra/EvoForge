@@ -57,3 +57,32 @@ jobs:
           name: intervention-browser-evidence
           path: intervention-evidence/
           retention-days: 14
+  native-integration:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=low
+      - run: npx playwright install chromium
+      - name: Exercise actual integrated Arena on native Metal
+        run: |
+          set -euo pipefail
+          python3 -m http.server 5174 --bind 127.0.0.1 > "$RUNNER_TEMP/intervention-native.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          node scripts/wait-for-server.mjs http://127.0.0.1:5174/
+          node experiments/alife-interventions-r36/native-smoke.mjs
+          printf '%s\n' "$GITHUB_SHA" > native-intervention-evidence/source.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-intervention-evidence
+          path: native-intervention-evidence/
+          retention-days: 30

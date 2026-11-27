@@ -1,0 +1,2452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07090c" />
+  <title>EvoForge — ALife Creature Arena (experimental)</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <style>
+    :root {
+      --toolbar-height: 48px;
+      --bg: #07090c;
+      --panel: rgba(13, 17, 23, 0.93);
+      --border: rgba(255, 255, 255, 0.13);
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --sp0: #ff5533;
+      --sp1: #f0b429;
+      --sp2: #3fb950;
+      --sp3: #38bdf8;
+      --sp4: #d946ef;
+      --sp5: #2dd4bf;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      overflow: hidden; user-select: none;
+    }
+    canvas#canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none; }
+    canvas#canvas:active { cursor: grabbing; }
+    #camera-controls { position: fixed; z-index: 21; bottom: 12px; left: 50%; transform: translateX(-50%); display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:4px; max-width:calc(100vw - 170px); padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--panel); }
+    #camera-controls button { font-size:12px; min-height:30px; padding:4px 8px; }
+    #camera-controls output { font-size:11px; min-width:7em; text-align:center; }
+    @media(max-width:850px){#camera-controls{bottom:48px;max-width:95vw;width:max-content;}}
+    #audio-status { font-size:10px; color:var(--muted); }
+    #strike-overlay{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:8}
+    #strike-panel{border:1px solid var(--border);border-radius:6px;padding:6px;margin:6px 0}
+    #strike-panel input[type=number]{width:4.6em;max-width:100%}#strike-panel button{min-height:30px}
+    #strike-status{color:#ffda9c;overflow-wrap:anywhere}
+
+    #hud-left, #hud-right {
+      position: fixed; top: calc(var(--toolbar-height) + 16px); bottom: 52px; width: 345px;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; backdrop-filter: blur(12px);
+      font-size: 10px; line-height: 1.36; box-shadow: 0 12px 32px rgba(0,0,0,0.72);
+      min-height: 0; overflow-y: auto; z-index: 10;
+    }
+    #hud-left { left: 10px; }
+    #hud-right { right: 10px; width: 350px; }
+    body.hud-hidden #hud-left, body.hud-hidden #hud-right { display: none; }
+    #hud-toggle {
+      position: fixed; bottom: 12px; left: 12px; z-index: 20;
+      padding: 5px 10px; background: var(--panel); border: 1px solid var(--border);
+      color: var(--text); border-radius: 6px; font-size: 10px; cursor: pointer;
+    }
+    h1, h2 {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.4px; color: #fff;
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;
+    }
+    .badge {
+      font-size: 8.5px; padding: 2px 6px; border-radius: 4px;
+      background: rgba(63, 185, 80, 0.18); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.4);
+    }
+    .badge.agent { background: rgba(163, 113, 247, 0.18); color: #d2a8ff; border-color: rgba(163, 113, 247, 0.45); }
+    .section-title {
+      font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted);
+      margin: 6px 0 4px; padding-top: 5px; border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .roster-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 4px; }
+    .faction-card {
+      background: rgba(0,0,0,0.40); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 5px; padding: 4px 6px; cursor: pointer;
+    }
+    .faction-card.selected { border-color: #fff; background: rgba(255,255,255,0.07); }
+    .faction-name { font-weight: 700; font-size: 9.5px; display: flex; align-items: center; justify-content: space-between; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .faction-stat { font-size: 9px; color: var(--muted); margin-top: 1px; }
+    .faction-stat b { color: #fff; }
+    .guild-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; text-align: center; margin: 3px 0; }
+    .guild-pill { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; padding: 2px; font-size: 9px; }
+    .control { margin-bottom: 4px; }
+    .control label { display: flex; justify-content: space-between; color: var(--muted); margin-bottom: 1px; font-size: 9.5px; }
+    .control input[type="range"] { width: 100%; accent-color: #ff5533; height: 12px; }
+    .btn-row { display: flex; gap: 3px; margin-top: 4px; flex-wrap: wrap; }
+    button {
+      flex: 1; min-width: 52px; padding: 4px 4px; background: rgba(255,255,255,0.07);
+      border: 1px solid var(--border); color: var(--text); border-radius: 5px;
+      font-size: 9px; cursor: pointer;
+    }
+    button:hover { background: rgba(255,255,255,0.16); }
+    button.active { background: rgba(255, 85, 51, 0.25); border-color: #ff5533; color: #fff; }
+    button.surprise { border-color: rgba(163, 113, 247, 0.45); background: rgba(163, 113, 247, 0.12); }
+    .energy-bar { display: flex; height: 6px; border-radius: 4px; overflow: hidden; background: #161b22; margin: 3px 0; }
+    canvas#sparkline { width: 100%; height: 44px; background: rgba(0,0,0,0.42); border: 1px solid rgba(255,255,255,0.08); border-radius: 5px; display: block; margin-top: 3px; }
+    .director-box { background: rgba(163, 113, 247, 0.08); border: 1px solid rgba(163, 113, 247, 0.30); border-radius: 6px; padding: 5px 7px; margin-top: 4px; font-size: 9px; }
+    .event-log { max-height: 44px; overflow-y: auto; font-size: 8.5px; color: var(--muted); background: rgba(0,0,0,0.35); padding: 3px 5px; border-radius: 4px; margin-top: 3px; }
+    #experience-toolbar { position: fixed; z-index: 30; top: 8px; left: 10px; right: 10px; height: var(--toolbar-height); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content:center; overflow-y:auto; background: var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px; font-size:12px; }
+    #experience-toolbar a { color:#9ce5ff; }
+    #experience-toolbar button { font-size:12px; }
+    #arena-message { position:fixed; z-index:40; top:50%; left:50%; transform:translate(-50%,-50%); width:min(88vw,480px); padding:20px; background:#131c27; color:white; border:1px solid #687b91; border-radius:12px; font-size:14px; }
+    #arena-message[hidden] { display:none; }
+    #arena-message a { display:block; color:#9ce5ff; margin-top:12px; }
+    button:focus-visible,a:focus-visible,input:focus-visible { outline:2px solid #38bdf8; outline-offset:2px; }
+    button:disabled,input:disabled { opacity:.45; cursor:not-allowed; }
+    @media(max-width:850px){
+      #hud-left,#hud-right{width:calc(50vw - 12px);bottom:auto;max-height:min(44vh,calc(100vh - var(--toolbar-height) - 72px));padding:6px;}
+      #hud-left{left:5px;} #hud-right{right:5px;}
+      .roster-grid,.guild-bar{grid-template-columns:1fr 1fr;}
+    }
+    @media(max-width:600px){ :root{--toolbar-height:88px;} #experience-toolbar{gap:5px;padding:6px;} }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" aria-label="Artificial life simulation arena"></canvas>
+  <canvas id="strike-overlay" aria-hidden="true"></canvas>
+  <nav id="experience-toolbar" aria-label="EvoForge experience controls">
+    <a href="../../">All experiences</a>
+    <span id="experience-mode"></span>
+    <button id="btn-pause" type="button" disabled>Pause</button>
+    <a href="?mode=observe">Observe</a><a href="?mode=play">Play</a>
+  </nav>
+  <section id="arena-message" role="status" hidden><p id="arena-error"></p><a href="../../">Return to EvoForge</a></section>
+  <button id="hud-toggle">Toggle HUD (H)</button>
+  <div id="camera-controls" role="group" aria-label="Arena camera">
+    <button id="cam-orbit" aria-pressed="true" title="Drag to rotate the view">Orbit</button>
+    <button id="cam-pan" aria-pressed="false" title="Drag to move the view across the world">Pan</button>
+    <button id="cam-interact" aria-pressed="false" title="Tap terrain to intervene in Play mode">Interact</button>
+    <button id="cam-left" aria-label="Rotate camera left">←</button><button id="cam-right" aria-label="Rotate camera right">→</button>
+    <button id="cam-up" aria-label="Tilt camera up">↑</button><button id="cam-down" aria-label="Tilt camera down">↓</button>
+    <button id="cam-in" aria-label="Zoom in">+</button><button id="cam-out" aria-label="Zoom out">−</button>
+    <button id="cam-top">Top</button><button id="cam-home">Reset view</button>
+    <output id="camera-status">Orbit</output>
+  </div>
+
+  <div id="hud-left">
+    <h1>
+      <span>ALIFE ARENA v7 — MULTIPHASE</span>
+      <span id="backend-badge" class="badge">INIT</span>
+    </h1>
+    <div style="display:flex; justify-content:space-between; color: var(--muted); font-size: 9px;">
+      <span id="perf-line">Booting WebGPU...</span>
+      <span id="env-telemetry" style="color:#38bdf8;">T_amb: 22°C | g: 1.00G</span>
+    </div>
+
+    <div class="section-title">
+      <span>Guilds, Bonds & Autotomy</span>
+      <span id="tick-label">T=0 | Bonds: 0 | Drops: 0 | Dense: 0</span>
+    </div>
+    <div class="guild-bar">
+      <div class="guild-pill"><div style="color:#3fb950">Herbivore</div><b id="g-herb">0</b></div>
+      <div class="guild-pill"><div style="color:#ff5533">Carnivore</div><b id="g-carn">0</b></div>
+      <div class="guild-pill"><div style="color:#f0b429">Scavenger</div><b id="g-scav">0</b></div>
+      <div class="guild-pill"><div style="color:#38bdf8">Omnivore</div><b id="g-omni">0</b></div>
+    </div>
+
+    <canvas id="sparkline" width="320" height="44"></canvas>
+    <div class="energy-bar">
+      <div id="bar-creatures" style="width:45%; background:#ff5533;"></div>
+      <div id="bar-flora" style="width:45%; background:#2ea043;"></div>
+      <div id="bar-carcass" style="width:10%; background:#d29922;"></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; font-size:9px; color:var(--muted);">
+      <span>Fauna: <b id="e-fauna" style="color:#fff">--</b></span>
+      <span>Flora: <b id="e-flora" style="color:#3fb950">--</b></span>
+      <span>Carcass: <b id="e-carcass" style="color:#f0b429">--</b></span>
+    </div>
+
+    <div class="section-title">6 Morphologies (Click to Tune)</div>
+    <div class="roster-grid">
+      <div class="faction-card selected" id="card-0"><div class="faction-name"><span><span class="dot" style="background:var(--sp0)"></span>Worms</span><span id="gen-0">G1</span></div><div class="faction-stat">Alive: <b id="cnt-0">110</b> | Amphibious</div></div>
+      <div class="faction-card" id="card-1"><div class="faction-name"><span><span class="dot" style="background:var(--sp1)"></span>Urchins</span><span id="gen-1">G1</span></div><div class="faction-stat">Alive: <b id="cnt-1">32</b> | Heavy Sinker</div></div>
+      <div class="faction-card" id="card-2"><div class="faction-name"><span><span class="dot" style="background:var(--sp2)"></span>Centipedes</span><span id="gen-2">G1</span></div><div class="faction-stat">Alive: <b id="cnt-2">28</b> | Climber</div></div>
+      <div class="faction-card" id="card-3"><div class="faction-name"><span><span class="dot" style="background:var(--sp3)"></span>Amoebas</span><span id="gen-3">G1</span></div><div class="faction-stat">Alive: <b id="cnt-3">26</b> | Aquatic</div></div>
+      <div class="faction-card" id="card-4"><div class="faction-name"><span><span class="dot" style="background:var(--sp4)"></span>Anglers</span><span id="gen-4">G1</span></div><div class="faction-stat">Alive: <b id="cnt-4">22</b> | Benthic Lure</div></div>
+      <div class="faction-card" id="card-5"><div class="faction-name"><span><span class="dot" style="background:var(--sp5)"></span>Jellies</span><span id="gen-5">G1</span></div><div class="faction-stat">Alive: <b id="cnt-5">20</b> | Aero/Hydro</div></div>
+    </div>
+
+    <div class="section-title" id="species-knob-title">Morphology Knobs: Swarm Worms</div>
+    <div class="control"><label><span>Basal Metabolic Burn</span><span id="lbl-sp-burn">0.35</span></label><input type="range" id="sl-sp-burn" min="0.05" max="1.50" step="0.05" value="0.35" /></div>
+    <div class="control"><label><span>Max Gait / Swim Speed</span><span id="lbl-sp-speed">0.55</span></label><input type="range" id="sl-sp-speed" min="0.10" max="1.20" step="0.05" value="0.55" /></div>
+    <div class="control"><label><span>2-Hop Bending Posture Stiffness</span><span id="lbl-bend">0.25</span></label><input type="range" id="sl-bend" min="0.00" max="0.65" step="0.05" value="0.25" /></div>
+    <div class="control"><label><span>Mitosis Threshold</span><span id="lbl-sp-split">1.80</span></label><input type="range" id="sl-sp-split" min="1.20" max="3.00" step="0.10" value="1.80" /></div>
+
+    <div class="section-title"><span>Autotelic Director & Surprises</span><span class="badge agent" id="director-badge">ADVISORY</span></div>
+    <div class="director-box">
+      <div style="color:#d2a8ff; margin-bottom:3px;" id="director-advice">Monitoring multiphase niches & thermal gradients...</div>
+      <div class="btn-row">
+        <button id="btn-apply-rec">Apply</button>
+        <button id="btn-auto-director">Auto: OFF</button>
+        <button id="btn-auto-chaos">Surprises: OFF</button>
+        <button id="btn-audio" aria-pressed="false">Audio: OFF</button>
+      </div>
+      <div id="strike-panel" aria-label="Environmental interventions">
+        <div class="section-title">Environmental interventions · experimental</div>
+        <div class="btn-row"><button id="strike-meteor" aria-pressed="true">Meteor</button><button id="strike-lightning" aria-pressed="false">Lightning</button><button id="strike-cancel">Cancel meteor</button></div>
+        <label><input type="checkbox" id="strike-mineral" checked> Mineral-bearing impact</label>
+        <div class="btn-row"><label>X <input id="strike-x" type="number" value="3" step=".1"></label><label>Z <input id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Strike target</button></div>
+        <div id="strike-status" role="status">Select a tool and tap terrain, or enter coordinates.</div>
+      </div>
+      <div id="audio-status">Ecology soundscape: off</div>
+      <label>Sound level <select id="audio-level" aria-label="Sound level"><option value="0.10">Quiet</option><option value="0.20" selected>Normal</option><option value="0.32">Higher</option></select></label>
+      <div class="btn-row">
+        <button class="surprise" id="surp-bloom">Bloom</button>
+        <button class="surprise" id="surp-drought">Drought</button>
+        <button class="surprise" id="surp-meteor">Meteor targeting</button>
+        <button class="surprise" id="surp-heatwave">Heatwave</button>
+        <button class="surprise" id="surp-lowg">Low-G Tide</button>
+      </div>
+      <div class="event-log" id="event-log">v7: 7 Parametric Arena Families + Land/Water/Air + Temp/Gravity + Autotomy.</div>
+    </div>
+  </div>
+
+  <div id="hud-right">
+    <h2><span>7 PARAMETRIC ARENA FAMILIES</span><span id="seed-label" style="font-size:9px; color:#f0b429;">SEED #1337</span></h2>
+    <div class="btn-row">
+      <button id="fam-0" class="active">1.Pillars</button>
+      <button id="fam-1">2.Atolls</button>
+      <button id="fam-2">3.Estuary</button>
+      <button id="fam-3">4.Volcano</button>
+    </div>
+    <div class="btn-row">
+      <button id="fam-4">5.Karst</button>
+      <button id="fam-5">6.Ziggurat</button>
+      <button id="fam-6">7.Ringworld</button>
+    </div>
+
+    <div class="section-title">Land, Water, Air, Temperature & Gravity</div>
+    <div class="control"><label><span>Water Level (Sea Table)</span><span id="lbl-water">-0.15</span></label><input type="range" id="sl-water" min="-1.20" max="1.60" step="0.05" value="-0.15" /></div>
+    <div class="control"><label><span>Tidal Amplitude</span><span id="lbl-tide">0.25</span></label><input type="range" id="sl-tide" min="0.00" max="0.90" step="0.05" value="0.25" /></div>
+    <div class="control"><label><span>Water Viscosity & Current</span><span id="lbl-visc">0.22</span></label><input type="range" id="sl-visc" min="0.02" max="0.60" step="0.02" value="0.22" /></div>
+    <div class="control"><label><span>Air Wind & Thermal Updrafts</span><span id="lbl-wind">0.30</span></label><input type="range" id="sl-wind" min="0.00" max="1.00" step="0.05" value="0.30" /></div>
+    <div class="control"><label><span>Ambient Temperature (°C)</span><span id="lbl-temp">22.0</span></label><input type="range" id="sl-temp" min="0.0" max="45.0" step="1.0" value="22.0" /></div>
+    <div class="control"><label><span>Gravity Scale (G)</span><span id="lbl-grav">1.00</span></label><input type="range" id="sl-grav" min="0.20" max="2.00" step="0.05" value="1.00" /></div>
+
+    <div class="section-title">CSG Topology & Genetic Knobs</div>
+    <div class="control"><label><span>Arena Radius (R)</span><span id="lbl-radius">9.5</span></label><input type="range" id="sl-radius" min="6.5" max="12.0" step="0.5" value="9.5" /></div>
+    <div class="control"><label><span>Radial Symmetry / Pillars (N)</span><span id="lbl-pillars">5</span></label><input type="range" id="sl-pillars" min="0" max="12" step="1" value="5" /></div>
+    <div class="control"><label><span>Relief / Slope / Terrace Height</span><span id="lbl-bowl">0.35</span></label><input type="range" id="sl-bowl" min="-0.75" max="0.95" step="0.05" value="0.35" /></div>
+    <div class="control"><label><span>Flora Regrowth (Solar Input)</span><span id="lbl-regrow">0.52</span></label><input type="range" id="sl-regrow" min="0.00" max="1.50" step="0.05" value="0.52" /></div>
+    <div class="control"><label><span>Heritable Mutation Rate (σ)</span><span id="lbl-mut">0.12</span></label><input type="range" id="sl-mut" min="0.00" max="0.40" step="0.01" value="0.12" /></div>
+    <div class="control"><label><span>Dynamic Kin Bond Rate</span><span id="lbl-bond">0.55</span></label><input type="range" id="sl-bond" min="0.00" max="1.00" step="0.05" value="0.55" /></div>
+
+    <div class="btn-row">
+      <button id="mode-species" class="active">Species</button>
+      <button id="mode-guild">Guilds</button>
+      <button id="mode-temp">Temp/Water</button>
+      <button id="btn-export-json">Snapshot</button>
+      <button id="btn-respawn">Reset</button>
+    </div>
+  </div>
+
+<script>
+if ('serviceWorker' in navigator && isSecureContext) {
+  // Standalone experimental shell: do not register a worker or modify the live cache.
+}
+const launchQuery = new URLSearchParams(location.search);
+const mode = launchQuery.get('mode') === 'play' ? 'play' : 'observe';
+const initialSeed = launchQuery.get('seed');
+const validSeed = initialSeed !== null && /^\d{1,10}$/.test(initialSeed) && Number(initialSeed) <= 0xffffffff;
+const experience = { id: 'alife', version: '0.1.0-rdte.6-interventions-preview', upstream: 'gemini-v7', mode, phase: 'initializing', error: null };
+let paused = false, stopped = false, resetEpoch = 0, viewDirty = true;
+document.getElementById('experience-mode').textContent = mode === 'play' ? 'Play • experimental' : 'Observe • experimental';
+function setPaused(value) {
+  if (typeof value !== 'boolean') throw new TypeError('pause requires a boolean');
+  paused = value; viewDirty = true;
+  syncAudioGain();
+  document.getElementById('btn-pause').textContent = paused ? 'Resume' : 'Pause';
+  if (experience.phase === 'running' || experience.phase === 'paused') experience.phase = paused ? 'paused' : 'running';
+}
+document.getElementById('btn-pause').onclick = () => setPaused(!paused);
+function assertPlay() { if (mode !== 'play') throw new Error('Observation mode: interventions are disabled'); }
+function failArena(message) {
+  if (stopped) return;
+  stopped = true; experience.phase = 'error'; experience.error = String(message);
+  gpuDevice?.destroy(); audioCtx?.close().catch(()=>{});
+  document.getElementById('backend-badge').textContent = 'UNAVAILABLE';
+  document.getElementById('perf-line').textContent = 'Simulation stopped';
+  document.getElementById('arena-error').textContent = experience.error;
+  document.getElementById('arena-message').hidden = false;
+  document.getElementById('btn-pause').disabled = true;
+}
+window.addEventListener('error', e => { if (!stopped) failArena(e.message || 'Arena runtime error'); });
+window.addEventListener('unhandledrejection', e => { if (!stopped) failArena(e.reason?.message || 'Arena initialization failed'); });
+
+const MAX_NODES = 7200;
+const MAX_CREATURES = 512;
+const HASH_BUCKETS = 16384;
+const GRID_DIM = 128;
+// Spatial cell width is independent of physical sensing radius.
+const CELL_SIZE = 0.90;
+const SENSE_RADIUS = 0.87;
+const NODE_RADIUS = 0.16;
+
+const SPECIES_NAMES = ['Swarm Worms', 'Bramble Urchins', 'Wall Centipedes', 'Slime Amoebas', 'Mimic Anglers', 'Lantern-Jellies'];
+const speciesConfig = [
+  { burn: 0.35, speed: 0.55, sense: 0.65, split: 1.80 },
+  { burn: 0.85, speed: 0.85, sense: 0.90, split: 2.20 },
+  { burn: 0.65, speed: 0.95, sense: 0.80, split: 2.00 },
+  { burn: 0.30, speed: 0.45, sense: 0.75, split: 1.70 },
+  { burn: 0.22, speed: 0.70, sense: 0.85, split: 1.95 },
+  { burn: 0.25, speed: 0.32, sense: 0.50, split: 2.10 }
+];
+
+const state = {
+  selectedSpecies: 0,
+  popCounts: launchQuery.get('profile')==='smoke' ? [6,2,2,2,2,2] : [110,32,28,26,22,20],
+  arenaFamily: 0, // 0:Pillars, 1:Atolls, 2:Estuary, 3:Volcano, 4:Karst, 5:Ziggurat, 6:Ringworld
+  renderMode: 0,  // 0:Species, 1:Guilds, 2:Temp/Water
+  waterLevel: -0.15,
+  tidalAmp: 0.25,
+  waterVisc: 0.22,
+  airWind: 0.30,
+  ambientTemp: 22.0,
+  gravityScale: 1.00,
+  bendStiff: 0.25,
+  mutationRate: 0.12,
+  kinBias: 0.35,
+  bondRate: 0.55,
+  floraRegrow: 0.52,
+  floraPatchiness: 0.60,
+  scentPersist: 0.85,
+  surfaceGrip: 0.78,
+  arenaRadius: 9.5,
+  pillarCount: 5,
+  pillarRadius: 0.90,
+  smoothMinK: 0.45,
+  bowlSlope: 0.35,
+  lavaRadius: 1.1,
+  crusherSpeed: 0.0,
+  seed: validSeed ? Number(initialSeed) : 1337,
+  camYaw: 0.65,
+  camPitch: 0.72,
+  camDist: 21.0,
+  camCenterX: 0, camCenterZ: 0, camMode: "orbit", viewRevision: 0,
+  targetX: 0,
+  targetZ: 0,
+  blastX: 0,
+  blastZ: 0,
+  blastPower: 0,
+  simTick: 0,
+  autoDirector: false,
+  autoSurprises: false,
+  audioEnabled: false, audioCueCount: 0, audioLastCue: "none"
+};
+
+document.getElementById('seed-label').textContent = 'SEED #' + state.seed;
+let randomState = state.seed || 0x6d2b79f5;
+function seededRandom() {
+  randomState ^= randomState << 13; randomState ^= randomState >>> 17; randomState ^= randomState << 5;
+  randomState >>>= 0; return randomState / 4294967296;
+}
+let audioCtx = null, audioMaster = null, audioLastTime = -Infinity, audioPrevious = null, audioVoiceCount = 0, audioRequest = 0;
+const audioLevel = document.getElementById('audio-level');
+function syncAudioGain() {
+  if (audioCtx && audioMaster && audioCtx.state !== 'closed') {
+    audioMaster.gain.setTargetAtTime(state.audioEnabled && !paused ? Number(audioLevel.value) : 0, audioCtx.currentTime, 0.035);
+  }
+}
+function audioStatus(message) {
+  const btn=document.getElementById('btn-audio');
+  btn.textContent='Audio: '+(state.audioEnabled?'ON':'OFF');
+  btn.setAttribute('aria-pressed',String(state.audioEnabled));
+  btn.classList.toggle('active',state.audioEnabled);
+  document.getElementById('audio-status').textContent=message;
+}
+async function toggleAudio() {
+  const request=++audioRequest;
+  if (state.audioEnabled) {state.audioEnabled=false;syncAudioGain();audioStatus('Ecology soundscape: off');return;}
+  try {
+    if (!audioCtx) {
+      const Ctor=window.AudioContext||window.webkitAudioContext;
+      if(!Ctor)throw Error('Web Audio unavailable');
+      audioCtx=new Ctor();
+      audioMaster=audioCtx.createGain();audioMaster.gain.value=0;
+      const limiter=audioCtx.createDynamicsCompressor();
+      audioMaster.connect(limiter).connect(audioCtx.destination);
+    }
+    await audioCtx.resume();
+    if(request!==audioRequest||stopped)return;
+    state.audioEnabled=true;audioPrevious=null;audioLastTime=-Infinity;
+    syncAudioGain();audioStatus('Ecology soundscape: active');
+  } catch(e) {state.audioEnabled=false;syncAudioGain();audioStatus('Audio unavailable: '+String(e.message||e));}
+}
+audioLevel.addEventListener('change',syncAudioGain);
+document.getElementById('btn-audio').addEventListener('click',()=>void toggleAudio());
+// Short, bounded sonification cues based on measured ecosystem changes.
+// No continuous oscillator and no consumption of the simulation PRNG.
+function ecologyAudio(sample) {
+  if(!state.audioEnabled||paused||!audioCtx||audioCtx.state!=='running'||audioVoiceCount>=4)return;
+  const now=audioCtx.currentTime;
+  if(now-audioLastTime<0.30)return;
+  const populations=Object.values(sample.populations);
+  const previous=audioPrevious;
+  audioPrevious={populations:[...populations],bonds:sample.dynamicBonds,energy:sample.energy.flora};
+  let kind='activity',species=sample.tick%6,delta=0;
+  if(previous){
+    for(let i=0;i<6;i++){const d=populations[i]-previous.populations[i];if(Math.abs(d)>Math.abs(delta)){species=i;delta=d;}}
+    if(delta>0)kind='birth';else if(delta<0)kind='loss';else if(sample.dynamicBonds>previous.bonds)kind='bond';
+    else if(sample.energy.flora>previous.energy*1.08)kind='bloom';
+  }
+  if(kind==='activity' && previous && now-audioLastTime<0.85)return;
+  if(!populations.some(n=>n>0)&&kind==='activity')return;
+  if(!populations[species]&&kind==='activity')species=populations.findIndex(n=>n>0);
+  const freq=[210,340,270,480,155,620][Math.max(0,species)],dur=kind==='loss'?0.28:kind==='birth'?0.18:0.14;
+  const osc=audioCtx.createOscillator(),gain=audioCtx.createGain(),filter=audioCtx.createBiquadFilter();
+  osc.type=['sine','triangle','triangle','sine','sine','triangle'][Math.max(0,species)];
+  const endFreq=kind==='loss'?freq*.62:kind==='birth'?freq*1.65:kind==='bloom'?freq*1.35:kind==='bond'?freq*1.2:freq*.88;
+  osc.frequency.setValueAtTime(freq,now);osc.frequency.exponentialRampToValueAtTime(endFreq,now+dur);
+  filter.type='lowpass';filter.frequency.value=1800;
+  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(0.22,now+0.018);gain.gain.exponentialRampToValueAtTime(0.001,now+dur);
+  osc.connect(filter).connect(gain).connect(audioMaster);
+  audioVoiceCount++;osc.onended=()=>{audioVoiceCount--;osc.disconnect();filter.disconnect();gain.disconnect();};
+  osc.start(now);osc.stop(now+dur+0.02);
+  audioLastTime=now;state.audioCueCount++;state.audioLastCue=kind;
+  audioStatus('Ecology soundscape: '+kind+' cue · '+state.audioCueCount);
+}
+
+const telemetry = {
+  history: [],
+  latest: {
+    tick: 0, fps: 60, dynamicBonds: 0, autotomyDrops: 0,
+    populations: { worms: 110, urchins: 32, centipedes: 28, amoebas: 26, anglers: 22, jellies: 20 },
+    generations: { worms: 1, urchins: 1, centipedes: 1, amoebas: 1, anglers: 1, jellies: 1 },
+    guilds: { herbivore: 0, carnivore: 0, scavenger: 0, omnivore: 0 },
+    energy: { fauna: 0, flora: 0, carcass: 0, total: 0 },
+    recommendation: null,
+    events: []
+  }
+};
+
+Object.keys(telemetry.latest.populations).forEach((k,i)=>telemetry.latest.populations[k]=state.popCounts[i]);
+const initialTelemetry = structuredClone(telemetry.latest);
+function logEvent(msg) {
+  telemetry.latest.events.unshift({ tick: state.simTick, msg });
+  if (telemetry.latest.events.length > 25) telemetry.latest.events.pop();
+  const box = document.getElementById('event-log');
+  if (box) box.innerHTML = telemetry.latest.events.slice(0, 4).map(e => `<div><b>[T=${e.tick}]</b> ${e.msg}</div>`).join('');
+}
+
+
+// Exact previously tested standalone lifecycle kernel, kept private to this namespace.
+const interventionModel=(()=>{
+// Abstract simulation units only. Bounded intervention and heightfield reference.
+const TICKS_PER_SECOND=30, COUNTDOWN=90, DESCENT=24, MAX_CRATERS=8;
+const PROFILE=Object.freeze({meteor:Object.freeze({radius:2.25,depth:.9,rim:.24,impulse:1.5,heat:1,nutrients:.65}),lightning:Object.freeze({radius:.65,depth:0,rim:0,impulse:.16,heat:.25,nutrients:0})});
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const finite=n=>typeof n==='number'&&Number.isFinite(n);
+const baseHeight=(x,z)=>.35*((x*x+z*z)*.07-1.2)+.14*Math.sin(x*.85+.137)*Math.cos(z*.85-.137);
+const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t)};
+function terrainDelta(x,z,c){const r=Math.hypot(x-c.x,z-c.z)/c.radius;if(r>=1)return 0;const bowl=-c.depth*(1-smooth(r/.76));const rim=c.rim*Math.max(0,1-Math.abs(r-.80)/.20)**2;return bowl+rim}
+function heightAt(state,x,z){return baseHeight(x,z)+state.craters.reduce((sum,c)=>sum+terrainDelta(x,z,c),0)}
+function fieldsAt(state,x,z){
+ let nutrients=0,heat=0,impulse=0;
+ for(const c of state.craters){const r=Math.hypot(x-c.x,z-c.z)/c.radius;nutrients+=c.nutrients*Math.max(0,1-r)**2}
+ for(const e of state.effects){const r=Math.hypot(x-e.x,z-e.z)/e.radius;const fade=clamp(1-(state.tick-e.tick)/e.duration,0,1);heat+=e.heat*Math.max(0,1-r)*fade;impulse+=e.impulse*Math.max(0,1-r)*fade}
+ return {nutrients:clamp(nutrients,0,1),heat:clamp(heat,0,1),impulse};
+}
+function createWorld({mode='play',radius=10}={}){
+ if(!['play','observe'].includes(mode)||!finite(radius)||radius<4||radius>12)throw Error('world configuration');
+ return {mode,radius,epoch:0,tick:0,paused:false,nextId:1,pending:null,craters:[],effects:[],receipts:[],lastLightning:-Infinity};
+}
+function requirePlay(w){if(w.mode!=='play')throw Error('Observe mode: interventions disabled')}
+function target(w,x,z,r){if(!finite(x)||!finite(z)||Math.hypot(x,z)+r>w.radius)throw Error('Target footprint must fit within world');}
+function receipt(w,e){w.receipts.push({...e});if(w.receipts.length>64)w.receipts.shift()}
+function armMeteor(w,x,z,{nutrients=true}={}){
+ requirePlay(w);if(w.paused)throw Error('Resume before arming');
+ target(w,x,z,PROFILE.meteor.radius);
+ if(w.craters.length>=MAX_CRATERS)throw Error('Crater capacity reached');
+ if(w.pending?.phase==='descent')throw Error('Meteor already descending');
+ if(typeof nutrients!=='boolean')throw Error('Invalid payload');
+ const id=w.pending?.id??w.nextId++;
+ w.pending={id,x,z,phase:'countdown',armedAt:w.tick,launchAt:w.tick+COUNTDOWN,impactAt:w.tick+COUNTDOWN+DESCENT,nutrients};
+ receipt(w,{id,type:'armed',tick:w.tick,x,z});return w.pending.id;
+}
+function cancelMeteor(w){requirePlay(w);if(!w.pending||w.pending.phase!=='countdown')return false;receipt(w,{id:w.pending.id,type:'cancelled',tick:w.tick});w.pending=null;return true}
+function impact(w,type,x,z,id,nutrients){
+ const p=PROFILE[type];
+ if(type==='meteor')w.craters.push({id,x,z,radius:p.radius,depth:p.depth,rim:p.rim,nutrients:nutrients?p.nutrients:0,tick:w.tick});
+ const e={id,type,x,z,radius:p.radius,heat:p.heat,impulse:p.impulse,tick:w.tick,duration:type==='meteor'?30:9};
+ w.effects.push(e);receipt(w,{...e,type:type==='meteor'?'meteor-impact':'lightning-impact',payload:type==='meteor'&&nutrients?'mineral':'none'});
+}
+function lightning(w,x,z){
+ requirePlay(w);if(w.paused)throw Error('Resume before striking');target(w,x,z,PROFILE.lightning.radius);
+ if(w.tick-w.lastLightning<12)throw Error('Lightning cooling down');
+ w.lastLightning=w.tick;const id=w.nextId++;impact(w,'lightning',x,z,id,false);return id;
+}
+function advance(w,count=1){
+ if(!Number.isSafeInteger(count)||count<0||count>300)throw Error('Tick budget');
+ if(w.paused)return;
+ for(let i=0;i<count;i++){
+  w.tick++;
+  w.effects=w.effects.filter(e=>w.tick-e.tick<e.duration);
+  if(w.pending?.phase==='countdown'&&w.tick>=w.pending.launchAt){w.pending.phase='descent';receipt(w,{id:w.pending.id,type:'launched',tick:w.tick})}
+  if(w.pending?.phase==='descent'&&w.tick>=w.pending.impactAt){
+   const e=w.pending;w.pending=null;
+   impact(w,'meteor',e.x,e.z,e.id,e.nutrients);
+  }
+ }
+}
+function reset(w){requirePlay(w);const next=createWorld({mode:w.mode,radius:w.radius});next.epoch=w.epoch+1;Object.assign(w,next)}
+function snapshot(w){return {mode:w.mode,epoch:w.epoch,tick:w.tick,paused:w.paused,pending:w.pending?{...w.pending}:null,craters:w.craters.map(c=>({...c})),effects:w.effects.map(e=>({...e})),receipts:w.receipts.map(e=>({...e}))}}
+
+return {createWorld,armMeteor,cancelMeteor,advance,lightning,terrainDelta,fieldsAt,snapshot,PROFILE,COUNTDOWN,DESCENT};
+})();
+let strikeWorld=interventionModel.createWorld({mode,radius:state.arenaRadius}),strikeTool='meteor',strikeHover=null,strikeMessage='',impactTickEvents=[];
+const {PROFILE:strikeProfiles}=interventionModel;
+const strikeEl=id=>document.getElementById(id);
+function strikeStatus(){
+ const p=strikeWorld.pending;
+ const phase=p?(p.phase==='countdown'?'Target armed · '+(p.launchAt-strikeWorld.tick)+' simulation ticks to descent':'Meteor descending · committed'):'No pending meteor';
+ strikeEl('strike-status').textContent=phase+' · '+strikeWorld.craters.length+'/8 craters'+(strikeMessage?' · '+strikeMessage:'');
+ strikeEl('strike-cancel').disabled=mode!=='play'||p?.phase!=='countdown';
+}
+function chooseStrike(tool){assertPlay();if(!Object.hasOwn(strikeProfiles,tool))throw Error('Unknown strike');strikeTool=tool;cameraMode('interact');for(const t of ['meteor','lightning'])strikeEl('strike-'+t).setAttribute('aria-pressed',String(t===tool));viewDirty=true;strikeStatus();}
+function admitStrike(tool,x,z,nutrients=true){
+ assertPlay();if(stopped||experience.phase!=='running'||paused)throw Error('Resume a running arena first');
+ const p=strikeProfiles[tool];if(!p||!Number.isFinite(x)||!Number.isFinite(z))throw Error('Invalid target');
+ if(Math.hypot(x,z)+p.radius>state.arenaRadius-.25)throw Error('Target radius must fit inside arena');
+ if(state.arenaFamily===6&&Math.hypot(x,z)-p.radius<state.arenaRadius*.26)throw Error('Target intersects ringworld hub');
+ if(tool==='meteor'&&strikeWorld.craters.some(c=>Math.hypot(c.x-x,c.z-z)<c.radius+p.radius))throw Error('Choose a non-overlapping crater footprint');
+ strikeWorld.radius=state.arenaRadius;
+ if(tool==='meteor')interventionModel.armMeteor(strikeWorld,x,z,{nutrients});else interventionModel.lightning(strikeWorld,x,z);
+ strikeEl('strike-x').value=x.toFixed(2);strikeEl('strike-z').value=z.toFixed(2);
+ strikeMessage=tool==='meteor'?'Cancel or retarget before descent.':'Lightning dispatched.';
+ viewDirty=true;strikeStatus();return interventionModel.snapshot(strikeWorld);
+}
+function attemptStrike(tool,x,z,nutrients){try{return admitStrike(tool,x,z,nutrients)}catch(e){strikeMessage=e.message;viewDirty=true;strikeStatus();return null}}
+function cancelStrike(){assertPlay();const cancelled=interventionModel.cancelMeteor(strikeWorld);strikeMessage=cancelled?'Cancelled without impact.':'No cancelable meteor.';viewDirty=true;strikeStatus();return cancelled}
+function stepInterventions(){
+ strikeWorld.paused=false;interventionModel.advance(strikeWorld);
+ if(strikeWorld.tick!==state.simTick)throw Error('Intervention clock drift');
+ // Immediate clicks between frames apply once at the next simulation step; meteor applies at its actual impact tick.
+ impactTickEvents=strikeWorld.effects.filter(e=>e.type==='meteor'?e.tick===strikeWorld.tick:e.tick===strikeWorld.tick-1);
+ for(const e of impactTickEvents)logEvent(e.type==='meteor'?'METEOR: persistent crater':'LIGHTNING: localized impact');
+ if(impactTickEvents.length)strikeMessage='Impact applied.';
+ strikeStatus();
+}
+function resetInterventions(){strikeWorld=interventionModel.createWorld({mode,radius:state.arenaRadius});strikeWorld.epoch=resetEpoch;strikeHover=null;impactTickEvents=[];strikeMessage='World reset';strikeStatus();}
+function packCraters(out,offset){for(let i=0;i<strikeWorld.craters.length;i++){const c=strikeWorld.craters[i];out.set([c.x,c.z,c.radius,c.depth,c.nutrients,c.rim,0,0],offset+i*8)}}
+function packImpacts(out,offset){for(let i=0;i<Math.min(4,impactTickEvents.length);i++){const e=impactTickEvents[i];out.set([e.x,e.z,e.radius,e.impulse],offset+i*4)}}
+// CPU-side height matches the actual seven procedural GPU terrain families; used for ray intersection and visual marker placement.
+function baseSurface(x,z){
+ const r=Math.hypot(x,z),v=state.seed*.137,amp=state.bowlSlope,R=state.arenaRadius,sq=x=>x*x;
+ const smooth=(a,b,t)=>{t=Math.max(0,Math.min(1,(t-a)/(b-a)));return t*t*(3-2*t)};
+ switch(state.arenaFamily){
+ case 1:return (Math.sin(x*.65+v)*Math.cos(z*.65-v)+.45*Math.cos(r*.9-v))*(.65+Math.abs(amp))-r/R*.45;
+ case 2:return smooth(.6,3.8,Math.abs(x-Math.sin(z*.55+v)*2.1))*1.15-z/R*.65-.35;
+ case 3:return Math.exp(-sq((r-R*.55)/1.4))*1.45-Math.exp(-sq(r/1.8))*.95+Math.sin(x*.8+v)*.12;
+ case 4:return (Math.sin(x*.95+v)*Math.sin(z*.95-v)>.35?-.75:.55)+.15*Math.cos(r*1.1);
+ case 5:{const n=Math.max(0,Math.min(1,1-r/R));return Math.floor(n*5)*.42+Math.sin(Math.atan2(z,x)*2+n*8)*.12-.35;}
+ case 6:return sq(Math.abs(r-R*.62)*.48)-.25;
+ default:return amp*(r*r*.07-1.2)+Math.sin(x*.85+v)*Math.cos(z*.85-v)*.14;
+ }
+}
+function surface(x,z){return baseSurface(x,z)+strikeWorld.craters.reduce((sum,c)=>sum+interventionModel.terrainDelta(x,z,c),0)}
+function intersectSurface(eye,ray){
+ if(ray[1]>=-.0001)return null;
+ let prev=null;
+ for(let i=0;i<=1000;i++){
+  const t=i*.1,x=eye[0]+ray[0]*t,z=eye[2]+ray[2]*t,r=Math.hypot(x,z);
+  if(r>state.arenaRadius||(state.arenaFamily===6&&r<state.arenaRadius*.26)){prev=null;continue;}
+  const d=eye[1]+ray[1]*t-surface(x,z);
+  if(prev!==null&&prev>=0&&d<=0){let lo=t-.1,hi=t;for(let j=0;j<12;j++){const m=(lo+hi)/2,mx=eye[0]+ray[0]*m,mz=eye[2]+ray[2]*m;if(eye[1]+ray[1]*m>=surface(mx,mz))lo=m;else hi=m;}return {x:eye[0]+ray[0]*hi,z:eye[2]+ray[2]*hi};}
+  prev=d;
+ }
+ return null;
+}
+const strikeCanvas=strikeEl('strike-overlay'),strikeCtx=strikeCanvas.getContext('2d'),reducedStrike=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function paintInterventions(matrix,width,height){
+ if(strikeCanvas.width!==width||strikeCanvas.height!==height){strikeCanvas.width=width;strikeCanvas.height=height;}
+ const ctx=strikeCtx,dpr=Math.min(devicePixelRatio,2);
+ ctx.clearRect(0,0,width,height);
+ function proj(x,y,z){const w=matrix[3]*x+matrix[7]*y+matrix[11]*z+matrix[15];if(w<=.01)return null;return [(matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12])/w*width/2+width/2,height/2-(matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13])/w*height/2]}
+ function line(points,color,thick,closed=false){if(points.some(p=>!p)||!points.length)return;ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);if(closed)ctx.closePath();ctx.strokeStyle=color;ctx.lineWidth=thick*dpr;ctx.lineCap='round';ctx.stroke()}
+ function ring(x,z,r,color,thick=2){line(Array.from({length:65},(_,i)=>{const a=i/64*Math.PI*2,xx=x+Math.cos(a)*r,zz=z+Math.sin(a)*r;return proj(xx,surface(xx,zz)+.06,zz)}),color,thick,true)}
+ function textAt(label,p,color){if(!p)return;ctx.font='bold '+Math.round(14*dpr)+'px system-ui';ctx.fillStyle=color;ctx.textAlign='center';ctx.fillText(label,p[0],p[1]-15*dpr)}
+ function dot(p,r,c){if(!p)return;ctx.beginPath();ctx.arc(p[0],p[1],r*dpr,0,Math.PI*2);ctx.fillStyle=c;ctx.fill()}
+ const e=strikeWorld.pending;
+ if(strikeHover&&!e&&mode==='play'&&state.camMode==='interact')ring(strikeHover.x,strikeHover.z,strikeProfiles[strikeTool].radius,'rgba(255,220,150,.55)',1);
+ if(e){const h=surface(e.x,e.z),p=proj(e.x,h+.05,e.z);ring(e.x,e.z,strikeProfiles.meteor.radius,'#ffd083');if(p){line([[p[0]-9*dpr,p[1]],[p[0]+9*dpr,p[1]]],'#ffe6b2',2);line([[p[0],p[1]-9*dpr],[p[0],p[1]+9*dpr]],'#ffe6b2',2);}
+ if(e.phase==='countdown')textAt('METEOR · '+(e.launchAt-strikeWorld.tick)+' ticks',p,'#ffe5ac');
+ else{const f=Math.max(0,Math.min(1,(strikeWorld.tick-e.launchAt)/interventionModel.DESCENT)),m=proj(e.x-(1-f)*1.1,h+(1-f)*7,e.z-(1-f)*.6),tail=proj(e.x-(1-f)*1.1-.4,h+(1-f)*7+1.4,e.z-(1-f)*.6-.3);if(!reducedStrike)line([tail,m],'#f5a455',9);dot(m,9,'#f3a455');dot(m,4,'#fff2b8');textAt('DESCENT · COMMITTED',p,'#ffe5ac');}}
+ for(const e of strikeWorld.effects){const h=surface(e.x,e.z),p=proj(e.x,h+.05,e.z),f=(strikeWorld.tick-e.tick)/e.duration;
+ if(e.type==='meteor'){ring(e.x,e.z,e.radius*Math.max(.15,f),'#ffb65c',3);dot(p,reducedStrike?5:7+10*(1-f),'rgba(255,181,82,.9)');textAt('IMPACT',p,'#ffe0a0');if(!reducedStrike&&p)for(let i=0;i<10;i++){const a=i*Math.PI/5;dot([p[0]+Math.cos(a)*f*50*dpr,p[1]+Math.sin(a)*f*24*dpr-f*25*dpr],2,'#f1bb79')}}
+ else{line([proj(e.x-.12,h+5,e.z),proj(e.x+.22,h+3.7,e.z),proj(e.x-.18,h+2.5,e.z),proj(e.x+.16,h+1.1,e.z),p],'#a8ddff',reducedStrike?2:4);ring(e.x,e.z,e.radius,'#b8e8ff',2);textAt('LIGHTNING',p,'#b8e8ff');}}
+}
+strikeEl('strike-meteor').onclick=()=>chooseStrike('meteor');
+strikeEl('strike-lightning').onclick=()=>chooseStrike('lightning');
+strikeEl('strike-cancel').onclick=()=>cancelStrike();
+strikeEl('strike-place').onclick=()=>attemptStrike(strikeTool,Number(strikeEl('strike-x').value),Number(strikeEl('strike-z').value),strikeEl('strike-mineral').checked);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&mode==='play'&&strikeWorld.pending?.phase==='countdown')cancelStrike();});
+if(mode==='observe')for(const id of ['strike-meteor','strike-lightning','strike-place','strike-mineral','strike-x','strike-z','strike-cancel'])strikeEl(id).disabled=true;
+strikeStatus();
+
+const WGSL_CRATERS = /* wgsl */`
+struct CraterRecord { shape: vec4<f32>, material: vec4<f32>, };
+fn craterOffset(xz: vec2<f32>, cs: array<CraterRecord,8>) -> f32 {
+ var value=0.0;
+ for(var i=0u;i<8u;i++){let c=cs[i];if(c.shape.z<=0.0){continue;}
+ let r=length(xz-c.shape.xy)/c.shape.z;if(r>=1.0){continue;}
+ let bowl=-c.shape.w*(1.0-smoothstep(0.0,0.76,r));
+ let rim=max(0.0,1.0-abs(r-0.80)/0.20);
+ value+=bowl+c.material.y*rim*rim;
+ }return value;
+}
+fn mineralPotential(xz: vec2<f32>, cs: array<CraterRecord,8>) -> f32 {
+ var value=0.0;
+ for(var i=0u;i<8u;i++){let c=cs[i];if(c.shape.z<=0.0){continue;}let r=length(xz-c.shape.xy)/c.shape.z;
+ let f=max(0.0,1.0-r);value+=c.material.x*f*f;}
+ return clamp(value,0.0,1.0);
+}
+`;
+const WGSL_COMPUTE = /* wgsl */`${WGSL_CRATERS}
+
+struct ArenaParams {
+  radius: f32,
+  pillarCount: f32,
+  pillarRadius: f32,
+  smoothMinK: f32,
+  bowlSlope: f32,
+  lavaRadius: f32,
+  crusherSpeed: f32,
+  surfaceGrip: f32,
+};
+
+struct MultiphaseParams {
+  waterLevel: f32,
+  tidalAmp: f32,
+  waterVisc: f32,
+  airWind: f32,
+  ambientTemp: f32,
+  gravityScale: f32,
+  bendStiff: f32,
+  arenaFamily: u32,
+};
+
+struct EcologyParams {
+  floraRegrow: f32,
+  floraPatchiness: f32,
+  scentPersist: f32,
+  mutationRate: f32,
+};
+
+struct SpeciesTuning {
+  burn: f32,
+  maxSpeed: f32,
+  senseGain: f32,
+  splitThreshold: f32,
+};
+
+struct SimParams {
+  totalNodes: u32,
+  totalCreatures: u32,
+  renderMode: u32,
+  seed: u32,
+  simTick: u32,
+  kinBias: f32,
+  cellSize: f32,
+  nodeRadius: f32,
+  blastPower: f32,
+  bondRate: f32,
+  senseRadius: f32,
+  pad3: f32,
+  targetPos: vec4<f32>,
+  blastPos: vec4<f32>,
+  arena: ArenaParams,
+  multi: MultiphaseParams,
+  eco: EcologyParams,
+  spTuning: array<SpeciesTuning, 6>,
+  craters: array<CraterRecord,8>,
+  impacts: array<vec4<f32>,4>,
+};
+
+struct Node {
+  pos: vec4<f32>,
+  prev: vec4<f32>,
+  nodeMeta: vec4<u32>,
+};
+
+// 64-byte Extended Evolvable Genome:
+// affinity: [grazer, predator, ambush, shepherd]
+// diet:     [flora, carcass, softPrey, armoredPrey]
+// traits:   [gaitFreq, speedScale, scentWeight, armorThickness]
+// physio:   [optimalTempC, aquaticAffinity (0=terrestrial, 1=aquatic), buoyancy, autotomyThreshold]
+struct CreatureGenome {
+  affinity: vec4<f32>,
+  diet: vec4<f32>,
+  traits: vec4<f32>,
+  physio: vec4<f32>,
+  brain: array<u32, 16>,
+};
+
+struct CreatureState {
+  energy: atomic<u32>,
+  species: u32,
+  generation: u32,
+  lineageId: u32,
+  firstNode: u32,
+  nodeCount: u32,
+  birthTick: u32,
+  pad: u32,
+};
+
+@group(0) @binding(0) var<uniform> params: SimParams;
+@group(0) @binding(1) var<storage, read_write> nodes: array<Node>;
+@group(0) @binding(2) var<storage, read_write> headPtrs: array<atomic<u32>>;
+@group(0) @binding(3) var<storage, read_write> nextPtrs: array<atomic<u32>>;
+@group(0) @binding(4) var<storage, read_write> genomes: array<CreatureGenome>;
+@group(0) @binding(5) var<storage, read_write> creatures: array<CreatureState>;
+@group(0) @binding(6) var<storage, read_write> floraGrid: array<atomic<u32>>;
+@group(0) @binding(7) var<storage, read_write> scentGrid: array<atomic<u32>>;
+@group(0) @binding(8) var<storage, read_write> stats: array<atomic<u32>>;
+
+// Bounded compare-exchange loops debit the actually available resource.
+fn takeEnergy(cid: u32, amount: u32) -> u32 {
+  for(var tries=0u; tries<64u; tries++){
+    let before=atomicLoad(&creatures[cid].energy);
+    let taken=min(before,amount);
+    if(taken==0u){return 0u;}
+    if(atomicCompareExchangeWeak(&creatures[cid].energy,before,before-taken).exchanged){return taken;}
+  }
+  atomicAdd(&stats[21u],1u); return 0u;
+}
+fn creditEnergy(cid: u32, amount: u32) {
+  for(var tries=0u;tries<64u;tries++){
+    let before=atomicLoad(&creatures[cid].energy);
+    if(before==0u){return;}
+    let after=min(100000u,before+amount);
+    if(atomicCompareExchangeWeak(&creatures[cid].energy,before,after).exchanged){return;}
+  }
+  atomicAdd(&stats[21u],1u);
+}
+fn takeFlora(cell: u32, amount: u32) -> u32 {
+  for(var tries=0u;tries<64u;tries++){
+    let before=atomicLoad(&floraGrid[cell]);
+    let taken=min(before,amount);
+    if(taken==0u){return 0u;}
+    if(atomicCompareExchangeWeak(&floraGrid[cell],before,before-taken).exchanged){return taken;}
+  }
+  atomicAdd(&stats[21u],1u); return 0u;
+}
+fn addFlora(cell: u32, amount: u32) {
+  for(var tries=0u;tries<64u;tries++){
+    let before=atomicLoad(&floraGrid[cell]);
+    if(atomicCompareExchangeWeak(&floraGrid[cell],before,min(1000u,before+amount)).exchanged){return;}
+  }
+  atomicAdd(&stats[21u],1u);
+}
+fn pcgHash(input: u32) -> u32 {
+  var state = input * 747796405u + 2891336453u;
+  var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+  return (word >> 22u) ^ word;
+}
+
+fn randFloat(seedA: u32, seedB: u32) -> f32 {
+  return f32(pcgHash(seedA ^ (seedB * 1664525u + 1013904223u))) / 4294967295.0;
+}
+
+fn evalLGP(cid: u32, localFlora: f32, localScent: f32, submersion: f32, tempNorm: f32, energyNorm: f32, sinPhase: f32) -> vec4<f32> {
+  var r = array<f32, 8>(localFlora, localScent, submersion, tempNorm, energyNorm, sinPhase, params.kinBias, 1.0);
+  let prog = genomes[cid].brain;
+  for (var pc: u32 = 0u; pc < 16u; pc++) {
+    let inst = prog[pc];
+    let op = inst & 7u;
+    let dst = (inst >> 3u) & 7u;
+    let a = r[(inst >> 6u) & 7u];
+    let b = r[(inst >> 9u) & 7u];
+    var res = a;
+    if (op == 0u) { res = a + b; }
+    else if (op == 1u) { res = a - b; }
+    else if (op == 2u) { res = a * b; }
+    else if (op == 3u) { res = sin(a * 3.14159); }
+    else if (op == 4u) { res = max(a, b); }
+    else if (op == 5u) { res = min(a, b); }
+    else if (op == 6u) { res = select(0.0, b, a > 0.25); }
+    else { res = tanh(a + b); }
+    r[dst] = clamp(res, -2.0, 2.0);
+  }
+  return vec4<f32>(
+    clamp(0.6 + 0.5 * r[0], 0.1, 1.5),
+    r[1] * 0.85,
+    r[2],
+    clamp(0.5 + 0.5 * r[3], 0.0, 1.5)
+  );
+}
+
+fn smin(a: f32, b: f32, k: f32) -> f32 {
+  if (k <= 0.001) { return min(a, b); }
+  let h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// 7 Parametric Arena Families
+fn square(x: f32) -> f32 { return x * x; }
+
+fn baseTerrainHeight(xz: vec2<f32>) -> f32 {
+  let r = length(xz);
+  let s = f32(params.seed) * 0.137;
+  let fam = params.multi.arenaFamily;
+  let amp = params.arena.bowlSlope;
+
+  if (fam == 1u) {
+    // 1. Tidal Archipelago & Land-Bridge Atolls
+    let islands = sin(xz.x * 0.65 + s) * cos(xz.y * 0.65 - s) + 0.45 * cos(r * 0.9 - s);
+    return islands * (0.65 + abs(amp)) - (r / params.arena.radius) * 0.45;
+  } else if (fam == 2u) {
+    // 2. Dendritic River Basin & Estuary (sloping channel along winding X-axis)
+    let meander = sin(xz.y * 0.55 + s) * 2.1;
+    let channelDist = abs(xz.x - meander);
+    let gorge = smoothstep(0.6, 3.8, channelDist) * 1.15;
+    let slopeDown = (xz.y / params.arena.radius) * 0.65;
+    return gorge - slopeDown - 0.35;
+  } else if (fam == 3u) {
+    // 3. Volcanic Atoll & Caldera Rim
+    let rimR = params.arena.radius * 0.55;
+    let caldera = exp(-square((r - rimR) / 1.4)) * 1.45 - exp(-square(r / 1.8)) * 0.95;
+    return caldera + sin(xz.x * 0.8 + s) * 0.12;
+  } else if (fam == 4u) {
+    // 4. Karst Sinkholes & Perforated Plateau
+    let sink = sin(xz.x * 0.95 + s) * sin(xz.y * 0.95 - s);
+    return select(0.55, -0.75, sink > 0.35) + 0.15 * cos(r * 1.1);
+  } else if (fam == 5u) {
+    // 5. Terraced Step-Pyramid / Ziggurat
+    let normR = clamp(1.0 - r / params.arena.radius, 0.0, 1.0);
+    let steps = floor(normR * 5.0) * 0.42;
+    let ramp = sin(atan2(xz.y, xz.x) * 2.0 + normR * 8.0) * 0.12;
+    return steps + ramp - 0.35;
+  } else if (fam == 6u) {
+    // 6. Rotating Centrifuge Ringworld (banked annular track)
+    let trackR = params.arena.radius * 0.62;
+    let dTrack = abs(r - trackR);
+    return square(dTrack * 0.48) - 0.25;
+  }
+
+  // 0. Default Pillars & Bowl
+  let bowl = amp * (r * r * 0.07 - 1.2);
+  let wave = (sin(xz.x * 0.85 + s) * cos(xz.y * 0.85 - s)) * 0.14;
+  return bowl + wave;
+}
+
+fn terrainHeight(xz:vec2<f32>)->f32{return baseTerrainHeight(xz)+craterOffset(xz,params.craters);}
+
+fn currentWaterLevel() -> f32 {
+  let simT = f32(params.simTick) * 0.016;
+  return params.multi.waterLevel + params.multi.tidalAmp * sin(simT * 0.55);
+}
+
+fn localTemperature(p: vec3<f32>) -> f32 {
+  let simT = f32(params.simTick) * 0.016;
+  let diurnal = 4.5 * sin(simT * 0.25);
+  let altitudeLapse = -1.8 * max(0.0, p.y);
+  let ventHeat = select(0.0, 26.0 * exp(-dot(p.xz, p.xz) / max(0.5, params.arena.lavaRadius * 2.2)), params.arena.lavaRadius > 0.05);
+  return params.multi.ambientTemp + diurnal + altitudeLapse + ventHeat;
+}
+
+fn sdCapsule(p: vec3<f32>, a: vec3<f32>, b: vec3<f32>, r: f32) -> f32 {
+  let pa = p - a;
+  let ba = b - a;
+  let h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h) - r;
+}
+
+fn sceneSDF(p: vec3<f32>) -> f32 {
+  let floorH = terrainHeight(p.xz);
+  var d = p.y - floorH;
+  d = min(d, params.arena.radius - length(p.xz));
+
+  // Ringworld inner hub exclusion
+  if (params.multi.arenaFamily == 6u) {
+    let innerHub = length(p.xz) - (params.arena.radius * 0.26);
+    d = min(d, innerHub);
+  }
+
+  let nPillars = i32(round(params.arena.pillarCount));
+  if (nPillars > 0) {
+    let ringR = params.arena.radius * 0.52;
+    let sector = 6.2831853 / f32(nPillars);
+    let ang = atan2(p.z, p.x);
+    let localAng = ((ang + sector * 0.5) - floor((ang + sector * 0.5) / sector) * sector) - sector * 0.5;
+    let q = vec2<f32>(cos(localAng), sin(localAng)) * length(p.xz);
+    let dPillar = length(q - vec2<f32>(ringR, 0.0)) - params.arena.pillarRadius;
+    d = smin(d, dPillar, params.arena.smoothMinK);
+  }
+  if (params.arena.crusherSpeed > 0.01) {
+    let simT = f32(params.simTick) * 0.016;
+    let theta = simT * params.arena.crusherSpeed;
+    let span = params.arena.radius * 0.88;
+    let endPt = vec3<f32>(cos(theta) * span, floorH + 0.45, sin(theta) * span);
+    d = min(d, sdCapsule(p, -endPt + vec3<f32>(0.0, floorH * 2.0 + 0.9, 0.0), endPt, 0.42));
+  }
+  return d;
+}
+
+fn sceneNormal(p: vec3<f32>) -> vec3<f32> {
+  let e = 0.015;
+  let d = sceneSDF(p);
+  let gradient=vec3<f32>(
+    sceneSDF(p + vec3<f32>(e, 0.0, 0.0)) - d,
+    sceneSDF(p + vec3<f32>(0.0, e, 0.0)) - d,
+    sceneSDF(p + vec3<f32>(0.0, 0.0, e)) - d
+  );
+  if(dot(gradient,gradient)<1e-12){return vec3<f32>(0.0,1.0,0.0);}
+  return normalize(gradient);
+}
+
+fn hashCell(c: vec3<i32>) -> u32 {
+  let p = vec3<u32>(bitcast<u32>(c.x), bitcast<u32>(c.y), bitcast<u32>(c.z));
+  return ((p.x * 73856093u) ^ (p.y * 19349663u) ^ (p.z * 83492791u)) & 16383u;
+}
+
+fn cellCoord(p: vec3<f32>) -> vec3<i32> {
+  return vec3<i32>(floor(p / params.cellSize));
+}
+
+fn worldToGridIdx(xz: vec2<f32>) -> u32 {
+  let uv = clamp((xz / 24.0) + 0.5, vec2<f32>(0.0), vec2<f32>(0.999));
+  return u32(uv.y * 128.0) * 128u + u32(uv.x * 128.0);
+}
+
+@compute @workgroup_size(64)
+fn updateEcology(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let i = gid.x;
+  let wLevel = currentWaterLevel();
+
+  if (i < 16384u) {
+    let gx = i % 128u;
+    let gz = i / 128u;
+    let xz = (vec2<f32>(f32(gx), f32(gz)) / 128.0 - 0.5) * 24.0;
+    let r = length(xz);
+    let flora = atomicLoad(&floraGrid[i]);
+
+    if (r < params.arena.radius - 0.3 && r > params.arena.lavaRadius + 0.2) {
+      let s = f32(params.seed) * 0.17;
+      let fertilityPatch = 0.5 + 0.5 * sin(xz.x * 0.45 + s) * cos(xz.y * 0.45 - s);
+      let h = terrainHeight(xz);
+      // Fertile shoreline & shallow estuary boost
+      let shoreBonus = select(1.0, 1.35, abs(h - wLevel) < 0.45);
+      let cap = u32(min(1000.0, mix(1000.0, 1000.0 * fertilityPatch, params.eco.floraPatchiness) * shoreBonus));
+      if (flora < cap) {
+        let grow = u32(params.eco.floraRegrow * 8.0 * (1.0 + mineralPotential(xz,params.craters)*0.8));
+        atomicStore(&floraGrid[i], min(cap, flora + grow));
+      }
+    } else {
+      atomicStore(&floraGrid[i], 0u);
+    }
+
+    let sc = atomicLoad(&scentGrid[i]);
+    if (sc > 0u) {
+      atomicStore(&scentGrid[i], u32(f32(sc) * params.eco.scentPersist));
+    }
+  }
+
+  if (i < params.totalCreatures) {
+    let e = atomicLoad(&creatures[i].energy);
+    if (e == 0u) { return; }
+
+    let sp = creatures[i].species;
+    let burn = max(1u,u32(params.spTuning[sp].burn * 4.0));
+    atomicStore(&creatures[i].energy,e-min(e,burn));
+  }
+}
+
+// Single-owner reproduction avoids reading a newborn genome while another invocation writes it.
+// A slot is reusable only after every old body/carcass node is inactive.
+@compute @workgroup_size(1)
+fn reproduce() {
+  for (var i=0u; i<params.totalCreatures; i++) {
+    let newE=atomicLoad(&creatures[i].energy);
+    let sp=creatures[i].species;
+    if (newE <= u32(params.spTuning[sp].splitThreshold*1000.0) || creatures[i].birthTick==params.simTick) { continue; }
+    for (var c=0u; c<params.totalCreatures; c++) {
+      if (creatures[c].species!=sp || atomicLoad(&creatures[c].energy)!=0u) {continue;}
+      let first=creatures[c].firstNode;
+      let count=creatures[c].nodeCount;
+      var available=count>0u;
+      for(var n=first; n<first+count; n++){if(nodes[n].pos.w>0.01){available=false;}}
+      if(!available){continue;}
+      let childEnergy=newE/2u;
+      atomicStore(&creatures[i].energy,newE-childEnergy);
+      creatures[c].generation=creatures[i].generation+1u;
+      creatures[c].lineageId=creatures[i].lineageId & 0xffffu;
+      creatures[c].birthTick=params.simTick;
+            let mutR = params.eco.mutationRate;
+            let salt = params.simTick ^ (c * 7919u) ^ params.seed;
+            let pG = genomes[i];
+
+            genomes[c].affinity = clamp(pG.affinity + vec4<f32>(
+              (randFloat(salt, 1u) - 0.5) * 2.0 * mutR,
+              (randFloat(salt, 2u) - 0.5) * 2.0 * mutR,
+              (randFloat(salt, 3u) - 0.5) * 2.0 * mutR,
+              (randFloat(salt, 4u) - 0.5) * 2.0 * mutR
+            ), vec4<f32>(-1.0), vec4<f32>(1.0));
+
+            let rawDiet = max(vec4<f32>(0.02), pG.diet + vec4<f32>(
+              (randFloat(salt, 5u) - 0.5) * 2.0 * mutR,
+              (randFloat(salt, 6u) - 0.5) * 2.0 * mutR,
+              (randFloat(salt, 7u) - 0.5) * 2.0 * mutR,
+              (randFloat(salt, 8u) - 0.5) * 2.0 * mutR
+            ));
+            genomes[c].diet = (rawDiet / (rawDiet.x + rawDiet.y + rawDiet.z + rawDiet.w)) * 1.6;
+
+            genomes[c].traits = vec4<f32>(
+              clamp(pG.traits.x + (randFloat(salt, 9u) - 0.5) * 4.0 * mutR, 4.0, 18.0),
+              clamp(pG.traits.y + (randFloat(salt, 10u) - 0.5) * 0.5 * mutR, 0.2, 1.3),
+              clamp(pG.traits.z + (randFloat(salt, 11u) - 0.5) * 0.5 * mutR, -1.0, 1.5),
+              clamp(pG.traits.w + (randFloat(salt, 12u) - 0.5) * 0.4 * mutR, 0.3, 3.0)
+            );
+
+            genomes[c].physio = vec4<f32>(
+              clamp(pG.physio.x + (randFloat(salt, 14u) - 0.5) * 8.0 * mutR, 2.0, 45.0),
+              clamp(pG.physio.y + (randFloat(salt, 15u) - 0.5) * 0.6 * mutR, 0.0, 1.0),
+              clamp(pG.physio.z + (randFloat(salt, 16u) - 0.5) * 0.4 * mutR, 0.2, 1.6),
+              clamp(pG.physio.w + (randFloat(salt, 17u) - 0.5) * 0.4 * mutR, 0.0, 1.0)
+            );
+
+            genomes[c].brain = genomes[i].brain;
+            if (randFloat(salt, 13u) < mutR * 2.5) {
+              let slot = pcgHash(salt ^ 0x9e3779b9u) & 15u;
+              genomes[c].brain[slot] = pcgHash(salt ^ (slot * 2654435761u));
+            }
+
+      let a=f32(c)*2.39996+f32(params.simTick)*0.016;
+      let r=params.arena.radius*0.65;
+      let centerXZ=vec2<f32>(cos(a)*r,sin(a)*r);
+      let center=vec3<f32>(centerXZ.x,terrainHeight(centerXZ)+0.85,centerXZ.y);
+      for(var n=first;n<first+count;n++){
+        var body=nodes[2u*params.totalNodes+n];
+        let position=center+body.pos.xyz;
+        body.pos=vec4<f32>(position,1.0);
+        body.prev=vec4<f32>(position,f32(sp));
+        nodes[n]=body;
+      }
+      atomicStore(&creatures[c].energy,childEnergy);
+      break;
+    }
+  }
+}
+
+@compute @workgroup_size(64)
+fn integrateVerlet(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.totalNodes) { return; }
+
+  let dt = 0.016;
+  let simT = f32(params.simTick) * dt;
+  let cid = nodes[idx].nodeMeta.x;
+  let lid = nodes[idx].nodeMeta.y;
+  let sp = u32(nodes[idx].prev.w);
+  let cEnergy = atomicLoad(&creatures[cid].energy);
+  let wLevel = currentWaterLevel();
+
+  // Dormant reserved slots are not biomass. A detached tail remains a decoy until this pass.
+  if(sp>=7u){return;}
+  // Severed autotomy tail decoy or dead creature node -> Carcass Pellet (sp = 6)
+  if ((cEnergy == 0u && sp < 6u && nodes[idx].pos.w > 0.01) || (sp < 6u && nodes[idx].pos.w < 0.05)) {
+    nodes[idx].prev.w = 6.0;
+    nodes[idx].pos.w = 0.35;
+    nodes[idx].nodeMeta.z = 0xffffffffu;
+    nodes[idx].nodeMeta.w = 0xffffffffu;
+    return;
+  }
+
+  // Carcass Pellets (sp == 6): drift downstream in water!
+  if (sp == 6u) {
+    let cal = nodes[idx].pos.w;
+    if (cal > 0.01) {
+      var p = nodes[idx].pos.xyz;
+      let sub = clamp((wLevel - p.y) / (2.0 * params.nodeRadius), 0.0, 1.0);
+      if (sub > 0.1 && params.multi.arenaFamily == 2u) {
+        p.z += 0.015 * sub; // river drift toward estuary
+      }
+      p.y = max(p.y - mix(0.04, 0.012, sub), terrainHeight(p.xz) + params.nodeRadius);
+      nodes[idx].pos = vec4<f32>(p, cal);
+      nodes[idx].prev = vec4<f32>(p, 6.0);
+    }
+    return;
+  }
+
+  if (cEnergy == 0u) { return; }
+
+  var p = nodes[idx].pos.xyz;
+  var prev = nodes[idx].prev.xyz;
+  let genome = genomes[cid];
+  let tuning = params.spTuning[sp];
+  let gIdx = worldToGridIdx(p.xz);
+
+  if (sp == 5u && lid == 0u) {
+    let fCur = atomicLoad(&floraGrid[gIdx]);
+    if (fCur < 920u) { addFlora(gIdx,16u); }
+  } else if (sp == 4u && lid == 0u) {
+    let fCur = atomicLoad(&floraGrid[gIdx]);
+    if (fCur < 850u) { addFlora(gIdx,10u); }
+  } else {
+    atomicAdd(&scentGrid[gIdx], 12u);
+  }
+
+  let fVal = atomicLoad(&floraGrid[gIdx]);
+  if (lid == 0u && genome.diet.x > 0.25 && fVal > 40u) {
+    let bite=takeFlora(gIdx,32u);
+    creditEnergy(cid,u32(f32(bite)*min(1.0,genome.diet.x)));
+  }
+
+  // Multiphase Media Physics: Land, Water, Air + Variable Gravity + Temperature
+  let submersion = clamp((wLevel - p.y) / (2.0 * params.nodeRadius), 0.0, 1.0);
+  let locTemp = localTemperature(p);
+  let thermalPerf = exp(-square((locTemp - genome.physio.x) / 14.0));
+
+  // Hypoxia / thermal stress if strictly terrestrial creature stays deeply submerged
+  if (lid == 0u && submersion > 0.85 && genome.physio.y < 0.25) {
+    _ = takeEnergy(cid,6u);
+  }
+
+  let baseDamp = select(0.94, 0.975, sp == 1u);
+  let fluidDrag = 1.0 - clamp(submersion * params.multi.waterVisc, 0.0, 0.42);
+  var vel = (p - prev) * baseDamp * fluidDrag;
+
+  // Variable Gravity + Archimedes Buoyancy + Thermal Updrafts + Wind/River Currents
+  let gravAcc = clamp(14.0 * params.multi.gravityScale, 1.0, 32.0);
+  let buoyancy = submersion * gravAcc * genome.physio.z;
+  vel.y += (buoyancy - gravAcc) * dt * dt;
+
+  if (submersion > 0.1) {
+    // River estuary downstream current or circular vortex
+    if (params.multi.arenaFamily == 2u) {
+      vel.z += 0.004 * submersion;
+    }
+  } else {
+    // Divergence-free curl wind + geothermal updrafts in Air
+    let airDens = exp(-max(0.0, p.y) * 0.18);
+    let wind = vec3<f32>(cos(p.z * 0.4 + simT * 0.6), 0.0, -sin(p.x * 0.4 + simT * 0.6)) * (params.multi.airWind * 0.0035 * airDens);
+    let thermalLift = max(0.0, locTemp - params.multi.ambientTemp) * params.multi.airWind * 0.00025;
+    vel += wind + vec3<f32>(0.0, thermalLift, 0.0);
+    if (sp == 5u) {
+      let targetH = max(wLevel, terrainHeight(p.xz)) + 1.15 + 0.25 * sin(simT * 3.2 + f32(cid));
+      vel.y += (targetH - p.y) * 0.04;
+    }
+  }
+
+  // Ringworld centrifugal acceleration
+  if (params.multi.arenaFamily == 6u) {
+    let rVec = vec3<f32>(p.x, 0.0, p.z);
+    if (length(rVec) > 0.1) { vel += normalize(rVec) * 0.004; }
+  }
+
+  let gx = i32(gIdx % 128u);
+  let gz = i32(gIdx / 128u);
+  let gL = u32(gz * 128 + max(0, gx - 1));
+  let gR = u32(gz * 128 + min(127, gx + 1));
+  let gD = u32(max(0, gz - 1) * 128 + gx);
+  let gU = u32(min(127, gz + 1) * 128 + gx);
+
+  let floraGrad = vec3<f32>(
+    f32(atomicLoad(&floraGrid[gR])) - f32(atomicLoad(&floraGrid[gL])), 0.0,
+    f32(atomicLoad(&floraGrid[gU])) - f32(atomicLoad(&floraGrid[gD]))
+  ) * 0.0005 * genome.diet.x * tuning.senseGain;
+
+  let scentGrad = vec3<f32>(
+    f32(atomicLoad(&scentGrid[gR])) - f32(atomicLoad(&scentGrid[gL])), 0.0,
+    f32(atomicLoad(&scentGrid[gU])) - f32(atomicLoad(&scentGrid[gD]))
+  ) * 0.0004 * genome.traits.z * tuning.senseGain;
+
+  let lgpOut = evalLGP(
+    cid,
+    f32(fVal) / 1000.0,
+    min(1.0, f32(atomicLoad(&scentGrid[gIdx])) / 400.0),
+    submersion,
+    clamp(locTemp / 45.0, 0.0, 1.5),
+    clamp(f32(cEnergy) / 2000.0, 0.0, 1.5),
+    sin(simT * genome.traits.x + f32(cid))
+  );
+
+  var drive = floraGrad + scentGrad;
+  let toBeacon = params.targetPos.xyz - p;
+  if (length(toBeacon) > 0.3) { drive += normalize(toBeacon) * 0.10; }
+
+  let cAng = cos(lgpOut.y);
+  let sAng = sin(lgpOut.y);
+  drive = vec3<f32>(drive.x * cAng - drive.z * sAng, 0.0, drive.x * sAng + drive.z * cAng);
+
+  let ambushHold = (sp == 4u && lid > 0u && cEnergy > 650u) || (lgpOut.z > 0.55 && cEnergy > 500u);
+  let swimBoost = mix(1.0, 0.55 + 0.85 * genome.physio.y, submersion);
+  let effSpeed = tuning.maxSpeed * genome.traits.y * lgpOut.x * (0.45 + 0.55 * thermalPerf) * swimBoost;
+  let maxStep = tuning.maxSpeed * 1.3 * dt * 0.45;
+
+  if (!ambushHold && length(drive) > 0.0001) {
+    let dir = normalize(drive);
+    let side = vec3<f32>(-dir.z, 0.0, dir.x);
+    let freq = genome.traits.x;
+    if (sp == 0u) {
+      let phase = simT * freq + f32(cid) + f32(lid) * 0.9;
+      vel += clamp(dir * (effSpeed * dt * 0.4) + side * sin(phase) * 0.011, vec3<f32>(-maxStep), vec3<f32>(maxStep));
+    } else if (sp == 2u && lid >= 6u) {
+      let lift = max(0.0, sin(simT * freq * 1.3 + f32(lid) * 3.14159 + f32(cid)));
+      vel.y += lift * 0.016;
+      vel += clamp(dir * (effSpeed * lift * dt * 0.6), vec3<f32>(-maxStep), vec3<f32>(maxStep));
+    } else {
+      vel += clamp(dir * (effSpeed * dt * 0.42), vec3<f32>(-maxStep), vec3<f32>(maxStep));
+    }
+  }
+
+  // Each admitted impact is applied on one simulation step, not repeatedly during visual animation.
+  for(var hit=0u;hit<4u;hit++){
+    let ev=params.impacts[hit];if(ev.z<=0.0){continue;}
+    let center=vec3<f32>(ev.x,terrainHeight(ev.xy),ev.y);
+    let delta=p-center;let dist=length(delta);
+    if(dist<ev.z){
+      let falloff=1.0-dist/ev.z;
+      let direction=select(vec3<f32>(0.0,1.0,0.0),delta/max(dist,.0001),dist>.0001);
+      vel+=(direction+vec3<f32>(0.0,.55,0.0))*ev.w*falloff*.14;
+      if(lid==0u){let debit=takeEnergy(cid,u32(80.0*ev.w*falloff));atomicAdd(&stats[26u],debit);}
+    }
+  }
+
+  if (params.arena.lavaRadius > 0.05 && length(p.xz) < params.arena.lavaRadius && p.y < terrainHeight(p.xz) + 0.35) {
+    _ = takeEnergy(cid,25u);
+    vel.y += 0.025;
+  }
+
+  nodes[idx].prev = vec4<f32>(p, f32(sp));
+  let displacement=length(vel);
+  if(displacement>params.nodeRadius*0.5){vel*=params.nodeRadius*0.5/displacement;}
+  nodes[idx].pos = vec4<f32>(p + vel, 1.0);
+}
+
+@compute @workgroup_size(64)
+fn clearGrid(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x < 16384u) { atomicStore(&headPtrs[gid.x], 0xffffffffu); }
+  if (gid.x < 28u && gid.x != 20u && gid.x != 26u) { atomicStore(&stats[gid.x], 0u); }
+}
+
+@compute @workgroup_size(64)
+fn clearHash(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if(gid.x<16384u){atomicStore(&headPtrs[gid.x],0xffffffffu);}
+}
+@compute @workgroup_size(64)
+fn snapshotNodes(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if(gid.x<params.totalNodes){nodes[params.totalNodes+gid.x]=nodes[gid.x];}
+}
+@compute @workgroup_size(64)
+fn initCarrionClaims(@builtin(global_invocation_id) gid: vec3<u32>){
+  if(gid.x<params.totalNodes){
+    let node=nodes[gid.x];
+    atomicStore(&nextPtrs[params.totalNodes+gid.x],select(0u,1u,u32(node.prev.w)==6u && node.pos.w>0.01));
+  }
+}
+@compute @workgroup_size(64)
+fn finalizeCarrion(@builtin(global_invocation_id) gid: vec3<u32>){
+  if(gid.x<params.totalNodes && u32(nodes[gid.x].prev.w)==6u && atomicLoad(&nextPtrs[params.totalNodes+gid.x])==0u){nodes[gid.x].pos.w=0.0;}
+}
+@compute @workgroup_size(64)
+fn collectStats(@builtin(global_invocation_id) gid: vec3<u32>){
+  let i=gid.x;
+  if(i==0u){
+    var last:vec2<f32>=vec2<f32>(0.0);
+    var count=0u;
+    for(var j=0u;j<8u;j++){if(params.craters[j].shape.z>0.0){last=params.craters[j].shape.xy;count++;}}
+    atomicStore(&stats[23u],bitcast<u32>(baseTerrainHeight(last)));
+    atomicStore(&stats[24u],bitcast<u32>(terrainHeight(last)));
+    atomicStore(&stats[25u],bitcast<u32>(mineralPotential(last,params.craters)));
+    atomicStore(&stats[27u],count);
+  }
+  if(i<16384u){atomicAdd(&stats[12u],atomicLoad(&floraGrid[i]));}
+  if(i<params.totalCreatures){
+    let energy=atomicLoad(&creatures[i].energy);
+    if(energy>0u){
+      let sp=creatures[i].species;
+      atomicAdd(&stats[sp],1u); atomicAdd(&stats[6u+sp],creatures[i].generation); atomicAdd(&stats[13u],energy);
+      let d=genomes[i].diet;let meat=d.z+d.w;
+      if(d.x>0.85 && meat<0.35){atomicAdd(&stats[15u],1u);}
+      else if(meat>0.85 && d.x<0.35){atomicAdd(&stats[16u],1u);}
+      else if(d.y>0.75){atomicAdd(&stats[17u],1u);}
+      else{atomicAdd(&stats[18u],1u);}
+    }
+  }
+  if(i<params.totalNodes){
+    let node=nodes[i];
+    if(u32(node.prev.w)==6u){atomicAdd(&stats[14u],u32(max(0.0,node.pos.w)*650.0));}
+    if(u32(node.prev.w)<6u && node.pos.w>0.05){
+      let link=node.nodeMeta.z;
+      if(link<params.totalNodes && nodes[link].nodeMeta.x!=node.nodeMeta.x && nodes[link].pos.w>0.05){atomicAdd(&stats[19u],1u);}
+    }
+  }
+}
+
+@compute @workgroup_size(64)
+fn buildSpatialHash(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.totalNodes || nodes[idx].pos.w <= 0.01) { return; }
+  let sp = u32(nodes[idx].prev.w);
+  let cid = nodes[idx].nodeMeta.x;
+  if (sp < 6u && atomicLoad(&creatures[cid].energy) == 0u) { return; }
+  let h = hashCell(cellCoord(nodes[idx].pos.xyz));
+  atomicStore(&nextPtrs[idx],atomicExchange(&headPtrs[h], idx));
+}
+
+@compute @workgroup_size(64)
+fn relaxConstraints(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.totalNodes || nodes[idx].pos.w <= 0.05) { return; }
+  let sp = u32(nodes[idx].prev.w);
+  if (sp >= 6u) { return; }
+
+  let cid = nodes[idx].nodeMeta.x;
+  if (atomicLoad(&creatures[cid].energy) == 0u) { return; }
+
+  let linkA = nodes[idx].nodeMeta.z;
+  let linkB = nodes[idx].nodeMeta.w;
+  var p = nodes[idx].pos.xyz;
+  var restLen = 0.25;
+  if (sp == 1u) { restLen = 0.42; }
+  else if (sp == 2u) { restLen = 0.28; }
+  else if (sp == 4u) { restLen = 0.30; }
+  else if (sp == 5u) { restLen = 0.34; }
+
+  let validA = (linkA < params.totalNodes && nodes[params.totalNodes+linkA].pos.w > 0.05 && u32(nodes[params.totalNodes+linkA].prev.w) == sp);
+  let validB = (linkB < params.totalNodes && nodes[params.totalNodes+linkB].pos.w > 0.05 && u32(nodes[params.totalNodes+linkB].prev.w) == sp);
+
+  if (validA) {
+    let delta = p - nodes[params.totalNodes+linkA].pos.xyz;
+    let d = length(delta);
+    if (d > restLen * 2.5 && (sp == 0u || sp == 2u)) {
+      nodes[idx].nodeMeta.z = 0xffffffffu;
+    } else if (d > 0.0001) {
+      p -= delta * (((d - restLen) / d) * select(0.48, 0.65, sp == 1u || sp == 4u));
+    }
+  }
+  if (validB) {
+    let delta = p - nodes[params.totalNodes+linkB].pos.xyz;
+    let d = length(delta);
+    if (d > restLen * 2.5 && (sp == 0u || sp == 2u)) {
+      nodes[idx].nodeMeta.w = 0xffffffffu;
+    } else if (d > 0.0001) {
+      p -= delta * (((d - restLen) / d) * select(0.48, 0.65, sp == 1u || sp == 4u));
+    }
+  }
+
+  // 2-Hop Cosserat Angular Bending Constraint between linkA and linkB
+  if (validA && validB && params.multi.bendStiff > 0.01 && (sp == 0u || sp == 2u || sp == 5u)) {
+    let pA = nodes[params.totalNodes+linkA].pos.xyz;
+    let pB = nodes[params.totalNodes+linkB].pos.xyz;
+    let mid = (pA + pB) * 0.5;
+    p += (mid - p) * (params.multi.bendStiff * 0.35);
+  }
+
+  // Freeze the broad-phase query origin while accumulating contact corrections.
+  let queryP = p;
+  let baseCell = cellCoord(queryP);
+  let minSep = params.nodeRadius * 1.95;
+  let senseRadiusSq = params.senseRadius * params.senseRadius;
+  let myVel = p - nodes[idx].prev.xyz;
+  let myGenome = genomes[cid];
+  let myLineage = creatures[cid].lineageId & 0xffffu;
+  var nearbyGrazers: u32 = 0u;
+
+  for (var dz: i32 = -1; dz <= 1; dz++) {
+    for (var dy: i32 = -1; dy <= 1; dy++) {
+      for (var dx: i32 = -1; dx <= 1; dx++) {
+        let neighborCell=baseCell+vec3<i32>(dx,dy,dz);
+        let h=hashCell(neighborCell);
+        var other = atomicLoad(&headPtrs[h]);
+        var steps: u32 = 0u;
+        while (other < params.totalNodes && steps < 24u) {
+          if (other != idx && nodes[params.totalNodes+other].pos.w > 0.05 && all(cellCoord(nodes[params.totalNodes+other].pos.xyz)==neighborCell)) {
+            let otherCid = nodes[params.totalNodes+other].nodeMeta.x;
+            let otherSp = u32(nodes[params.totalNodes+other].prev.w);
+            let pOther = nodes[params.totalNodes+other].pos.xyz;
+            let diff = queryP - pOther;
+            let dSq = dot(diff, diff);
+
+            if (dSq < senseRadiusSq && dSq > 1e-6) {
+              let d = sqrt(dSq);
+              let dir = diff / d;
+
+              if (otherSp == 6u) {
+                p -= dir * (0.014 * myGenome.diet.y);
+                if (d < minSep * 1.3 && myGenome.diet.y > 0.15) {
+                  let cal = nodes[params.totalNodes+other].pos.w;
+                  if (cal > 0.01 && atomicExchange(&nextPtrs[params.totalNodes+other],0u)==1u) {
+                    creditEnergy(cid,u32(cal*650.0*min(1.0,myGenome.diet.y)));
+                  }
+                }
+              } else if (otherCid != cid) {
+                let otherLineage = creatures[otherCid].lineageId & 0xffffu;
+                let isKin = (myLineage == otherLineage);
+                let bucket = min(3u, otherSp % 4u);
+                var aff = myGenome.affinity[bucket];
+                if (isKin) { aff += params.kinBias; }
+
+                if (sp == 5u && (otherSp == 1u || otherSp == 2u || otherSp == 4u)) {
+                  p += dir * 0.018;
+                } else if (sp == 5u && (otherSp == 0u || otherSp == 3u)) {
+                  nearbyGrazers++;
+                }
+
+                p -= dir * (aff * 0.011);
+
+                if (d < minSep) {
+                  p += dir * ((minSep - d) * 0.45);
+                  let relSpeed = length(myVel - (pOther - nodes[params.totalNodes+other].prev.xyz));
+
+                  if (isKin && otherSp == sp && nodes[idx].nodeMeta.z == 0xffffffffu && relSpeed < 0.025 && params.bondRate > 0.05) {
+                    if (randFloat(params.simTick ^ idx, other) < params.bondRate * 0.04) {
+                      nodes[idx].nodeMeta.z = other;
+                    }
+                  }
+
+                  // Autotomy is a victim-owned state transition, not an attacker-side effect.
+                  let otherGenome=genomes[otherCid];
+                  let threat=max(otherGenome.diet.z,otherGenome.diet.w)>0.25 && otherGenome.affinity[sp%4u]>0.10;
+                  if(!isKin && threat && relSpeed>0.036 && nodes[idx].nodeMeta.y>=4u && myGenome.physio.w>0.45 && (sp==0u||sp==2u)){
+                    nodes[idx].nodeMeta.z=0xffffffffu; nodes[idx].nodeMeta.w=0xffffffffu;
+                    nodes[idx].pos=vec4<f32>(p,0.02);
+                    _ = takeEnergy(cid,20u);
+                    atomicAdd(&stats[20u],1u);
+                    return;
+                  }
+                  let meatSkill = max(myGenome.diet.z, myGenome.diet.w);
+                  if (!isKin && meatSkill > 0.25 && aff > 0.10) {
+                    let isAmbushSnap = (sp == 4u && nodes[params.totalNodes+other].nodeMeta.y == 0u);
+                    if (relSpeed > 0.036 || isAmbushSnap) {
+                      let targetArmor=genomes[otherCid].traits.w;
+                      let pen=select(myGenome.diet.z,myGenome.diet.w,targetArmor>1.3);
+                      let dmg=u32(clamp((18.0*pen)/max(0.4,targetArmor),4.0,42.0));
+                      let taken=takeEnergy(otherCid,dmg);
+                      creditEnergy(cid,u32(f32(taken)*0.78));
+                    }
+                  }
+                }
+              }
+            }
+          }
+          other = atomicLoad(&nextPtrs[other]);
+          steps++;
+        }
+        if(other < params.totalNodes){atomicAdd(&stats[22u],1u);}
+      }
+    }
+  }
+
+  if (sp == 5u && nodes[idx].nodeMeta.y == 0u && nearbyGrazers >= 3u) {
+    creditEnergy(cid,3u);
+  }
+
+  let sd = sceneSDF(p);
+  if (sd < params.nodeRadius) {
+    let n = sceneNormal(p);
+    p += n * (params.nodeRadius - sd);
+    let disp = p - nodes[idx].prev.xyz;
+    let normalDisp = n * dot(disp, n);
+    let grip = select(params.arena.surfaceGrip, 0.96, sp == 1u);
+    nodes[idx].prev = vec4<f32>(p - (normalDisp + (disp - normalDisp) * grip), f32(sp));
+  }
+
+  nodes[idx].pos = vec4<f32>(p, 1.0);
+}
+`;
+
+const WGSL_RENDER = /* wgsl */`${WGSL_CRATERS}
+
+struct ArenaParams {
+  radius: f32,
+  pillarCount: f32,
+  pillarRadius: f32,
+  smoothMinK: f32,
+  bowlSlope: f32,
+  lavaRadius: f32,
+  crusherSpeed: f32,
+  surfaceGrip: f32,
+};
+
+struct MultiphaseParams {
+  waterLevel: f32,
+  tidalAmp: f32,
+  waterVisc: f32,
+  airWind: f32,
+  ambientTemp: f32,
+  gravityScale: f32,
+  bendStiff: f32,
+  arenaFamily: u32,
+};
+
+struct CameraUniforms {
+  viewProj: mat4x4<f32>,
+  camPos: vec4<f32>,
+  targetPos: vec4<f32>,
+  renderMode: u32,
+  totalNodes: u32,
+  simTick: u32,
+  seed: u32,
+  arena: ArenaParams,
+  multi: MultiphaseParams,
+  craters: array<CraterRecord,8>,
+};
+
+struct Node {
+  pos: vec4<f32>,
+  prev: vec4<f32>,
+  nodeMeta: vec4<u32>,
+};
+
+struct CreatureGenome {
+  affinity: vec4<f32>,
+  diet: vec4<f32>,
+  traits: vec4<f32>,
+  physio: vec4<f32>,
+  brain: array<u32, 16>,
+};
+
+@group(0) @binding(0) var<uniform> cam: CameraUniforms;
+@group(0) @binding(1) var<storage, read> nodes: array<Node>;
+@group(0) @binding(2) var<storage, read> floraGrid: array<u32>;
+@group(0) @binding(3) var<storage, read> scentGrid: array<u32>;
+@group(0) @binding(4) var<storage, read> genomes: array<CreatureGenome>;
+
+struct VSOut {
+  @builtin(position) clipPos: vec4<f32>,
+  @location(0) localUV: vec2<f32>,
+  @location(1) worldPos: vec3<f32>,
+  @location(2) color: vec3<f32>,
+  @location(3) @interpolate(flat) species: u32,
+  @location(4) @interpolate(flat) part: u32,
+};
+
+fn square(x: f32) -> f32 { return x * x; }
+
+fn baseTerrainHeight(xz: vec2<f32>) -> f32 {
+  let r = length(xz);
+  let s = f32(cam.seed) * 0.137;
+  let fam = cam.multi.arenaFamily;
+  let amp = cam.arena.bowlSlope;
+  if (fam == 1u) {
+    return (sin(xz.x * 0.65 + s) * cos(xz.y * 0.65 - s) + 0.45 * cos(r * 0.9 - s)) * (0.65 + abs(amp)) - (r / cam.arena.radius) * 0.45;
+  } else if (fam == 2u) {
+    let meander = sin(xz.y * 0.55 + s) * 2.1;
+    return smoothstep(0.6, 3.8, abs(xz.x - meander)) * 1.15 - (xz.y / cam.arena.radius) * 0.65 - 0.35;
+  } else if (fam == 3u) {
+    let rimR = cam.arena.radius * 0.55;
+    return exp(-square((r - rimR) / 1.4)) * 1.45 - exp(-square(r / 1.8)) * 0.95 + sin(xz.x * 0.8 + s) * 0.12;
+  } else if (fam == 4u) {
+    let sink = sin(xz.x * 0.95 + s) * sin(xz.y * 0.95 - s);
+    return select(0.55, -0.75, sink > 0.35) + 0.15 * cos(r * 1.1);
+  } else if (fam == 5u) {
+    let normR = clamp(1.0 - r / cam.arena.radius, 0.0, 1.0);
+    return floor(normR * 5.0) * 0.42 + sin(atan2(xz.y, xz.x) * 2.0 + normR * 8.0) * 0.12 - 0.35;
+  } else if (fam == 6u) {
+    let dTrack = abs(r - cam.arena.radius * 0.62);
+    return square(dTrack * 0.48) - 0.25;
+  }
+  return amp * (r * r * 0.07 - 1.2) + (sin(xz.x * 0.85 + s) * cos(xz.y * 0.85 - s)) * 0.14;
+}
+
+fn terrainHeight(xz:vec2<f32>)->f32{return baseTerrainHeight(xz)+craterOffset(xz,cam.craters);}
+
+fn speciesColor(sp: u32, lid: u32, cid: u32) -> vec3<f32> {
+  if (cam.renderMode == 1u) {
+    let d = genomes[cid].diet;
+    let meat = d.z + d.w;
+    if (d.x > 0.85 && meat < 0.35) { return vec3<f32>(0.25, 0.85, 0.45); }
+    if (meat > 0.85 && d.x < 0.35) { return vec3<f32>(0.95, 0.25, 0.20); }
+    if (d.y > 0.75) { return vec3<f32>(0.95, 0.75, 0.20); }
+    return vec3<f32>(0.25, 0.75, 0.98);
+  }
+  if (sp == 0u) { return select(vec3<f32>(0.92, 0.28, 0.18), vec3<f32>(1.0, 0.65, 0.35), lid == 0u); }
+  if (sp == 1u) { return select(vec3<f32>(0.95, 0.72, 0.15), vec3<f32>(1.0, 0.92, 0.55), lid == 0u); }
+  if (sp == 2u) { return select(vec3<f32>(0.22, 0.76, 0.34), vec3<f32>(0.55, 0.95, 0.45), lid >= 6u); }
+  if (sp == 3u) { return vec3<f32>(0.22, 0.74, 0.97); }
+  if (sp == 4u) { return select(vec3<f32>(0.42, 0.26, 0.48), vec3<f32>(0.95, 0.68, 0.22), lid == 0u); }
+  if (sp == 5u) { return vec3<f32>(0.18, 0.88, 0.78); }
+  return vec3<f32>(0.68, 0.52, 0.24);
+}
+
+// Render-only phenotypes: tapered body ribbons and species-specific surface silhouettes.
+// Existing node simulation, bonds, genome, collision and reproduction remain unchanged.
+@vertex
+fn vsLink(@builtin(vertex_index) vIdx: u32) -> VSOut {
+  let nodeIdx = vIdx / 6u;
+  let k = vIdx % 6u;
+  let n = nodes[nodeIdx];
+  let linkA = n.nodeMeta.z;
+  let sp = u32(n.prev.w);
+  var out: VSOut;
+  if (sp >= 6u || n.pos.w <= 0.05 || linkA == 0xffffffffu || linkA >= cam.totalNodes) {
+    out.clipPos = vec4<f32>(2.0,2.0,2.0,1.0); return out;
+  }
+  let other = nodes[linkA];
+  if (u32(other.prev.w) != sp || other.pos.w <= 0.05 || length(other.pos.xyz-n.pos.xyz)<0.0001) {
+    out.clipPos = vec4<f32>(2.0,2.0,2.0,1.0); return out;
+  }
+  var corners = array<vec2<f32>,6>(vec2<f32>(0.0,-1.0),vec2<f32>(1.0,-1.0),vec2<f32>(0.0,1.0),vec2<f32>(0.0,1.0),vec2<f32>(1.0,-1.0),vec2<f32>(1.0,1.0));
+  let uv = corners[k];
+  let direction = normalize(other.pos.xyz-n.pos.xyz);
+  let middle = (n.pos.xyz+other.pos.xyz)*0.5;
+  var side = cross(direction,cam.camPos.xyz-middle);
+  if(length(side)<0.0001){side=cross(direction,vec3<f32>(0.0,1.0,0.0));}
+  if(length(side)<0.0001){side=cross(direction,vec3<f32>(1.0,0.0,0.0));}
+  side=normalize(side);
+  let hybrid = n.nodeMeta.x != other.nodeMeta.x;
+  var width = 0.115;
+  if(sp==0u){width=0.13;}
+  if(sp==1u){width=0.055;}
+  if(sp==2u){width=select(0.14,0.055,n.nodeMeta.y>=6u);}
+  if(sp==3u){width=0.19;}
+  if(sp==4u){width=0.08;}
+  if(sp==5u){width=0.06;}
+  if(hybrid){width=0.018;}
+  let p = mix(n.pos.xyz,other.pos.xyz,uv.x)+side*uv.y*width*mix(0.82,1.0,uv.x);
+  out.clipPos=cam.viewProj*vec4<f32>(p,1.0);out.localUV=uv;out.worldPos=p;
+  out.color=select(speciesColor(sp,n.nodeMeta.y,n.nodeMeta.x),vec3<f32>(1.0),hybrid);
+  out.species=sp;out.part=n.nodeMeta.y;return out;
+}
+@fragment
+fn fsLink(in: VSOut)->@location(0) vec4<f32>{
+  let edge=abs(in.localUV.y);
+  let shade=0.45+0.55*sqrt(max(0.0,1.0-edge*edge));
+  return vec4<f32>(in.color*shade,1.0);
+}
+@vertex
+fn vsNode(@builtin(vertex_index) vIdx:u32,@builtin(instance_index) iIdx:u32)->VSOut{
+  var quad=array<vec2<f32>,6>(vec2<f32>(-1.0,-1.0),vec2<f32>(1.0,-1.0),vec2<f32>(-1.0,1.0),vec2<f32>(-1.0,1.0),vec2<f32>(1.0,-1.0),vec2<f32>(1.0,1.0));
+  let uv=quad[vIdx];let n=nodes[iIdx];var out:VSOut;
+  if(n.pos.w<=0.01){out.clipPos=vec4<f32>(2.0,2.0,2.0,1.0);return out;}
+  let p=n.pos.xyz;let sp=u32(n.prev.w);let lid=n.nodeMeta.y;
+  var axes=vec2<f32>(0.16,0.13);
+  if(sp==0u){axes=select(vec2<f32>(0.19,0.13),vec2<f32>(0.22,0.16),lid==0u);}
+  if(sp==1u){axes=select(vec2<f32>(0.11,0.075),vec2<f32>(0.26,0.26),lid==0u);}
+  if(sp==2u){axes=select(vec2<f32>(0.20,0.13),vec2<f32>(0.10,0.055),lid>=6u);}
+  if(sp==3u){axes=vec2<f32>(0.24,0.20);}
+  if(sp==4u){axes=select(vec2<f32>(0.13,0.08),vec2<f32>(0.28,0.19),lid==0u);}
+  if(sp==5u){axes=select(vec2<f32>(0.11,0.075),vec2<f32>(0.27,0.20),lid==0u);}
+  if(sp>=6u){axes=vec2<f32>(0.11);}
+  let forward=normalize(cam.camPos.xyz-p);
+  var right=cross(vec3<f32>(0.0,1.0,0.0),forward);
+  if(length(right)<0.0001){right=cross(vec3<f32>(1.0,0.0,0.0),forward);}
+  right=normalize(right);
+  var up=cross(forward,right);
+  let linkA=n.nodeMeta.z;
+  if(linkA<cam.totalNodes && sp!=1u){
+    let d=nodes[linkA].pos.xyz-p;
+    let projected=d-forward*dot(d,forward);
+    if(length(projected)>0.0001){right=normalize(projected);up=normalize(cross(forward,right));}
+  }
+  let worldP=p+right*uv.x*axes.x+up*uv.y*axes.y;
+  out.clipPos=cam.viewProj*vec4<f32>(worldP,1.0);out.localUV=uv;out.worldPos=worldP;
+  out.color=speciesColor(sp,lid,n.nodeMeta.x);out.species=sp;out.part=lid;return out;
+}
+@fragment
+fn fsNode(in:VSOut)->@location(0) vec4<f32>{
+  let uv=in.localUV;let r=length(uv);let angle=atan2(uv.y,uv.x);var limit=1.0;
+  if(in.species==1u&&in.part==0u){limit=0.72+0.25*pow(abs(cos(angle*6.0)),5.0);}
+  if(in.species==3u){limit=0.90+0.08*cos(angle*5.0)+0.02*sin(angle*9.0);}
+  if(in.species==5u&&in.part==0u&&uv.y<0.0){limit=0.72+0.23*abs(cos(angle*3.0));}
+  if(r>limit){discard;}
+  let z=sqrt(max(0.0,1.0-r*r));let normal=normalize(vec3<f32>(uv,z));
+  let shade=max(dot(normal,normalize(vec3<f32>(0.45,0.85,0.35))),0.28);
+  var color=in.color*shade;
+  if(in.species==2u&&in.part<6u){color*=0.78+0.22*cos(uv.x*12.0);}
+  if(in.species==3u){color*=0.87+0.13*sin(uv.x*17.0+uv.y*11.0);}
+  if(in.part==0u&&(in.species==0u||in.species==2u||in.species==4u)){
+    let eye=length(vec2<f32>((uv.x+0.35)*1.2,(abs(uv.y)-0.34)*1.5));
+    if(eye<0.18){color=vec3<f32>(0.92,0.94,0.84);}
+    if(eye<0.085){color=vec3<f32>(0.04,0.06,0.08);}
+  }
+  return vec4<f32>(color,1.0);
+}
+
+@vertex
+fn vsTerrain(@builtin(vertex_index) vIdx: u32) -> VSOut {
+  let gridN = 64u;
+  let quadIdx = vIdx / 6u;
+  let corner = vIdx % 6u;
+  let gx = quadIdx % gridN;
+  let gz = quadIdx / gridN;
+  var ox = 0u; var oz = 0u;
+  if (corner == 1u || corner == 4u || corner == 5u) { ox = 1u; }
+  if (corner == 2u || corner == 3u || corner == 5u) { oz = 1u; }
+  let u = (f32(gx + ox) / f32(gridN)) * 2.0 - 1.0;
+  let v = (f32(gz + oz) / f32(gridN)) * 2.0 - 1.0;
+  let xz = vec2<f32>(u, v) * 12.5;
+  let p = vec3<f32>(xz.x, terrainHeight(xz), xz.y);
+  var out: VSOut;
+  out.clipPos = cam.viewProj * vec4<f32>(p, 1.0);
+  out.localUV = xz;
+  out.worldPos = p;
+  out.color = vec3<f32>(0.07, 0.09, 0.12);
+  return out;
+}
+
+@fragment
+fn fsTerrain(in: VSOut) -> @location(0) vec4<f32> {
+  let xz = in.localUV;
+  let r = length(xz);
+  let gridWidth = max(fwidth(xz / 0.6), vec2<f32>(1e-6));
+  if (r > cam.arena.radius + 0.2) { discard; }
+  if (cam.multi.arenaFamily == 6u && r < cam.arena.radius * 0.26) { discard; }
+
+  let uv = clamp((xz / 24.0) + 0.5, vec2<f32>(0.0), vec2<f32>(0.999));
+  let gIdx = u32(uv.y * 128.0) * 128u + u32(uv.x * 128.0);
+  let flora = f32(floraGrid[gIdx]) / 1000.0;
+  let simT = f32(cam.simTick) * 0.016;
+  let wLevel = cam.multi.waterLevel + cam.multi.tidalAmp * sin(simT * 0.55);
+
+  let grid = abs(fract(xz / 0.6 - 0.5) - 0.5) / gridWidth;
+  let gridMask = 1.0 - min(min(grid.x, grid.y), 1.0);
+  var col = in.color + vec3<f32>(0.04) * gridMask + vec3<f32>(0.04) * in.worldPos.y;
+  col = mix(col, vec3<f32>(0.10, 0.44, 0.18), flora * 0.72);
+  let terrainChange=craterOffset(xz,cam.craters);
+  if(abs(terrainChange)>.008){col=mix(col,vec3<f32>(.29,.19,.12),.65);}
+  col=mix(col,vec3<f32>(.35,.47,.15),mineralPotential(xz,cam.craters)*.5);
+
+  // Water table visualization
+  if (in.worldPos.y < wLevel) {
+    let depth = clamp((wLevel - in.worldPos.y) * 0.9, 0.0, 1.0);
+    col = mix(col, vec3<f32>(0.05, 0.26, 0.52), 0.45 + 0.45 * depth);
+  }
+
+  // Temperature heatmap mode
+  if (cam.renderMode == 2u) {
+    let ventHeat = select(0.0, 26.0 * exp(-dot(xz, xz) / max(0.5, cam.arena.lavaRadius * 2.2)), cam.arena.lavaRadius > 0.05);
+    let tNorm = clamp((cam.multi.ambientTemp - 1.8 * max(0.0, in.worldPos.y) + ventHeat) / 45.0, 0.0, 1.0);
+    col = mix(vec3<f32>(0.1, 0.4, 0.95), vec3<f32>(0.98, 0.25, 0.12), tNorm);
+  }
+
+  let nPillars = i32(round(cam.arena.pillarCount));
+  if (nPillars > 0) {
+    let ringR = cam.arena.radius * 0.52;
+    let sector = 6.2831853 / f32(nPillars);
+    let ang = atan2(xz.y, xz.x);
+    let localAng = ((ang + sector * 0.5) - floor((ang + sector * 0.5) / sector) * sector) - sector * 0.5;
+    let q = vec2<f32>(cos(localAng), sin(localAng)) * r;
+    let dPillar = length(q - vec2<f32>(ringR, 0.0)) - cam.arena.pillarRadius;
+    if (dPillar < 0.0) { col = vec3<f32>(0.22, 0.25, 0.30); }
+  }
+
+  if (cam.arena.crusherSpeed > 0.01) {
+    let theta = simT * cam.arena.crusherSpeed;
+    let dir = vec2<f32>(cos(theta), sin(theta));
+    let proj = clamp(dot(xz, dir), -cam.arena.radius * 0.88, cam.arena.radius * 0.88);
+    if (length(xz - dir * proj) < 0.42) { col = vec3<f32>(0.95, 0.55, 0.15); }
+  }
+
+  if (cam.arena.lavaRadius > 0.05 && r < cam.arena.lavaRadius) {
+    col = vec3<f32>(1.0, 0.28, 0.06) * (0.8 + 0.2 * sin(simT * 4.0 + r * 5.0));
+  }
+  return vec4<f32>(col, 1.0);
+}
+`;
+
+function buildEcosystem() {
+  const nodeBuf = new ArrayBuffer(MAX_NODES * 48);
+  const nf32 = new Float32Array(nodeBuf), nu32 = new Uint32Array(nodeBuf);
+  const genomeBuf = new ArrayBuffer(MAX_CREATURES * 64); // 64 bytes (4x vec4)
+  const gf32 = new Float32Array(genomeBuf);
+  const creatureBuf = new ArrayBuffer(MAX_CREATURES * 32);
+  const cu32 = new Uint32Array(creatureBuf);
+  const brainBuf = new ArrayBuffer(MAX_CREATURES * 64);
+  const bu32 = new Uint32Array(brainBuf);
+
+  let nCursor = 0, cCursor = 0;
+  const NONE = 0xffffffff;
+
+  const baseDiets = [
+    [1.30, 0.15, 0.10, 0.05],
+    [0.05, 0.15, 0.85, 0.55],
+    [0.05, 0.20, 0.90, 0.45],
+    [0.45, 0.85, 0.20, 0.10],
+    [0.05, 0.25, 1.00, 0.30],
+    [0.95, 0.35, 0.20, 0.10]
+  ];
+  const baseAffinities = [
+    [-0.1, -0.7, -0.7,  0.4],
+    [ 0.9, -0.3,  0.4, -0.4],
+    [ 0.8,  0.6, -0.2, -0.4],
+    [ 0.3, -0.5, -0.5,  0.3],
+    [ 0.8,  0.4, -0.2, -0.2],
+    [ 0.4, -0.8, -0.8,  0.2]
+  ];
+  const baseTraits = [
+    [10.0, 0.65, 0.20, 0.70],
+    [ 8.0, 0.85, 0.90, 2.20],
+    [14.0, 0.95, 0.80, 1.30],
+    [ 5.0, 0.55, 0.50, 0.90],
+    [ 6.0, 1.15, 0.40, 2.40],
+    [ 4.0, 0.40, 0.30, 1.10]
+  ];
+  // physio: [optimalTempC, aquaticAffinity, buoyancy, autotomyThreshold]
+  const basePhysio = [
+    [22.0, 0.65, 0.85, 0.75], // Worms: amphibious + high autotomy tail-drop
+    [26.0, 0.15, 0.35, 0.00], // Urchins: heavy sinkers
+    [24.0, 0.20, 0.55, 0.65], // Centipedes: terrestrial climbers + leg autotomy
+    [18.0, 0.95, 0.98, 0.10], // Amoebas: aquatic neutrally buoyant
+    [28.0, 0.85, 0.45, 0.00], // Mimic Anglers: benthic warm-water ambushers
+    [20.0, 0.80, 1.15, 0.00]  // Lantern-Jellies: positively buoyant aero/hydro
+  ];
+
+  function spawnCenter(sp, idx, total) {
+    const frac = idx / Math.max(1, total);
+    const safeR = state.arenaRadius * 0.72;
+    const a = (sp / 6) * Math.PI * 2 + (frac - 0.5) * 0.85;
+    const rad = safeR * (0.48 + ((idx % 5) / 5) * 0.44);
+    return [Math.cos(a) * rad, Math.sin(a) * rad, a];
+  }
+
+  function initCreature(sp) {
+    const cid = cCursor++;
+    const go = cid * 16;
+    gf32.set(baseAffinities[sp], go + 0);
+    gf32.set(baseDiets[sp],      go + 4);
+    gf32.set(baseTraits[sp],     go + 8);
+    gf32.set(basePhysio[sp],     go + 12);
+    if(cid>=MAX_CREATURES)throw new RangeError('Creature capacity');
+    const co = cid * 8;
+    cu32[co + 4] = nCursor;
+    cu32[co + 0] = 1150;
+    cu32[co + 1] = sp;
+    cu32[co + 2] = 1;
+    cu32[co + 3] = 100 + cid;
+    for (let k = 0; k < 16; k++) bu32[cid * 16 + k] = ((state.seed + cid * 7919 + sp * 104729 + k * 2654435761) >>> 0);
+    return cid;
+  }
+
+  function writeNode(x, y, z, sp, cid, lid, linkA, linkB) {
+    if (nCursor >= MAX_NODES) throw new RangeError('Node capacity');
+    cu32[cid*8+5]++;
+    const o = nCursor++ * 12;
+    nf32[o + 0] = x; nf32[o + 1] = y; nf32[o + 2] = z; nf32[o + 3] = 1.0;
+    nf32[o + 4] = x; nf32[o + 5] = y; nf32[o + 6] = z; nf32[o + 7] = sp;
+    nu32[o + 8] = cid; nu32[o + 9] = lid; nu32[o + 10] = linkA; nu32[o + 11] = linkB;
+  }
+
+  for (let c = 0; c < state.popCounts[0]; c++) {
+    const cid = initCreature(0); const [bx, bz, a] = spawnCenter(0, c, state.popCounts[0]); const base = nCursor;
+    for (let s = 0; s < 10; s++) writeNode(bx - Math.cos(a)*s*0.22, 1.1, bz - Math.sin(a)*s*0.22, 0, cid, s, s>0?base+s-1:NONE, s<9?base+s+1:NONE);
+  }
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const ico = [[-1,phi,0],[1,phi,0],[-1,-phi,0],[1,-phi,0],[0,-1,phi],[0,1,phi],[0,-1,-phi],[0,1,-phi],[phi,0,-1],[phi,0,1],[-phi,0,-1],[-phi,0,1]].map(v => { const l = Math.hypot(...v); return v.map(x => (x/l)*0.42); });
+  for (let c = 0; c < state.popCounts[1]; c++) {
+    const cid = initCreature(1); const [cx, cz] = spawnCenter(1, c, state.popCounts[1]); const hub = nCursor;
+    writeNode(cx, 1.4, cz, 1, cid, 0, hub + 1, hub + 7);
+    for (let s = 0; s < 12; s++) writeNode(cx + ico[s][0], 1.4 + ico[s][1], cz + ico[s][2], 1, cid, s + 1, hub, hub + 1 + ((s+1)%12));
+  }
+  for (let c = 0; c < state.popCounts[2]; c++) {
+    const cid = initCreature(2); const [bx, bz, a] = spawnCenter(2, c, state.popCounts[2]); const base = nCursor;
+    for (let s = 0; s < 6; s++) writeNode(bx - Math.cos(a)*s*0.28, 1.0, bz - Math.sin(a)*s*0.28, 2, cid, s, s>0?base+s-1:NONE, s<5?base+s+1:NONE);
+    for (let l = 0; l < 8; l++) {
+      const side = (l % 2 === 0) ? 1 : -1; const seg = 1 + Math.floor(l / 2);
+      writeNode(bx - Math.cos(a)*seg*0.28 - Math.sin(a)*side*0.28, 0.85, bz - Math.sin(a)*seg*0.28 + Math.cos(a)*side*0.28, 2, cid, 6 + l, base + seg, NONE);
+    }
+  }
+  for (let c = 0; c < state.popCounts[3]; c++) {
+    const cid = initCreature(3); const [cx, cz] = spawnCenter(3, c, state.popCounts[3]); const base = nCursor;
+    for (let s = 0; s < 14; s++) { const th = (s / 14) * Math.PI * 2; writeNode(cx + Math.cos(th)*0.58, 0.95, cz + Math.sin(th)*0.58, 3, cid, s, base + ((s+13)%14), base + ((s+1)%14)); }
+  }
+  for (let c = 0; c < state.popCounts[4]; c++) {
+    const cid = initCreature(4); const [cx, cz] = spawnCenter(4, c, state.popCounts[4]); const base = nCursor;
+    writeNode(cx, 0.65, cz, 4, cid, 0, base + 1, base + 5);
+    for (let s = 0; s < 8; s++) { const th = (s / 8) * Math.PI * 2; writeNode(cx + Math.cos(th)*0.48, 0.55, cz + Math.sin(th)*0.48, 4, cid, s + 1, base, base + 1 + ((s+1)%8)); }
+  }
+  for (let c = 0; c < state.popCounts[5]; c++) {
+    const cid = initCreature(5); const [cx, cz] = spawnCenter(5, c, state.popCounts[5]); const base = nCursor;
+    for (let s = 0; s < 12; s++) { const th = (s / 12) * Math.PI * 2; writeNode(cx + Math.cos(th)*0.52, 1.45, cz + Math.sin(th)*0.52, 5, cid, s, base + ((s+11)%12), base + ((s+1)%12)); }
+  }
+
+  const founding=Array(6).fill(-1);
+  for(let cid=0;cid<cCursor;cid++){const sp=cu32[cid*8+1];if(founding[sp]===-1)founding[sp]=cid;}
+  const reserveCount=launchQuery.get('profile')==='smoke'?12:48;
+  for(let extra=0;extra<reserveCount && cCursor<MAX_CREATURES;extra++){
+    const sp=extra%6, source=founding[sp];
+    if(source<0)continue;
+    const first=cu32[source*8+4], count=cu32[source*8+5];
+    const cid=initCreature(sp), dest=nCursor;
+    cu32[cid*8]=0;
+    for(let k=0;k<count;k++){
+      const offset=(first+k)*12;
+      const mapLink=link=>link===NONE?NONE:dest+(link-first);
+      writeNode(nf32[offset],nf32[offset+1],nf32[offset+2],sp,cid,k,mapLink(nu32[offset+10]),mapLink(nu32[offset+11]));
+      nf32[(dest+k)*12+3]=0;nf32[(dest+k)*12+7]=7;
+    }
+  }
+  // Third node-array region is an immutable morphology template for every allocated slot.
+  const templateBuf=nodeBuf.slice(0,nCursor*48), tf=new Float32Array(templateBuf);
+  for(let cid=0;cid<cCursor;cid++){
+    const first=cu32[cid*8+4], count=cu32[cid*8+5], origin=first*12;
+    const x=nf32[origin], y=nf32[origin+1], z=nf32[origin+2];
+    for(let k=0;k<count;k++){
+      const o=(first+k)*12;
+      tf[o]-=x;tf[o+1]-=y;tf[o+2]-=z;tf[o+3]=1;
+      tf[o+4]=tf[o];tf[o+5]=tf[o+1];tf[o+6]=tf[o+2];tf[o+7]=cu32[cid*8+1];
+    }
+  }
+  const initialFlora = new Uint32Array(GRID_DIM * GRID_DIM);
+  initialFlora.fill(650);
+  return { nodeBuf, templateBuf, genomeBuf, creatureBuf, brainBuf, initialFlora, activeNodes: nCursor, totalCreatures: cCursor };
+}
+
+function perspective(fovy, aspect, near, far) {
+  const f = 1.0 / Math.tan(fovy / 2), nf = 1 / (near - far);
+  return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, far * nf, -1, 0, 0, far * near * nf, 0]);
+}
+function lookAt(eye, center, up) {
+  let zx = eye[0] - center[0], zy = eye[1] - center[1], zz = eye[2] - center[2];
+  let len = Math.hypot(zx, zy, zz); zx /= len; zy /= len; zz /= len;
+  let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+  len = Math.hypot(xx, xy, xz); xx /= len; xy /= len; xz /= len;
+  let yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  return new Float32Array([xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0, -(xx*eye[0]+xy*eye[1]+xz*eye[2]), -(yx*eye[0]+yy*eye[1]+yz*eye[2]), -(zx*eye[0]+zy*eye[1]+zz*eye[2]), 1]);
+}
+function multiplyMat4(a, b) {
+  const out = new Float32Array(16);
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) out[j*4+i] = a[i]*b[j*4] + a[4+i]*b[j*4+1] + a[8+i]*b[j*4+2] + a[12+i]*b[j*4+3];
+  return out;
+}
+
+function syncSpeciesSliders() {
+  const cfg = speciesConfig[state.selectedSpecies];
+  document.getElementById('species-knob-title').textContent = `Morphology Knobs: ${SPECIES_NAMES[state.selectedSpecies]}`;
+  [['sl-sp-burn', 'lbl-sp-burn', 'burn'], ['sl-sp-speed', 'lbl-sp-speed', 'speed'], ['sl-sp-split', 'lbl-sp-split', 'split']].forEach(([sId, lId, key]) => {
+    const el = document.getElementById(sId); el.value = cfg[key];
+    document.getElementById(lId).textContent = cfg[key].toFixed(2);
+    el.oninput = () => { cfg[key] = parseFloat(el.value); document.getElementById(lId).textContent = cfg[key].toFixed(2); };
+  });
+}
+syncSpeciesSliders();
+
+[0, 1, 2, 3, 4, 5].forEach(sp => {
+  document.getElementById('card-' + sp).addEventListener('click', () => {
+    state.selectedSpecies = sp;
+    [0, 1, 2, 3, 4, 5].forEach(k => document.getElementById('card-' + k).classList.remove('selected'));
+    document.getElementById('card-' + sp).classList.add('selected');
+    syncSpeciesSliders();
+  });
+});
+
+function syncSliders() {
+  const map = [
+    ['sl-water', 'lbl-water', 'waterLevel', 2], ['sl-tide', 'lbl-tide', 'tidalAmp', 2],
+    ['sl-visc', 'lbl-visc', 'waterVisc', 2], ['sl-wind', 'lbl-wind', 'airWind', 2],
+    ['sl-temp', 'lbl-temp', 'ambientTemp', 1], ['sl-grav', 'lbl-grav', 'gravityScale', 2],
+    ['sl-bend', 'lbl-bend', 'bendStiff', 2], ['sl-mut', 'lbl-mut', 'mutationRate', 2],
+    ['sl-bond', 'lbl-bond', 'bondRate', 2], ['sl-regrow', 'lbl-regrow', 'floraRegrow', 2],
+    ['sl-radius', 'lbl-radius', 'arenaRadius', 1], ['sl-pillars', 'lbl-pillars', 'pillarCount', 0],
+    ['sl-bowl', 'lbl-bowl', 'bowlSlope', 2]
+  ];
+  map.forEach(([sId, lId, key, dec]) => {
+    const el = document.getElementById(sId); el.value = state[key];
+    document.getElementById(lId).textContent = Number(state[key]).toFixed(dec);
+    el.oninput = () => { if(key==='arenaRadius'&&(strikeWorld.pending||strikeWorld.craters.length)){el.value=state[key];strikeMessage='Reset world before changing arena radius.';strikeStatus();return;} state[key] = parseFloat(el.value); document.getElementById(lId).textContent = state[key].toFixed(dec); };
+  });
+}
+syncSliders();
+
+const FAMILY_CONFIGS = [
+  { arenaFamily: 0, pillarCount: 5, waterLevel: -0.25, tidalAmp: 0.15, bowlSlope: 0.30, gravityScale: 1.0 },
+  { arenaFamily: 1, pillarCount: 0, waterLevel:  0.05, tidalAmp: 0.45, bowlSlope: 0.45, gravityScale: 1.0 },
+  { arenaFamily: 2, pillarCount: 3, waterLevel: -0.10, tidalAmp: 0.25, bowlSlope: 0.35, gravityScale: 1.0 },
+  { arenaFamily: 3, pillarCount: 4, waterLevel: -0.15, tidalAmp: 0.10, bowlSlope: 0.40, ambientTemp: 28.0 },
+  { arenaFamily: 4, pillarCount: 6, waterLevel: -0.35, tidalAmp: 0.20, bowlSlope: 0.30, gravityScale: 1.0 },
+  { arenaFamily: 5, pillarCount: 0, waterLevel: -0.20, tidalAmp: 0.15, bowlSlope: 0.40, gravityScale: 1.0 },
+  { arenaFamily: 6, pillarCount: 0, waterLevel: -0.30, tidalAmp: 0.05, bowlSlope: 0.30, gravityScale: 0.85 }
+];
+for (let f = 0; f < 7; f++) {
+  document.getElementById('fam-' + f).addEventListener('click', () => {
+    if(strikeWorld.pending||strikeWorld.craters.length){strikeMessage='Reset world before changing arena family.';strikeStatus();return;}
+    Object.assign(state, FAMILY_CONFIGS[f]);viewDirty=true;
+    syncSliders();
+    for (let k = 0; k < 7; k++) document.getElementById('fam-' + k).classList.remove('active');
+    document.getElementById('fam-' + f).classList.add('active');
+    logEvent(`Switched Parametric Arena Family #${f + 1}`);
+  });
+}
+
+function drawSparkline() {
+  const sc = document.getElementById('sparkline');
+  if (!sc || telemetry.history.length < 2) return;
+  const ctx = sc.getContext('2d');
+  ctx.clearRect(0, 0, sc.width, sc.height);
+  const colors = ['#ff5533', '#f0b429', '#3fb950', '#38bdf8', '#d946ef', '#2dd4bf'];
+  const keys = ['worms', 'urchins', 'centipedes', 'amoebas', 'anglers', 'jellies'];
+  keys.forEach((k, idx) => {
+    ctx.strokeStyle = colors[idx]; ctx.lineWidth = 1.4; ctx.beginPath();
+    telemetry.history.forEach((pt, i) => {
+      const x = (i / (telemetry.history.length - 1)) * sc.width;
+      const y = sc.height - Math.min(1, pt.populations[k] / 120) * (sc.height - 6) - 3;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+}
+
+function evaluateEcosystemDirector() {
+  const g = telemetry.latest.guilds;
+  let rec = { reason: 'Multiphase niches & trophic balance nominal.', patch: null };
+  if (g.herbivore < 20 && g.carnivore > 25) {
+    rec = { reason: 'Autotelic Rescue: raising solar regrowth & lowering sea level to expose grazing islands.', patch: { floraRegrow: Math.min(1.5, +(state.floraRegrow + 0.25).toFixed(2)), waterLevel: Math.max(-1.2, +(state.waterLevel - 0.15).toFixed(2)) } };
+  } else if (g.carnivore < 12 && g.herbivore > 110) {
+    rec = { reason: 'Autotelic Challenge: increasing tidal swing & LGP mutation rate.', patch: { tidalAmp: 0.55, mutationRate: 0.18 } };
+  }
+  telemetry.latest.recommendation = rec;
+  document.getElementById('director-advice').textContent = rec.reason;
+  if (state.autoDirector && rec.patch) { applyKnobPatch(rec.patch); logEvent(`Autotelic Director: ${rec.reason}`); }
+}
+
+const knobLimits = Object.freeze({
+  waterLevel:[-1.2,1.6], tidalAmp:[0,.9], waterVisc:[.02,.6], airWind:[0,1], ambientTemp:[0,45],
+  gravityScale:[.2,2], bendStiff:[0,.65], mutationRate:[0,.4], bondRate:[0,1], floraRegrow:[0,1.5],
+  arenaRadius:[6.5,12], pillarCount:[0,12], bowlSlope:[-.75,.95], kinBias:[-.5,1],
+  floraPatchiness:[0,1], scentPersist:[.1,.98], surfaceGrip:[.2,.98]
+});
+const speciesLimits = Object.freeze({burn:[.05,1.5],speed:[.1,1.2],sense:[0,1.5],split:[1.2,3]});
+function applyKnobPatch(patch) {
+  assertPlay();
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new TypeError('knob patch must be an object');
+  const changes = [];
+  const validate = (limits,key,value) => {
+    if (!Object.hasOwn(limits,key) || typeof value !== 'number' || !Number.isFinite(value)) throw new RangeError('Unknown or invalid knob: '+key);
+    const [lo,hi] = limits[key];
+    if(value<lo || value>hi || (key==='pillarCount'&&!Number.isInteger(value))) throw new RangeError('Knob out of range: '+key);
+  };
+  for(const [key,value] of Object.entries(patch)){
+    if(key==='species'){
+      if(!value||typeof value!=='object'||Array.isArray(value))throw new TypeError('species patch must be an object');
+      for(const [idx,values] of Object.entries(value)){
+        if(!/^[0-5]$/.test(idx)||!values||typeof values!=='object'||Array.isArray(values))throw new RangeError('Invalid species');
+        for(const [k,v] of Object.entries(values)){validate(speciesLimits,k,v);changes.push([speciesConfig[Number(idx)],k,v]);}
+      }
+    }else{validate(knobLimits,key,value);if(key==='arenaRadius'&&(strikeWorld.pending||strikeWorld.craters.length)&&value!==state.arenaRadius)throw Error('Reset world before changing arena radius');changes.push([state,key,value]);}
+  }
+  for(const [obj,key,value] of changes)obj[key]=value;
+  syncSliders(); syncSpeciesSliders();
+}
+
+let gpuDevice = null, floraBufferRef = null, resetFnRef = null;
+function triggerSurprise(type) {
+  assertPlay();
+  if (!['bloom','drought','meteor','heatwave','lowg'].includes(type)) throw new RangeError('Unknown surprise');
+  if (type === 'bloom') {
+    state.floraRegrow = 1.35;
+    if (gpuDevice && floraBufferRef) { const b = new Uint32Array(GRID_DIM * GRID_DIM); b.fill(950); gpuDevice.queue.writeBuffer(floraBufferRef, 0, b); }
+    logEvent('SURPRISE: Solar Flora Bloom!');
+  } else if (type === 'drought') { state.floraRegrow = 0.05; state.waterLevel = -0.85; logEvent('SURPRISE: Drought & Low Tide!'); }
+  else if (type === 'meteor') { const a=seededRandom()*Math.PI*2,r=state.arenaRadius*.48; if(!strikeWorld.pending)attemptStrike('meteor',Math.cos(a)*r,Math.sin(a)*r,true); }
+  else if (type === 'heatwave') { state.ambientTemp = 38.0; state.airWind = 0.85; logEvent('SURPRISE: Geothermal Heatwave & Thermal Updrafts!'); }
+  else if (type === 'lowg') { state.gravityScale = 0.35; state.tidalAmp = 0.75; logEvent('SURPRISE: Low-Gravity Orbital Tide (0.35G)!'); }
+  syncSliders();
+  return { ok: true, surprise: type, tick: state.simTick };
+}
+
+['bloom', 'drought', 'meteor', 'heatwave', 'lowg'].forEach(t => document.getElementById('surp-' + t).addEventListener('click', () => t==='meteor'?chooseStrike('meteor'):triggerSurprise(t)));
+document.getElementById('btn-apply-rec').addEventListener('click', () => { if (telemetry.latest.recommendation?.patch) applyKnobPatch(telemetry.latest.recommendation.patch); });
+document.getElementById('btn-auto-director').addEventListener('click', e => { state.autoDirector = !state.autoDirector; e.target.textContent = `Auto: ${state.autoDirector ? 'ON' : 'OFF'}`; e.target.classList.toggle('active', state.autoDirector); });
+document.getElementById('btn-auto-chaos').addEventListener('click', e => { state.autoSurprises = !state.autoSurprises; e.target.textContent = `Surprises: ${state.autoSurprises ? 'ON' : 'OFF'}`; e.target.classList.toggle('active', state.autoSurprises); });
+document.getElementById('btn-export-json').addEventListener('click', () => { navigator.clipboard?.writeText(JSON.stringify(window.__ARENA_RPC__.getState(), null, 2)); logEvent('Copied v7 snapshot JSON.'); });
+document.getElementById('hud-toggle').addEventListener('click', () => document.body.classList.toggle('hud-hidden'));
+
+window.__ARENA_RPC__ = Object.freeze({
+  getState: () => structuredClone({ ...experience, tick: state.simTick, telemetry: telemetry.latest, knobs: { state, speciesConfig }, interventions:interventionModel.snapshot(strikeWorld) }),
+  setPaused: value => { setPaused(value); return window.__ARENA_RPC__.getState(); },
+  setKnobs: patch => { applyKnobPatch(patch); return window.__ARENA_RPC__.getState(); },
+  triggerSurprise: type => triggerSurprise(type),
+  armMeteor: (x,z,nutrients=true) => admitStrike('meteor',x,z,nutrients),
+  lightning: (x,z) => admitStrike('lightning',x,z,false),
+  cancelMeteor: () => cancelStrike(),
+  resetEcosystem: () => { assertPlay(); if (!resetFnRef || stopped) throw new Error('Arena not ready'); resetFnRef(); return window.__ARENA_RPC__.getState(); }
+});
+if (mode === 'observe') {
+  document.querySelectorAll('input[type="range"], [id^="surp-"], [id^="fam-"], #btn-apply-rec, #btn-auto-director, #btn-auto-chaos, #btn-respawn').forEach(el => { el.disabled = true; });
+}
+window.addEventListener('pagehide', e => { if (e.persisted) setPaused(true); else { stopped = true; gpuDevice?.destroy(); audioCtx?.close().catch(()=>{}); } });
+
+async function init() {
+  const canvas = document.getElementById('canvas');
+  const badge = document.getElementById('backend-badge');
+  function resize() { const max = gpuDevice?.limits.maxTextureDimension2D || 4096; const dpr=Math.min(devicePixelRatio,2); canvas.width=Math.max(1,Math.min(max,Math.floor(window.innerWidth*dpr))); canvas.height=Math.max(1,Math.min(max,Math.floor(window.innerHeight*dpr))); }
+  window.addEventListener('resize', resize); resize();
+
+  if (!navigator.gpu) throw new Error('WebGPU is unavailable in this browser or context. Mosaic remains available.');
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) throw new Error('No WebGPU adapter available. Try an up-to-date browser with GPU acceleration.');
+  if (adapter.limits.maxStorageBuffersPerShaderStage < 8) throw new Error('Arena requires eight WebGPU storage buffers per shader stage.');
+  const device = await adapter.requestDevice();
+  gpuDevice = device; resize();
+  device.addEventListener('uncapturederror', e => failArena(e.error.message));
+  device.lost.then(info => failArena('GPU device lost: '+info.message));
+  device.pushErrorScope('validation');
+  const context = canvas.getContext('webgpu');
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  context.configure({ device, format, alphaMode: 'opaque' });
+  badge.textContent = 'COMPILING';
+
+  let eco = buildEcosystem();
+  const nodeBuffer = device.createBuffer({ size: MAX_NODES * 48 * 3, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const headPtrBuffer = device.createBuffer({ size: HASH_BUCKETS * 4, usage: GPUBufferUsage.STORAGE });
+  const nextPtrBuffer = device.createBuffer({ size: MAX_NODES * 8, usage: GPUBufferUsage.STORAGE });
+  const genomeBuffer = device.createBuffer({ size: MAX_CREATURES * 128, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const creatureBuffer = device.createBuffer({ size: MAX_CREATURES * 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const floraBuffer = device.createBuffer({ size: GRID_DIM * GRID_DIM * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const scentBuffer = device.createBuffer({ size: GRID_DIM * GRID_DIM * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const statsBuffer = device.createBuffer({ size: 112, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+  const statsReadBuffer = device.createBuffer({ size: 112, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  const simParamBuffer = device.createBuffer({ size: 608, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const camParamBuffer = device.createBuffer({ size: 432, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  floraBufferRef = floraBuffer;
+
+  const computeModule = device.createShaderModule({ code: WGSL_COMPUTE });
+  const renderModule = device.createShaderModule({ code: WGSL_RENDER });
+  for (const [name,module] of [['compute',computeModule],['render',renderModule]]) {
+    const diagnostics = await module.getCompilationInfo();
+    const errors = diagnostics.messages.filter(m => m.type === 'error');
+    if (errors.length) throw new Error(name+' shader: '+errors.map(m=>m.lineNum+': '+m.message).join('; '));
+  }
+
+  const computeBGL = device.createBindGroupLayout({
+    entries: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(b => ({ binding: b, visibility: GPUShaderStage.COMPUTE, buffer: { type: b === 0 ? 'uniform' : 'storage' } }))
+  });
+  const computeBG = device.createBindGroup({
+    layout: computeBGL,
+    entries: [
+      { binding: 0, resource: { buffer: simParamBuffer } }, { binding: 1, resource: { buffer: nodeBuffer } },
+      { binding: 2, resource: { buffer: headPtrBuffer } }, { binding: 3, resource: { buffer: nextPtrBuffer } },
+      { binding: 4, resource: { buffer: genomeBuffer } }, { binding: 5, resource: { buffer: creatureBuffer } },
+      { binding: 6, resource: { buffer: floraBuffer } }, { binding: 7, resource: { buffer: scentBuffer } },
+      { binding: 8, resource: { buffer: statsBuffer } }
+    ]
+  });
+
+  const cLayout = device.createPipelineLayout({ bindGroupLayouts: [computeBGL] });
+  const clearPipe = device.createComputePipeline({ layout: cLayout, compute: { module: computeModule, entryPoint: 'clearGrid' } });
+  const ecoPipe = device.createComputePipeline({ layout: cLayout, compute: { module: computeModule, entryPoint: 'updateEcology' } });
+  const integratePipe = device.createComputePipeline({ layout: cLayout, compute: { module: computeModule, entryPoint: 'integrateVerlet' } });
+  const buildHashPipe = device.createComputePipeline({ layout: cLayout, compute: { module: computeModule, entryPoint: 'buildSpatialHash' } });
+  const relaxPipe = device.createComputePipeline({ layout: cLayout, compute: { module: computeModule, entryPoint: 'relaxConstraints' } });
+  const pipeline = entryPoint=>device.createComputePipeline({layout:cLayout,compute:{module:computeModule,entryPoint}});
+  const reproducePipe=pipeline('reproduce'), clearHashPipe=pipeline('clearHash'), snapshotPipe=pipeline('snapshotNodes');
+  const claimPipe=pipeline('initCarrionClaims'), finalizePipe=pipeline('finalizeCarrion'), collectPipe=pipeline('collectStats');
+
+  const renderBGL = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+      { binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } }
+    ]
+  });
+  const renderBG = device.createBindGroup({
+    layout: renderBGL,
+    entries: [
+      { binding: 0, resource: { buffer: camParamBuffer } }, { binding: 1, resource: { buffer: nodeBuffer } },
+      { binding: 2, resource: { buffer: floraBuffer } }, { binding: 3, resource: { buffer: scentBuffer } },
+      { binding: 4, resource: { buffer: genomeBuffer } }
+    ]
+  });
+
+  const rLayout = device.createPipelineLayout({ bindGroupLayouts: [renderBGL] });
+  const depthStencil = { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' };
+  const terrainPipe = device.createRenderPipeline({ layout: rLayout, vertex: { module: renderModule, entryPoint: 'vsTerrain' }, fragment: { module: renderModule, entryPoint: 'fsTerrain', targets: [{ format }] }, primitive: { topology: 'triangle-list' }, depthStencil });
+  const linkPipe = device.createRenderPipeline({ layout: rLayout, vertex: { module: renderModule, entryPoint: 'vsLink' }, fragment: { module: renderModule, entryPoint: 'fsLink', targets: [{ format }] }, primitive: { topology: 'triangle-list' }, depthStencil });
+  const nodePipe = device.createRenderPipeline({ layout: rLayout, vertex: { module: renderModule, entryPoint: 'vsNode' }, fragment: { module: renderModule, entryPoint: 'fsNode', targets: [{ format }] }, primitive: { topology: 'triangle-list' }, depthStencil });
+
+  let renderBundle = null;
+  function rebuildRenderBundle() {
+    if (typeof device.createRenderBundleEncoder !== 'function') return;
+    const be = device.createRenderBundleEncoder({ colorFormats: [format], depthStencilFormat: 'depth24plus' });
+    be.setBindGroup(0, renderBG);
+    be.setPipeline(terrainPipe); be.draw(64 * 64 * 6, 1, 0, 0);
+    be.setPipeline(linkPipe);    be.draw(eco.activeNodes * 6, 1, 0, 0);
+    be.setPipeline(nodePipe);    be.draw(6, eco.activeNodes, 0, 0);
+    renderBundle = be.finish();
+  }
+
+  function uploadEcosystem() {
+    eco = buildEcosystem();
+    resetEpoch++; state.simTick = 0; randomState = state.seed || 0x6d2b79f5; state.blastPower = 0;resetInterventions();
+    telemetry.history = []; telemetry.latest = structuredClone(initialTelemetry);
+    device.queue.writeBuffer(nodeBuffer, 0, eco.nodeBuf, 0, eco.activeNodes*48);
+    device.queue.writeBuffer(nodeBuffer, eco.activeNodes*48*2, eco.templateBuf);
+    device.queue.writeBuffer(statsBuffer,0,new Uint32Array(28));
+    const packed = new Uint8Array(MAX_CREATURES * 128);
+    const genomes = new Uint8Array(eco.genomeBuf), brains = new Uint8Array(eco.brainBuf);
+    for (let i=0;i<MAX_CREATURES;i++){
+      packed.set(genomes.subarray(i*64,i*64+64),i*128);
+      packed.set(brains.subarray(i*64,i*64+64),i*128+64);
+    }
+    device.queue.writeBuffer(genomeBuffer, 0, packed);
+    device.queue.writeBuffer(creatureBuffer, 0, eco.creatureBuf);
+    device.queue.writeBuffer(floraBuffer, 0, eco.initialFlora);
+    device.queue.writeBuffer(scentBuffer, 0, new Uint32Array(GRID_DIM * GRID_DIM));
+    rebuildRenderBundle(); viewDirty = true; audioPrevious = null;
+  }
+  resetFnRef = uploadEcosystem;
+  uploadEcosystem();
+  document.getElementById('btn-respawn').addEventListener('click', uploadEcosystem);
+
+  let depthTex = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
+  window.addEventListener('resize', () => { if(stopped)return; viewDirty=true; depthTex.destroy(); depthTex = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT }); });
+
+  let lastTime = performance.now(), smoothDt = 16.6, readingStats = false;
+
+  const validationError = await device.popErrorScope();
+  if (validationError) throw validationError;
+  if (stopped) return;
+  experience.phase = paused ? 'paused' : 'running'; badge.textContent = 'WEBGPU RDTE';
+  document.getElementById('btn-pause').disabled = false;
+  function frame(now) {
+    if (stopped) return;
+    if (paused && !viewDirty) { lastTime=now; requestAnimationFrame(frame); return; }
+    const stepping = !paused;
+    viewDirty = false;
+    if (stepping) {
+    const rawDt = Math.min(now - lastTime, 33.3);
+    lastTime = now;
+    smoothDt = smoothDt * 0.9 + rawDt * 0.1;
+    state.simTick++;
+    state.blastPower = 0;
+    stepInterventions();
+
+    if (state.autoSurprises && state.simTick % 480 === 0) {
+      const pool = ['bloom', 'drought', 'meteor', 'heatwave', 'lowg'];
+      triggerSurprise(pool[Math.floor(seededRandom() * pool.length)]);
+    }
+
+    document.getElementById('perf-line').textContent = `${eco.activeNodes.toLocaleString()} Nodes | ${Math.round(1000 / smoothDt)} FPS`;
+    document.getElementById('env-telemetry').textContent = `T_amb: ${state.ambientTemp.toFixed(0)}°C | g: ${state.gravityScale.toFixed(2)}G`;
+
+    const simBuf = new ArrayBuffer(608);
+    const u32 = new Uint32Array(simBuf), f32 = new Float32Array(simBuf);
+    u32[0] = eco.activeNodes; u32[1] = eco.totalCreatures; u32[2] = state.renderMode; u32[3] = state.seed;
+    u32[4] = state.simTick; f32[5] = state.kinBias; f32[6] = CELL_SIZE; f32[7] = NODE_RADIUS; f32[8] = state.blastPower;
+    f32[9] = state.bondRate; f32[10] = SENSE_RADIUS;
+    f32[12] = state.targetX; f32[13] = 0.4; f32[14] = state.targetZ; f32[15] = 1.0;
+    f32[16] = state.blastX;  f32[17] = 0.2; f32[18] = state.blastZ;  f32[19] = 1.0;
+    f32[20] = state.arenaRadius; f32[21] = state.pillarCount; f32[22] = state.pillarRadius; f32[23] = state.smoothMinK;
+    f32[24] = state.bowlSlope; f32[25] = state.lavaRadius; f32[26] = state.crusherSpeed; f32[27] = state.surfaceGrip;
+    f32[28] = state.waterLevel; f32[29] = state.tidalAmp; f32[30] = state.waterVisc; f32[31] = state.airWind;
+    f32[32] = state.ambientTemp; f32[33] = state.gravityScale; f32[34] = state.bendStiff; u32[35] = state.arenaFamily;
+    f32[36] = state.floraRegrow; f32[37] = state.floraPatchiness; f32[38] = state.scentPersist; f32[39] = state.mutationRate;
+    for (let s = 0; s < 6; s++) {
+      f32[40 + s*4 + 0] = speciesConfig[s].burn;
+      f32[40 + s*4 + 1] = speciesConfig[s].speed;
+      f32[40 + s*4 + 2] = speciesConfig[s].sense;
+      f32[40 + s*4 + 3] = speciesConfig[s].split;
+    }
+    packCraters(f32,72);packImpacts(f32,136);
+    device.queue.writeBuffer(simParamBuffer, 0, simBuf);
+    } else lastTime=now;
+
+    const eye = cameraEye();
+    const viewProj = multiplyMat4(perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 120.0), lookAt(eye, [state.camCenterX, 0.4, state.camCenterZ], [0, 1, 0]));
+    const camBuf = new ArrayBuffer(432);
+    const cf32 = new Float32Array(camBuf), cu32 = new Uint32Array(camBuf);
+    cf32.set(viewProj, 0);
+    cf32[16] = eye[0]; cf32[17] = eye[1]; cf32[18] = eye[2]; cf32[19] = 1.0;
+    cf32[20] = state.targetX; cf32[21] = 0.4; cf32[22] = state.targetZ; cf32[23] = 1.0;
+    cu32[24] = state.renderMode; cu32[25] = eco.activeNodes; cu32[26] = state.simTick; cu32[27] = state.seed;
+    cf32[28] = state.arenaRadius; cf32[29] = state.pillarCount; cf32[30] = state.pillarRadius; cf32[31] = state.smoothMinK;
+    cf32[32] = state.bowlSlope; cf32[33] = state.lavaRadius; cf32[34] = state.crusherSpeed; cf32[35] = state.surfaceGrip;
+    cf32[36] = state.waterLevel; cf32[37] = state.tidalAmp; cf32[38] = state.waterVisc; cf32[39] = state.airWind;
+    cf32[40] = state.ambientTemp; cf32[41] = state.gravityScale; cf32[42] = state.bendStiff; cu32[43] = state.arenaFamily;
+    packCraters(cf32,44);
+    device.queue.writeBuffer(camParamBuffer, 0, camBuf);
+
+    const encoder = device.createCommandEncoder();
+    if (stepping) {
+    const cpass = encoder.beginComputePass();
+    const groups = Math.ceil(eco.activeNodes / 64);
+    cpass.setBindGroup(0, computeBG);
+    cpass.setPipeline(clearPipe); cpass.dispatchWorkgroups(256);
+    cpass.setPipeline(ecoPipe); cpass.dispatchWorkgroups(256);
+    cpass.setPipeline(reproducePipe); cpass.dispatchWorkgroups(1);
+    cpass.setPipeline(integratePipe); cpass.dispatchWorkgroups(groups);
+    cpass.setPipeline(claimPipe); cpass.dispatchWorkgroups(groups);
+    for(let it=0;it<4;it++){
+      cpass.setPipeline(clearHashPipe);cpass.dispatchWorkgroups(256);
+      cpass.setPipeline(snapshotPipe);cpass.dispatchWorkgroups(groups);
+      cpass.setPipeline(buildHashPipe);cpass.dispatchWorkgroups(groups);
+      cpass.setPipeline(relaxPipe);cpass.dispatchWorkgroups(groups);
+    }
+    cpass.setPipeline(finalizePipe);cpass.dispatchWorkgroups(groups);
+    cpass.setPipeline(collectPipe);cpass.dispatchWorkgroups(256);
+    cpass.end();
+
+    if (!readingStats && state.simTick % 15 === 0) encoder.copyBufferToBuffer(statsBuffer, 0, statsReadBuffer, 0, 112);
+    }
+
+    const rpass = encoder.beginRenderPass({
+      colorAttachments: [{ view: context.getCurrentTexture().createView(), clearValue: { r: 0.028, g: 0.035, b: 0.047, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }],
+      depthStencilAttachment: { view: depthTex.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' }
+    });
+    if (renderBundle) rpass.executeBundles([renderBundle]);
+    else {
+      rpass.setBindGroup(0, renderBG);
+      rpass.setPipeline(terrainPipe); rpass.draw(64 * 64 * 6, 1, 0, 0);
+      rpass.setPipeline(linkPipe);    rpass.draw(eco.activeNodes * 6, 1, 0, 0);
+      rpass.setPipeline(nodePipe);    rpass.draw(6, eco.activeNodes, 0, 0);
+    }
+    rpass.end();
+
+    device.queue.submit([encoder.finish()]);
+    paintInterventions(viewProj,canvas.width,canvas.height);
+    state.viewRevision++;
+
+    if (stepping && !readingStats && state.simTick % 15 === 0) {
+      readingStats = true;
+      const sampleEpoch = resetEpoch, sampleTick = state.simTick;
+      statsReadBuffer.mapAsync(GPUMapMode.READ).then(() => {
+        if (sampleEpoch !== resetEpoch || stopped) { statsReadBuffer.unmap(); readingStats=false; return; }
+        const arr = new Uint32Array(statsReadBuffer.getMappedRange());
+        const keys = ['worms', 'urchins', 'centipedes', 'amoebas', 'anglers', 'jellies'];
+        for (let s = 0; s < 6; s++) {
+          const alive = arr[s];
+          document.getElementById('cnt-' + s).textContent = alive;
+          const avgGen = alive > 0 ? +(arr[6 + s] / alive).toFixed(1) : 0;
+          document.getElementById('gen-' + s).textContent = `G${avgGen}`;
+          telemetry.latest.populations[keys[s]] = alive;
+          telemetry.latest.generations[keys[s]] = avgGen;
+        }
+        const eFlora = arr[12], eFauna = arr[13], eCarcass = arr[14];
+        const totalE = Math.max(1, eFlora + eFauna + eCarcass);
+        const probe=new Float32Array(statsReadBuffer.getMappedRange());
+        telemetry.latest.terrainProbe={base:probe[23],surface:probe[24],minerals:probe[25],impactEnergyDebited:arr[26],craters:arr[27]};
+        telemetry.latest.tick = sampleTick;
+        telemetry.latest.fps = Math.round(1000 / smoothDt);
+        telemetry.latest.dynamicBonds = arr[19];
+        telemetry.latest.autotomyDrops = arr[20];
+        telemetry.latest.contentionDrops = arr[21];
+        telemetry.latest.neighborTruncations = arr[22];
+        telemetry.latest.energy = { fauna: eFauna, flora: eFlora, carcass: eCarcass, total: totalE };
+        telemetry.latest.guilds = { herbivore: arr[15], carnivore: arr[16], scavenger: arr[17], omnivore: arr[18] };
+
+        document.getElementById('tick-label').textContent = `T=${state.simTick} | Bonds: ${telemetry.latest.dynamicBonds} | Drops: ${telemetry.latest.autotomyDrops} | Dense: ${telemetry.latest.neighborTruncations}`;
+        document.getElementById('g-herb').textContent = arr[15];
+        document.getElementById('g-carn').textContent = arr[16];
+        document.getElementById('g-scav').textContent = arr[17];
+        document.getElementById('g-omni').textContent = arr[18];
+
+        document.getElementById('e-fauna').textContent = eFauna;
+        document.getElementById('e-flora').textContent = eFlora;
+        document.getElementById('e-carcass').textContent = eCarcass;
+        document.getElementById('bar-creatures').style.width = `${(eFauna / totalE) * 100}%`;
+        document.getElementById('bar-flora').style.width = `${(eFlora / totalE) * 100}%`;
+        document.getElementById('bar-carcass').style.width = `${(eCarcass / totalE) * 100}%`;
+
+        ecologyAudio(telemetry.latest);
+
+        telemetry.history.push({ tick: state.simTick, populations: { ...telemetry.latest.populations } });
+        if (telemetry.history.length > 100) telemetry.history.shift();
+        drawSparkline();
+        if (state.simTick % 90 === 0) evaluateEcosystemDirector();
+
+        statsReadBuffer.unmap();
+        readingStats = false;
+      }).catch(error => { readingStats = false; if(!stopped) failArena('Telemetry readback failed: '+error.message); });
+    }
+
+    device.queue.onSubmittedWorkDone().then(() => { if(!stopped) requestAnimationFrame(frame); }).catch(error => failArena(error.message));
+  }
+  requestAnimationFrame(frame);
+}
+
+const canvasEl = document.getElementById('canvas');
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+function cameraEye() {
+  return [state.camCenterX+Math.cos(state.camYaw)*Math.cos(state.camPitch)*state.camDist,
+    0.4+Math.sin(state.camPitch)*state.camDist,
+    state.camCenterZ+Math.sin(state.camYaw)*Math.cos(state.camPitch)*state.camDist];
+}
+function updateCamera() {
+  state.camPitch=clamp(state.camPitch,0.14,1.54); // 2.5D arena: no underside or singular pole.
+  state.camDist=clamp(state.camDist,3.5,42);
+  state.camCenterX=clamp(state.camCenterX,-state.arenaRadius,state.arenaRadius);
+  state.camCenterZ=clamp(state.camCenterZ,-state.arenaRadius,state.arenaRadius);
+  state.camYaw=((state.camYaw%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
+  viewDirty=true;
+  document.getElementById('camera-status').textContent=state.camMode+' · '+Math.round(state.camDist)+' units';
+}
+function cameraMode(m) {
+  if(m==='interact'&&mode!=='play')return;
+  state.camMode=m;
+  for(const id of ['orbit','pan','interact'])document.getElementById('cam-'+id).setAttribute('aria-pressed',String(id===m));
+  canvasEl.style.cursor=m==='interact'?'crosshair':'grab';updateCamera();
+}
+function panView(dx,dy) {
+  const scale=2*state.camDist*Math.tan(Math.PI/8)/Math.max(1,canvasEl.clientHeight);
+  state.camCenterX+=(-Math.sin(state.camYaw)*dx+Math.cos(state.camYaw)*dy)*scale;
+  state.camCenterZ+=(Math.cos(state.camYaw)*dx+Math.sin(state.camYaw)*dy)*scale;
+  updateCamera();
+}
+function worldPointer(e) {
+  const rect=canvasEl.getBoundingClientRect(), nx=2*(e.clientX-rect.left)/rect.width-1,ny=1-2*(e.clientY-rect.top)/rect.height;
+  const sy=Math.sin(state.camYaw),cy=Math.cos(state.camYaw),sp=Math.sin(state.camPitch),cp=Math.cos(state.camPitch),f=Math.tan(Math.PI/8);
+  const right=[sy,0,-cy],up=[-cy*sp,cp,-sy*sp],forward=[-cy*cp,-sp,-sy*cp];
+  const ray=forward.map((v,i)=>v+right[i]*nx*f*rect.width/rect.height+up[i]*ny*f);
+  strikeHover=intersectSurface(cameraEye(),ray);viewDirty=true;return !!strikeHover;
+}
+for(const id of ['orbit','pan','interact'])document.getElementById('cam-'+id).onclick=()=>cameraMode(id);
+document.getElementById('cam-interact').disabled=mode!=='play';
+for(const [id,fn] of Object.entries({
+  left:()=>{if(state.camMode==='pan')panView(-36,0);else state.camYaw-=0.18;},
+  right:()=>{if(state.camMode==='pan')panView(36,0);else state.camYaw+=0.18;},
+  up:()=>{if(state.camMode==='pan')panView(0,-36);else state.camPitch+=0.12;},
+  down:()=>{if(state.camMode==='pan')panView(0,36);else state.camPitch-=0.12;},
+  in:()=>state.camDist*=0.82,out:()=>state.camDist/=0.82,
+  top:()=>state.camPitch=1.50,
+  home:()=>{state.camYaw=0.65;state.camPitch=0.72;state.camDist=21;state.camCenterX=0;state.camCenterZ=0;}
+}))document.getElementById('cam-'+id).onclick=()=>{fn();updateCamera();};
+const pointers=new Map();
+let moved=false,gestureDistance=0;
+canvasEl.addEventListener('contextmenu',e=>e.preventDefault());
+canvasEl.addEventListener('pointerdown',e=>{
+  if(e.button!==0&&e.button!==2)return;
+  if(pointers.size===0)moved=false;
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,button:e.button});
+  canvasEl.setPointerCapture(e.pointerId);
+  if(pointers.size===2){const [a,b]=pointers.values();gestureDistance=Math.hypot(a.x-b.x,a.y-b.y);moved=true;}
+});
+canvasEl.addEventListener('pointermove',e=>{
+  const old=pointers.get(e.pointerId);
+  if(!old){if(mode==='play'&&state.camMode==='interact')worldPointer(e);return;}
+  const dx=e.clientX-old.x,dy=e.clientY-old.y;
+  if(Math.abs(dx)+Math.abs(dy)>1)moved=true;
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,button:old.button});
+  if(pointers.size===2){const [a,b]=pointers.values(),d=Math.hypot(a.x-b.x,a.y-b.y);if(d>5&&gestureDistance>5)state.camDist*=gestureDistance/d;gestureDistance=d;updateCamera();return;}
+  if(pointers.size!==1)return;
+  if(state.camMode==='pan'||e.shiftKey)panView(dx,dy);
+  else if(state.camMode==='orbit'||old.button===2){state.camYaw-=dx*0.006;state.camPitch+=dy*0.006;updateCamera();}
+  else if(mode==='play')worldPointer(e);
+});
+function endPointer(e,allowAction) {
+  const old=pointers.get(e.pointerId);pointers.delete(e.pointerId);gestureDistance=0;
+  if(old&&allowAction&&!moved&&old.button===0&&pointers.size===0&&mode==='play'&&state.camMode==='interact'&&worldPointer(e)){
+    attemptStrike(strikeTool,strikeHover.x,strikeHover.z,strikeEl('strike-mineral').checked);
+  }
+}
+canvasEl.addEventListener('pointerup',e=>endPointer(e,true));
+canvasEl.addEventListener('pointercancel',e=>endPointer(e,false));
+canvasEl.addEventListener('lostpointercapture',e=>endPointer(e,false));
+canvasEl.addEventListener('wheel',e=>{e.preventDefault();state.camDist*=Math.exp(clamp(e.deltaY,-300,300)*0.0018);updateCamera();},{passive:false});
+updateCamera();
+
+['mode-species', 'mode-guild', 'mode-temp'].forEach((id, idx) => {
+  document.getElementById(id).addEventListener('click', () => {
+    state.renderMode = idx; viewDirty=true;
+    ['mode-species', 'mode-guild', 'mode-temp'].forEach(k => document.getElementById(k).classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  });
+});
+
+init().catch(error => failArena(error.message || String(error)));
+</script>
+</body>
+</html>
