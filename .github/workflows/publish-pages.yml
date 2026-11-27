@@ -48,6 +48,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MANUAL_REQUEST: ${{ github.event_name == 'workflow_dispatch' && inputs.promotion == 'deploy-4868538-3f25a79d' }}
           PUSH_REQUEST: ${{ github.event_name == 'push' && github.ref == 'refs/heads/gh-pages' }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
           authorized=false
@@ -55,6 +56,14 @@ jobs:
             test "$GITHUB_REF" = refs/heads/gh-pages
             authorized=true
           elif [ "$PUSH_REQUEST" = true ]; then
+            # An approval is a single newly added exact receipt, never a generic branch push.
+            gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE_SHA...$GITHUB_SHA" > "$RUNNER_TEMP/evoforge-approval-diff.json"
+            python3 - <<'PY'
+          import json,os,pathlib
+          diff=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'evoforge-approval-diff.json').read_text())
+          assert diff['status']=='ahead' and diff['total_commits']==1
+          assert [(f['filename'],f['status']) for f in diff['files']]==[('.github/release-approvals/4868538-3f25a79d.json','added')]
+          PY
             gh api "repos/$GITHUB_REPOSITORY/contents/.github/release-approvals/4868538-3f25a79d.json?ref=$GITHUB_SHA" --jq .content | base64 -d > "$RUNNER_TEMP/evoforge-approval.json"
             python3 - <<'PY'
           import json,os,pathlib
