@@ -36,7 +36,7 @@ npm run dev -- --host 127.0.0.1 --port 5173 --strictPort > "$evidence/vite.log" 
 vite_pid=$!
 stop_vite(){ kill "$vite_pid" 2>/dev/null || true; wait "$vite_pid" 2>/dev/null || true; }
 trap stop_vite EXIT
-./node_modules/.bin/wait-on --timeout 60000 http://127.0.0.1:5173/
+node scripts/wait-for-server.mjs http://127.0.0.1:5173/ 60000
 gate golden npm run golden:test
 stop_vite
 trap - EXIT
