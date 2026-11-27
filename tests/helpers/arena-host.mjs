@@ -5,14 +5,14 @@ export function qualifyArenaHost(html, sw, Params, clone) {
   const script = html.split('<script>')[1].split('</script>')[0];
   new Function(script); new Function(sw);
   check('arena and service worker JavaScript parse', true);
-  const boot = 'init().catch(error => failArena(error.message || String(error)));';
-  check('exact startup boundary', script.trimEnd().endsWith(boot));
+  const boot = '// ARENA_STARTUP_BOUNDARY';
+  check('exact startup boundary', script.split(boot).length===2 && script.split(boot)[1].includes('else beginArena();'));
   function start(search) {
     const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
     const elements = Object.fromEntries(ids.map(id => [id, {id, disabled:false, classList:{add(){},remove(){},toggle(){}}, addEventListener(){}}]));
     const document = {getElementById(id){if(!elements[id])throw Error('Missing DOM id: '+id);return elements[id];},querySelectorAll(){return Object.values(elements).filter(e=>e.id.startsWith('sl-')||e.id.startsWith('surp-')||e.id.startsWith('fam-')||['btn-apply-rec','btn-auto-director','btn-auto-chaos','btn-respawn'].includes(e.id));}};
     const window={addEventListener(){}};
-    const host=new Function('document','window','navigator','location','isSecureContext','URLSearchParams','structuredClone',script.trimEnd().slice(0,-boot.length)+'\nreturn {buildEcosystem,seededRandom,experience,state,paused:()=>paused};')(document,window,{}, {search},false,Params,clone);
+    const host=new Function('document','window','navigator','location','isSecureContext','URLSearchParams','structuredClone',script.split(boot)[0]+'\nreturn {buildEcosystem,seededRandom,experience,state,paused:()=>paused};')(document,window,{}, {search},false,Params,clone);
     return {...host,api:window.__ARENA_RPC__,elements};
   }
   function equalBytes(a,b){a=new Uint8Array(a);b=new Uint8Array(b);return a.length===b.length&&a.every((v,i)=>v===b[i]);}

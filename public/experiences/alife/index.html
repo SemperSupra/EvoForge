@@ -280,7 +280,7 @@ function failArena(message) {
 window.addEventListener('error', e => { if (!stopped) failArena(e.message || 'Arena runtime error'); });
 window.addEventListener('unhandledrejection', e => { if (!stopped) failArena(e.reason?.message || 'Arena initialization failed'); });
 
-const mobileBudget=matchMedia('(pointer: coarse) and (max-width: 900px)').matches || /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1) || launchQuery.get('profile')==='mobile';
+const mobileBudget=(window.matchMedia?.('(pointer: coarse) and (max-width: 900px)')?.matches??false) || /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1) || launchQuery.get('profile')==='mobile';
 const MAX_NODES = 7200; // retain shader ABI; bound active population and render area instead
 if(mobileBudget){document.body.classList.add('hud-hidden','mobile-panel-left');document.getElementById('hud-toggle').textContent='Panels';}
 const MAX_CREATURES = 512;
@@ -2246,6 +2246,7 @@ updateCamera();
   });
 });
 
+// ARENA_STARTUP_BOUNDARY
 const beginArena=()=>init().catch(error => failArena(error.message || String(error)));
 if(mobileBudget){
   const entry=document.getElementById('mobile-start'),start=document.getElementById('mobile-start-button'),status=document.getElementById('mobile-start-status');

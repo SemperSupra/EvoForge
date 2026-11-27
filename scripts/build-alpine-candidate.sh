@@ -38,6 +38,7 @@ for i in 1 2; do
   (cd "$tmp/src-$i/dist" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > "$out/evidence/dist-$i.sha256"
 done
 cmp "$out/evidence/dist-1.sha256" "$out/evidence/dist-2.sha256"
+sha256sum "$out/evidence/dist-1.sha256" | tee "$out/evidence/manifest-observed.sha256"
 printf '%s  %s\n' "$manifest_sha" "$out/evidence/dist-1.sha256" | sha256sum -c -
 cp -a "$tmp/src-1/dist/." "$out/site/"
 tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf "$out/package/evoforge-site.tar" -C "$out/site" .

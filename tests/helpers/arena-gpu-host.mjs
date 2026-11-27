@@ -1,8 +1,8 @@
 // Execute the real application startup and dispatch orchestration against strict test doubles.
 // This is not native WGSL compilation, GPU execution, or browser qualification.
 export async function testGpuHost(html,Params,clone){
- const script=html.split('<script>')[1].split('</script>')[0],boot='init().catch(error => failArena(error.message || String(error)));',checks=[];
- if(!script.trimEnd().endsWith(boot))throw Error('startup anchor');
+ const script=html.split('<script>')[1].split('</script>')[0],boot='// ARENA_STARTUP_BOUNDARY',checks=[];
+ if(script.split(boot).length!==2||!script.split(boot)[1].includes('else beginArena();'))throw Error('startup anchor');
  const assert=(name,ok,detail)=>{if(!ok)throw Error(name+': '+JSON.stringify(detail??null));checks.push(name);};
  const U={STORAGE:1,COPY_DST:2,COPY_SRC:4,MAP_READ:8,UNIFORM:16,RENDER_ATTACHMENT:32};
  async function start(search,options={}){
@@ -27,7 +27,7 @@ export async function testGpuHost(html,Params,clone){
    queue:{writeBuffer(b,o,data,start=0,size){const stride=ArrayBuffer.isView(data)?data.BYTES_PER_ELEMENT:1;const bytes=ArrayBuffer.isView(data)?new Uint8Array(data.buffer,data.byteOffset,data.byteLength):new Uint8Array(data);const from=start*stride,len=size===undefined?bytes.length-from:size*stride;if(!(b.usage&U.COPY_DST)||o%4||len%4||o+len>b.size||from+len>bytes.length||b.mapped)throw Error('write bounds/usage');b.bytes.set(bytes.subarray(from,from+len),o);writes.push({b,o,len})},submit(cmds){for(const c of cmds){for(const x of c.copies)x.dst.bytes.set(x.src.bytes.subarray(x.so,x.so+x.size),x.d);submissions.push(c)}},async onSubmittedWorkDone(){}}
   };
   const nav=options.noGpu?{}:{gpu:{async requestAdapter(){return{limits:{maxStorageBuffersPerShaderStage:8},async requestDevice(){return device}}},getPreferredCanvasFormat(){return'bgra8unorm'}}};
-  const run=new Function('document','window','navigator','location','isSecureContext','URLSearchParams','structuredClone','GPUBufferUsage','GPUTextureUsage','GPUShaderStage','GPUMapMode','requestAnimationFrame','performance','devicePixelRatio',script.trimEnd().slice(0,-boot.length)+'\nreturn {boot:()=>init().catch(error=>failArena(error.message||String(error))),api:window.__ARENA_RPC__,state,experience,buildEcosystem};');
+  const run=new Function('document','window','navigator','location','isSecureContext','URLSearchParams','structuredClone','GPUBufferUsage','GPUTextureUsage','GPUShaderStage','GPUMapMode','requestAnimationFrame','performance','devicePixelRatio',script.split(boot)[0]+'\nreturn {boot:()=>init().catch(error=>failArena(error.message||String(error))),api:window.__ARENA_RPC__,state,experience,buildEcosystem};');
   const h=run(doc,win,nav,{search},false,Params,clone,U,{RENDER_ATTACHMENT:32},{COMPUTE:1,VERTEX:2,FRAGMENT:4},{READ:1},f=>frames.push(f),{now:()=>0},1);
   await h.boot();
   async function drain(){for(let i=0;i<12;i++)await Promise.resolve()}

@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: '24.22.3'
           package-manager-cache: false
-      - run: node --test experiments/search-coverage-r39/coverage.test.mjs
+      - run: node --test experiments/search-coverage-r39/coverage.node-check.mjs
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
