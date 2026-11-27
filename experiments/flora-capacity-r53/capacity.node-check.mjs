@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {policy,trial} from './capacity.mjs';
+test('local root competition and canopy shade reduce growth',()=>{const p={id:1,x:0,z:0,age:36,g:{species:'herb',droughtTolerance:.5}};const w={water:.65,plants:[p]};const before=policy(w).energyDelta(p);w.plants.push({id:2,x:.5,z:0,age:50,g:{species:'flower-tree'}});assert.ok(policy(w).energyDelta(p)<before);assert.equal(policy(w).admit({x:.2,z:0,g:{species:'herb'}}),false);});
+test('matched experiments remain bounded and reproducible',()=>{for(const seed of [42,1337,2026]){const a=trial(seed,true,240,true);assert.ok(a.counts.every(x=>x.total<=128));assert.ok(a.metrics.pollinations>0);assert.deepEqual(a.summary,trial(seed,true,240,true).summary);}});

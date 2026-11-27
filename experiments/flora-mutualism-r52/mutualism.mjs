@@ -1,6 +1,6 @@
 import {genome,createWorld,plant,animal,visit,move,step} from '../alife-flora-r51/flora.mjs';
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
-export function run(seed,withAnimals=true,ticks=240){
+export function run(seed,withAnimals=true,ticks=240,resourcePolicy=null){
  if(!Number.isSafeInteger(ticks)||ticks<1||ticks>1000)throw Error('tick budget');
  const w=createWorld(seed),metrics={pollinations:0,fruitEaten:0,gutSeeds:0,gutGerminations:0,windGerminations:0,plantDeaths:0},frames=[],events=[];
  const types=['flower-tree','fruit-tree','herb'];
@@ -23,7 +23,7 @@ export function run(seed,withAnimals=true,ticks=240){
    if(d>.75){const n=Math.min(d,speed);move(a,a.x+(p.x-a.x)*n/d,a.z+(p.z-a.z)*n/d);}
    if(dist(a,p)<=.75&&a.rest===0){visit(w,a,p);a.energy=Math.min(2,a.energy);a.last=p.id;a.target=null;a.rest=3;}
   }
-  step(w);
+  step(w,1,resourcePolicy?resourcePolicy(w):null);
   // Finite plant lifetime and resource stress free ecological capacity.
   const old=w.plants.length;w.plants=w.plants.filter(p=>p.energy>.03&&p.age<190+Math.round(p.g.droughtTolerance*80));metrics.plantDeaths+=old-w.plants.length;
   for(const e of w.receipts){if(e.type==='cross-pollination')metrics.pollinations++;if(e.type==='fruit-eaten')metrics.fruitEaten++;if(e.type==='seed-deposited'&&e.via==='gut')metrics.gutSeeds++;if(e.type==='germinated'&&e.via==='gut')metrics.gutGerminations++;if(e.type==='germinated'&&e.via==='wind')metrics.windGerminations++;events.push(e);}

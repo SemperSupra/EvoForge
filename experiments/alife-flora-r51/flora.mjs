@@ -20,15 +20,15 @@ export function visit(w,a,p){if(!w.animals.includes(a)||!w.plants.includes(p)||d
 }
 export function move(a,x,z){position(x,z);a.x=x;a.z=z;}
 function seed(w,g,x,z,parent,via){if(w.seeds.length>=256)return;w.seeds.push({g,x,z,parent,via,due:w.tick+4});record(w,'seed-deposited',{parent,via,x,z});}
-export function step(w,ticks=1){if(!Number.isSafeInteger(ticks)||ticks<0||ticks>300)throw Error('tick budget');for(let i=0;i<ticks;i++){
+export function step(w,ticks=1,policy=null){if(!Number.isSafeInteger(ticks)||ticks<0||ticks>300)throw Error('tick budget');for(let i=0;i<ticks;i++){
  w.tick++;
- for(const p of w.plants){p.age++;p.energy=clamp(p.energy+(w.water-.5)*.03-(1-p.g.droughtTolerance)*.004,0,1);
+ for(const p of w.plants){p.age++;p.energy=clamp(p.energy+(policy?policy.energyDelta(p):(w.water-.5)*.03-(1-p.g.droughtTolerance)*.004),0,1);
   if(p.age>=p.g.bloomAge&&p.energy>.25&&p.pollinated&&p.age%8===0){if(p.g.species==='fruit-tree')p.fruit=Math.min(4,p.fruit+1);else if(p.g.species==='flower-tree'){const angle=rnd(w)*Math.PI*2,x=p.x+Math.cos(angle)*1.5,z=p.z+Math.sin(angle)*1.5;if(Math.hypot(x,z)<=20)seed(w,mutate(p.g,p.mate,()=>rnd(w)),x,z,p.id,'wind');p.pollinated=false;}}
   if(p.g.species==='herb'&&p.age>=p.g.bloomAge&&p.age%16===0&&p.energy>.25){const x=p.x+(rnd(w)-.5)*3,z=p.z+(rnd(w)-.5)*3;if(Math.hypot(x,z)<=20)seed(w,mutate(p.g,p.g,()=>rnd(w)),x,z,p.id,'self');}
  }
  for(const a of w.animals){const due=a.gut.filter(s=>s.due<=w.tick);a.gut=a.gut.filter(s=>s.due>w.tick);for(const s of due)seed(w,s.g,a.x,a.z,s.parent,'gut');}
  const ready=w.seeds.filter(s=>s.due<=w.tick);w.seeds=w.seeds.filter(s=>s.due>w.tick);
- for(const s of ready){if(w.plants.length>=128||w.water<.2||w.plants.some(p=>distance(p,s)<.7)){record(w,'germination-rejected',{parent:s.parent,via:s.via});continue;}const p=plant(w,s.g,s.x,s.z);record(w,'germinated',{plant:p.id,parent:s.parent,via:s.via});}
+ for(const s of ready){if(w.plants.length>=128||w.water<.2||w.plants.some(p=>distance(p,s)<.7)||(policy&&!policy.admit(s))){record(w,'germination-rejected',{parent:s.parent,via:s.via});continue;}const p=plant(w,s.g,s.x,s.z);record(w,'germinated',{plant:p.id,parent:s.parent,via:s.via});}
 }}
 export function structure(g){ // parameterized L-system: F -> F[+F][-F]F with bounded depth
  if(!Number.isSafeInteger(g.depth)||g.depth<2||g.depth>4||!valid(g.angle)||!valid(g.branchRatio)||!valid(g.branchLength))throw Error('growth bounds');
