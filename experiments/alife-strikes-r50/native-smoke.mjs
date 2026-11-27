@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';import {chromium} from '@playwright/test';import {mkdir,writeFile} from 'node:fs/promises';
+const out='native-intervention-evidence';await mkdir(out,{recursive:true});assert.equal(process.platform,'darwin');
+const browser=await chromium.launch({channel:'chromium',headless:true,args:['--enable-unsafe-webgpu']});const context=await browser.newContext({viewport:{width:1440,height:900},serviceWorkers:'block'});
+await context.addInitScript(()=>{if(navigator.gpu){const f=navigator.gpu.requestAdapter.bind(navigator.gpu);navigator.gpu.requestAdapter=async(...a)=>{const x=await f(...a);if(x)window.adapterInfo={vendor:x.info.vendor,fallback:x.info.isFallbackAdapter??x.isFallbackAdapter??null};return x}}});
+const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+const get=()=>page.evaluate(()=>window.__ARENA_RPC__.getState()),call=(method,args=[])=>page.evaluate(([m,a])=>window.__ARENA_RPC__[m](...a),[method,args]);
+const wait=async(fn,args)=>{await page.waitForFunction(([src,a])=>{const s=window.__ARENA_RPC__?.getState();return s&&(s.phase==='error'||(new Function('s','a','return ('+src+')(s,a)'))(s,a));},[fn.toString(),args],{timeout:90000});const s=await get();assert.notEqual(s.phase,'error',s.error);return s;};
+const shot=n=>page.screenshot({path:out+'/'+n+'.png'});const base='http://127.0.0.1:5174/experiences/alife/index.html';
+try{
+ await page.goto(base+'?mode=observe&profile=smoke&seed=42');await wait(s=>s.telemetry.tick>=15);const adapter=await page.evaluate(()=>window.adapterInfo);assert.ok(adapter.vendor.toLowerCase().includes('apple'));assert.equal(adapter.fallback,false);
+ assert.equal(await page.locator('#strike-place').isDisabled(),true);assert.equal(await page.evaluate(()=>{try{window.__ARENA_RPC__.armMeteor(3,0);return false}catch{return true}}),true);
+ await page.goto(base+'?mode=play&profile=smoke&seed=42');await wait(s=>s.telemetry.tick>=15);await page.locator('#strike-meteor').click();await page.locator('#strike-place').click();await call('setPaused',[true]);const armed=await get();assert.equal(armed.interventions.pending.phase,'countdown');await shot('01-target');await page.waitForTimeout(200);assert.equal((await get()).tick,armed.tick);await page.locator('#strike-cancel').click();assert.equal((await get()).interventions.pending,null);assert.equal((await get()).interventions.craters.length,0);
+ await call('setPaused',[false]);await call('armMeteor',[3,0,true]);await wait(s=>s.interventions.pending?.phase==='descent');await call('setPaused',[true]);await shot('02-descent');assert.equal(await call('cancelMeteor'),false);await call('setPaused',[false]);await wait(s=>s.interventions.craters.length===1);await shot('03-impact');const crater=await wait(s=>s.telemetry.terrainProbe?.craters===1);
+ assert.ok(Math.abs((crater.telemetry.terrainProbe.surface-crater.telemetry.terrainProbe.base)+.9)<.0002,JSON.stringify(crater.telemetry.terrainProbe));assert.ok(Math.abs(crater.telemetry.terrainProbe.minerals-.65)<.0002);
+ await wait((s,t)=>s.tick>=t,crater.tick+35);await shot('04-persistent-crater');
+ const before=(await get()).interventions.craters;await call('lightning',[-3,0]);await call('setPaused',[true]);await shot('05-lightning');assert.deepEqual((await get()).interventions.craters,before);await call('setPaused',[false]);await wait(s=>s.telemetry.tick>=s.interventions.receipts.at(-1).tick+15);
+ const evidence=await get();assert.deepEqual(evidence.interventions.craters,before);
+ await call('resetEcosystem');await wait(s=>s.telemetry.tick>=15);assert.equal((await get()).telemetry.terrainProbe.craters,0);
+ for(let family=1;family<7;family++){await call('setPaused',[true]);await page.locator('#fam-'+family).click();await call('resetEcosystem');await call('setPaused',[false]);await wait(s=>s.telemetry.tick>=15);assert.equal((await get()).knobs.state.arenaFamily,family);}
+ assert.deepEqual(errors,[]);await writeFile(out+'/result.json',JSON.stringify({pass:true,scope:'actual Arena WebGPU Metal intervention research preview, not live release',adapter,probe:crater.telemetry.terrainProbe,receipts:evidence.interventions.receipts,sevenFamilies:true},null,2));console.log('PASS actual Apple Metal terrain probe, strike lifecycle, persistent crater and seven arena families');
+}finally{await browser.close()}

@@ -116,10 +116,12 @@
     @media(min-width:601px) and (max-width:1199px){body.mobile-panel-left #hud-right,body.mobile-panel-right #hud-left{display:none}body.mobile-panel-left #hud-left,body.mobile-panel-right #hud-right{width:min(65vw,420px);max-height:46dvh;font-size:13px}body.mobile-panel-left #hud-left button,body.mobile-panel-right #hud-right button{min-height:44px;font-size:14px}}
     @media(pointer:coarse){#camera-controls button,#hud-toggle,#experience-toolbar button{min-height:44px;min-width:44px}}
     @media(min-width:1400px){#hud-left,#hud-right{width:clamp(240px,19vw,320px)}}
+    #strike-overlay{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:8}#strike-panel{border:1px solid var(--border);border-radius:6px;padding:6px;margin:6px 0}#strike-panel input[type=number]{width:4.6em;max-width:100%}#strike-panel button{min-height:30px}@media(pointer:coarse){#strike-panel button{min-height:44px}}
   </style>
 </head>
 <body>
   <canvas id="canvas" aria-label="Artificial life simulation arena"></canvas>
+  <canvas id="strike-overlay" aria-hidden="true"></canvas>
   <nav id="experience-toolbar" aria-label="EvoForge experience controls">
     <a href="../../">All experiences</a>
     <span id="experience-mode"></span>
@@ -198,12 +200,21 @@
         <button id="btn-auto-chaos">Surprises: OFF</button>
         <button id="btn-audio" aria-pressed="false">Audio: OFF</button>
       </div>
+      <div id="strike-panel" aria-label="Environmental interventions">
+        <div class="section-title">Environmental interventions · experimental</div>
+        <div class="btn-row"><button id="strike-meteor" aria-pressed="true">Meteor</button><button id="strike-lightning" aria-pressed="false">Lightning</button><button id="strike-cancel">Cancel meteor</button></div>
+        <label><input type="checkbox" id="strike-mineral" checked> Mineral-bearing impact</label>
+        <div class="btn-row"><label>X <input id="strike-x" type="number" value="3" step=".1"></label><label>Z <input id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Strike target</button></div>
+        <div id="strike-status" role="status">Select a tool and tap terrain, or enter coordinates.</div>
+      </div>
+      <div id="audio-status">Ecology soundscape: off</div>
+      <label>Sound level <select id="audio-level" aria-label="Sound level"><option value="0.10">Quiet</option><option value="0.20" selected>Normal</option><option value="0.32">Higher</option></select></label>
       <div id="audio-status">Ecology soundscape: off</div>
       <label>Sound level <select id="audio-level" aria-label="Sound level"><option value="0.10">Quiet</option><option value="0.20" selected>Normal</option><option value="0.32">Higher</option></select></label>
       <div class="btn-row">
         <button class="surprise" id="surp-bloom">Bloom</button>
         <button class="surprise" id="surp-drought">Drought</button>
-        <button class="surprise" id="surp-meteor">Meteor</button>
+        <button class="surprise" id="surp-meteor">Meteor targeting</button>
         <button class="surprise" id="surp-heatwave">Heatwave</button>
         <button class="surprise" id="surp-lowg">Low-G Tide</button>
       </div>
@@ -449,7 +460,181 @@ function logEvent(msg) {
   if (box) box.innerHTML = telemetry.latest.events.slice(0, 4).map(e => `<div><b>[T=${e.tick}]</b> ${e.msg}</div>`).join('');
 }
 
-const WGSL_COMPUTE = /* wgsl */`
+
+// Exact previously tested standalone lifecycle kernel, kept private to this namespace.
+const interventionModel=(()=>{
+// Abstract simulation units only. Bounded intervention and heightfield reference.
+const TICKS_PER_SECOND=30, COUNTDOWN=90, DESCENT=24, MAX_CRATERS=8;
+const PROFILE=Object.freeze({meteor:Object.freeze({radius:2.25,depth:.9,rim:.24,impulse:1.5,heat:1,nutrients:.65}),lightning:Object.freeze({radius:.65,depth:0,rim:0,impulse:.16,heat:.25,nutrients:0})});
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const finite=n=>typeof n==='number'&&Number.isFinite(n);
+const baseHeight=(x,z)=>.35*((x*x+z*z)*.07-1.2)+.14*Math.sin(x*.85+.137)*Math.cos(z*.85-.137);
+const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t)};
+function terrainDelta(x,z,c){const r=Math.hypot(x-c.x,z-c.z)/c.radius;if(r>=1)return 0;const bowl=-c.depth*(1-smooth(r/.76));const rim=c.rim*Math.max(0,1-Math.abs(r-.80)/.20)**2;return bowl+rim}
+function heightAt(state,x,z){return baseHeight(x,z)+state.craters.reduce((sum,c)=>sum+terrainDelta(x,z,c),0)}
+function fieldsAt(state,x,z){
+ let nutrients=0,heat=0,impulse=0;
+ for(const c of state.craters){const r=Math.hypot(x-c.x,z-c.z)/c.radius;nutrients+=c.nutrients*Math.max(0,1-r)**2}
+ for(const e of state.effects){const r=Math.hypot(x-e.x,z-e.z)/e.radius;const fade=clamp(1-(state.tick-e.tick)/e.duration,0,1);heat+=e.heat*Math.max(0,1-r)*fade;impulse+=e.impulse*Math.max(0,1-r)*fade}
+ return {nutrients:clamp(nutrients,0,1),heat:clamp(heat,0,1),impulse};
+}
+function createWorld({mode='play',radius=10}={}){
+ if(!['play','observe'].includes(mode)||!finite(radius)||radius<4||radius>20)throw Error('world configuration');
+ return {mode,radius,epoch:0,tick:0,paused:false,nextId:1,pending:null,craters:[],effects:[],receipts:[],lastLightning:-Infinity};
+}
+function requirePlay(w){if(w.mode!=='play')throw Error('Observe mode: interventions disabled')}
+function target(w,x,z,r){if(!finite(x)||!finite(z)||Math.hypot(x,z)+r>w.radius)throw Error('Target footprint must fit within world');}
+function receipt(w,e){w.receipts.push({...e});if(w.receipts.length>64)w.receipts.shift()}
+function armMeteor(w,x,z,{nutrients=true}={}){
+ requirePlay(w);if(w.paused)throw Error('Resume before arming');
+ target(w,x,z,PROFILE.meteor.radius);
+ if(w.craters.length>=MAX_CRATERS)throw Error('Crater capacity reached');
+ if(w.pending?.phase==='descent')throw Error('Meteor already descending');
+ if(typeof nutrients!=='boolean')throw Error('Invalid payload');
+ const id=w.pending?.id??w.nextId++;
+ w.pending={id,x,z,phase:'countdown',armedAt:w.tick,launchAt:w.tick+COUNTDOWN,impactAt:w.tick+COUNTDOWN+DESCENT,nutrients};
+ receipt(w,{id,type:'armed',tick:w.tick,x,z});return w.pending.id;
+}
+function cancelMeteor(w){requirePlay(w);if(!w.pending||w.pending.phase!=='countdown')return false;receipt(w,{id:w.pending.id,type:'cancelled',tick:w.tick});w.pending=null;return true}
+function impact(w,type,x,z,id,nutrients){
+ const p=PROFILE[type];
+ if(type==='meteor')w.craters.push({id,x,z,radius:p.radius,depth:p.depth,rim:p.rim,nutrients:nutrients?p.nutrients:0,tick:w.tick});
+ const e={id,type,x,z,radius:p.radius,heat:p.heat,impulse:p.impulse,tick:w.tick,duration:type==='meteor'?30:9};
+ w.effects.push(e);receipt(w,{...e,type:type==='meteor'?'meteor-impact':'lightning-impact',payload:type==='meteor'&&nutrients?'mineral':'none'});
+}
+function lightning(w,x,z){
+ requirePlay(w);if(w.paused)throw Error('Resume before striking');target(w,x,z,PROFILE.lightning.radius);
+ if(w.tick-w.lastLightning<12)throw Error('Lightning cooling down');
+ w.lastLightning=w.tick;const id=w.nextId++;impact(w,'lightning',x,z,id,false);return id;
+}
+function advance(w,count=1){
+ if(!Number.isSafeInteger(count)||count<0||count>300)throw Error('Tick budget');
+ if(w.paused)return;
+ for(let i=0;i<count;i++){
+  w.tick++;
+  w.effects=w.effects.filter(e=>w.tick-e.tick<e.duration);
+  if(w.pending?.phase==='countdown'&&w.tick>=w.pending.launchAt){w.pending.phase='descent';receipt(w,{id:w.pending.id,type:'launched',tick:w.tick})}
+  if(w.pending?.phase==='descent'&&w.tick>=w.pending.impactAt){
+   const e=w.pending;w.pending=null;
+   impact(w,'meteor',e.x,e.z,e.id,e.nutrients);
+  }
+ }
+}
+function reset(w){requirePlay(w);const next=createWorld({mode:w.mode,radius:w.radius});next.epoch=w.epoch+1;Object.assign(w,next)}
+function snapshot(w){return {mode:w.mode,epoch:w.epoch,tick:w.tick,paused:w.paused,pending:w.pending?{...w.pending}:null,craters:w.craters.map(c=>({...c})),effects:w.effects.map(e=>({...e})),receipts:w.receipts.map(e=>({...e}))}}
+
+return {createWorld,armMeteor,cancelMeteor,advance,lightning,terrainDelta,fieldsAt,snapshot,PROFILE,COUNTDOWN,DESCENT};
+})();
+let strikeWorld=interventionModel.createWorld({mode,radius:state.arenaRadius}),strikeTool='meteor',strikeHover=null,strikeMessage='',impactTickEvents=[];
+const {PROFILE:strikeProfiles}=interventionModel;
+const strikeEl=id=>document.getElementById(id);
+function strikeStatus(){
+ const p=strikeWorld.pending;
+ const phase=p?(p.phase==='countdown'?'Target armed · '+(p.launchAt-strikeWorld.tick)+' simulation ticks to descent':'Meteor descending · committed'):'No pending meteor';
+ strikeEl('strike-status').textContent=phase+' · '+strikeWorld.craters.length+'/8 craters'+(strikeMessage?' · '+strikeMessage:'');
+ strikeEl('strike-cancel').disabled=mode!=='play'||p?.phase!=='countdown';
+}
+function chooseStrike(tool){assertPlay();if(!Object.hasOwn(strikeProfiles,tool))throw Error('Unknown strike');strikeTool=tool;cameraMode('interact');for(const t of ['meteor','lightning'])strikeEl('strike-'+t).setAttribute('aria-pressed',String(t===tool));viewDirty=true;strikeStatus();}
+function admitStrike(tool,x,z,nutrients=true){
+ assertPlay();if(stopped||experience.phase!=='running'||paused)throw Error('Resume a running arena first');
+ const p=strikeProfiles[tool];if(!p||!Number.isFinite(x)||!Number.isFinite(z))throw Error('Invalid target');
+ if(Math.hypot(x,z)+p.radius>state.arenaRadius-.25)throw Error('Target radius must fit inside arena');
+ if(state.arenaFamily===6&&Math.hypot(x,z)-p.radius<state.arenaRadius*.26)throw Error('Target intersects ringworld hub');
+ if(tool==='meteor'&&strikeWorld.craters.some(c=>Math.hypot(c.x-x,c.z-z)<c.radius+p.radius))throw Error('Choose a non-overlapping crater footprint');
+ strikeWorld.radius=state.arenaRadius;
+ if(tool==='meteor')interventionModel.armMeteor(strikeWorld,x,z,{nutrients});else interventionModel.lightning(strikeWorld,x,z);
+ strikeEl('strike-x').value=x.toFixed(2);strikeEl('strike-z').value=z.toFixed(2);
+ strikeMessage=tool==='meteor'?'Cancel or retarget before descent.':'Lightning dispatched.';
+ viewDirty=true;strikeStatus();return interventionModel.snapshot(strikeWorld);
+}
+function attemptStrike(tool,x,z,nutrients){try{return admitStrike(tool,x,z,nutrients)}catch(e){strikeMessage=e.message;viewDirty=true;strikeStatus();return null}}
+function cancelStrike(){assertPlay();const cancelled=interventionModel.cancelMeteor(strikeWorld);strikeMessage=cancelled?'Cancelled without impact.':'No cancelable meteor.';viewDirty=true;strikeStatus();return cancelled}
+function stepInterventions(){
+ strikeWorld.paused=false;interventionModel.advance(strikeWorld);
+ if(strikeWorld.tick!==state.simTick)throw Error('Intervention clock drift');
+ // Immediate clicks between frames apply once at the next simulation step; meteor applies at its actual impact tick.
+ impactTickEvents=strikeWorld.effects.filter(e=>e.type==='meteor'?e.tick===strikeWorld.tick:e.tick===strikeWorld.tick-1);
+ for(const e of impactTickEvents)logEvent(e.type==='meteor'?'METEOR: persistent crater':'LIGHTNING: localized impact');
+ if(impactTickEvents.length)strikeMessage='Impact applied.';
+ strikeStatus();
+}
+function resetInterventions(){strikeWorld=interventionModel.createWorld({mode,radius:state.arenaRadius});strikeWorld.epoch=resetEpoch;strikeHover=null;impactTickEvents=[];strikeMessage='World reset';strikeStatus();}
+function packCraters(out,offset){for(let i=0;i<strikeWorld.craters.length;i++){const c=strikeWorld.craters[i];out.set([c.x,c.z,c.radius,c.depth,c.nutrients,c.rim,0,0],offset+i*8)}}
+function packImpacts(out,offset){for(let i=0;i<Math.min(4,impactTickEvents.length);i++){const e=impactTickEvents[i];out.set([e.x,e.z,e.radius,e.impulse],offset+i*4)}}
+// CPU-side height matches the actual seven procedural GPU terrain families; used for ray intersection and visual marker placement.
+function baseSurface(x,z){
+ const r=Math.hypot(x,z),v=state.seed*.137,amp=state.bowlSlope,R=state.arenaRadius,sq=x=>x*x;
+ const smooth=(a,b,t)=>{t=Math.max(0,Math.min(1,(t-a)/(b-a)));return t*t*(3-2*t)};
+ switch(state.arenaFamily){
+ case 1:return (Math.sin(x*.65+v)*Math.cos(z*.65-v)+.45*Math.cos(r*.9-v))*(.65+Math.abs(amp))-r/R*.45;
+ case 2:return smooth(.6,3.8,Math.abs(x-Math.sin(z*.55+v)*2.1))*1.15-z/R*.65-.35;
+ case 3:return Math.exp(-sq((r-R*.55)/1.4))*1.45-Math.exp(-sq(r/1.8))*.95+Math.sin(x*.8+v)*.12;
+ case 4:return (Math.sin(x*.95+v)*Math.sin(z*.95-v)>.35?-.75:.55)+.15*Math.cos(r*1.1);
+ case 5:{const n=Math.max(0,Math.min(1,1-r/R));return Math.floor(n*5)*.42+Math.sin(Math.atan2(z,x)*2+n*8)*.12-.35;}
+ case 6:return sq(Math.abs(r-R*.62)*.48)-.25;
+ default:return amp*(r*r*.07-1.2)+Math.sin(x*.85+v)*Math.cos(z*.85-v)*.14;
+ }
+}
+function surface(x,z){return baseSurface(x,z)+strikeWorld.craters.reduce((sum,c)=>sum+interventionModel.terrainDelta(x,z,c),0)}
+function intersectSurface(eye,ray){
+ if(ray[1]>=-.0001)return null;
+ let prev=null;
+ for(let i=0;i<=1000;i++){
+  const t=i*.1,x=eye[0]+ray[0]*t,z=eye[2]+ray[2]*t,r=Math.hypot(x,z);
+  if(r>state.arenaRadius||(state.arenaFamily===6&&r<state.arenaRadius*.26)){prev=null;continue;}
+  const d=eye[1]+ray[1]*t-surface(x,z);
+  if(prev!==null&&prev>=0&&d<=0){let lo=t-.1,hi=t;for(let j=0;j<12;j++){const m=(lo+hi)/2,mx=eye[0]+ray[0]*m,mz=eye[2]+ray[2]*m;if(eye[1]+ray[1]*m>=surface(mx,mz))lo=m;else hi=m;}return {x:eye[0]+ray[0]*hi,z:eye[2]+ray[2]*hi};}
+  prev=d;
+ }
+ return null;
+}
+const strikeCanvas=strikeEl('strike-overlay'),strikeCtx=strikeCanvas.getContext('2d'),reducedStrike=(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches??false);
+function paintInterventions(matrix,width,height){
+ if(strikeCanvas.width!==width||strikeCanvas.height!==height){strikeCanvas.width=width;strikeCanvas.height=height;}
+ const ctx=strikeCtx,dpr=Math.min(devicePixelRatio,arenaProfile.dpr);
+ ctx.clearRect(0,0,width,height);
+ function proj(x,y,z){const w=matrix[3]*x+matrix[7]*y+matrix[11]*z+matrix[15];if(w<=.01)return null;return [(matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12])/w*width/2+width/2,height/2-(matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13])/w*height/2]}
+ function line(points,color,thick,closed=false){if(points.some(p=>!p)||!points.length)return;ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);if(closed)ctx.closePath();ctx.strokeStyle=color;ctx.lineWidth=thick*dpr;ctx.lineCap='round';ctx.stroke()}
+ function ring(x,z,r,color,thick=2){line(Array.from({length:65},(_,i)=>{const a=i/64*Math.PI*2,xx=x+Math.cos(a)*r,zz=z+Math.sin(a)*r;return proj(xx,surface(xx,zz)+.06,zz)}),color,thick,true)}
+ function textAt(label,p,color){if(!p)return;ctx.font='bold '+Math.round(14*dpr)+'px system-ui';ctx.fillStyle=color;ctx.textAlign='center';ctx.fillText(label,p[0],p[1]-15*dpr)}
+ function dot(p,r,c){if(!p)return;ctx.beginPath();ctx.arc(p[0],p[1],r*dpr,0,Math.PI*2);ctx.fillStyle=c;ctx.fill()}
+ const e=strikeWorld.pending;
+ if(strikeHover&&!e&&mode==='play'&&state.camMode==='interact')ring(strikeHover.x,strikeHover.z,strikeProfiles[strikeTool].radius,'rgba(255,220,150,.55)',1);
+ if(e){const h=surface(e.x,e.z),p=proj(e.x,h+.05,e.z);ring(e.x,e.z,strikeProfiles.meteor.radius,'#ffd083');if(p){line([[p[0]-9*dpr,p[1]],[p[0]+9*dpr,p[1]]],'#ffe6b2',2);line([[p[0],p[1]-9*dpr],[p[0],p[1]+9*dpr]],'#ffe6b2',2);}
+ if(e.phase==='countdown')textAt('METEOR · '+(e.launchAt-strikeWorld.tick)+' ticks',p,'#ffe5ac');
+ else{const f=Math.max(0,Math.min(1,(strikeWorld.tick-e.launchAt)/interventionModel.DESCENT)),m=proj(e.x-(1-f)*1.1,h+(1-f)*7,e.z-(1-f)*.6),tail=proj(e.x-(1-f)*1.1-.4,h+(1-f)*7+1.4,e.z-(1-f)*.6-.3);if(!reducedStrike)line([tail,m],'#f5a455',9);dot(m,9,'#f3a455');dot(m,4,'#fff2b8');textAt('DESCENT · COMMITTED',p,'#ffe5ac');}}
+ for(const e of strikeWorld.effects){const h=surface(e.x,e.z),p=proj(e.x,h+.05,e.z),f=(strikeWorld.tick-e.tick)/e.duration;
+ if(e.type==='meteor'){ring(e.x,e.z,e.radius*Math.max(.15,f),'#ffb65c',3);dot(p,reducedStrike?5:7+10*(1-f),'rgba(255,181,82,.9)');textAt('IMPACT',p,'#ffe0a0');if(!reducedStrike&&p)for(let i=0;i<10;i++){const a=i*Math.PI/5;dot([p[0]+Math.cos(a)*f*50*dpr,p[1]+Math.sin(a)*f*24*dpr-f*25*dpr],2,'#f1bb79')}}
+ else{line([proj(e.x-.12,h+5,e.z),proj(e.x+.22,h+3.7,e.z),proj(e.x-.18,h+2.5,e.z),proj(e.x+.16,h+1.1,e.z),p],'#a8ddff',reducedStrike?2:4);ring(e.x,e.z,e.radius,'#b8e8ff',2);textAt('LIGHTNING',p,'#b8e8ff');}}
+}
+strikeEl('strike-meteor').onclick=()=>chooseStrike('meteor');
+strikeEl('strike-lightning').onclick=()=>chooseStrike('lightning');
+strikeEl('strike-cancel').onclick=()=>cancelStrike();
+strikeEl('strike-place').onclick=()=>attemptStrike(strikeTool,Number(strikeEl('strike-x').value),Number(strikeEl('strike-z').value),strikeEl('strike-mineral').checked);
+document.addEventListener?.('keydown',e=>{if(e.key==='Escape'&&mode==='play'&&strikeWorld.pending?.phase==='countdown')cancelStrike();});
+if(mode==='observe')for(const id of ['strike-meteor','strike-lightning','strike-place','strike-mineral','strike-x','strike-z','strike-cancel'])strikeEl(id).disabled=true;
+strikeStatus();
+
+const WGSL_CRATERS = /* wgsl */`
+struct CraterRecord { shape: vec4<f32>, material: vec4<f32>, };
+fn craterOffset(xz: vec2<f32>, cs: array<CraterRecord,8>) -> f32 {
+ var value=0.0;
+ for(var i=0u;i<8u;i++){let c=cs[i];if(c.shape.z<=0.0){continue;}
+ let r=length(xz-c.shape.xy)/c.shape.z;if(r>=1.0){continue;}
+ let bowl=-c.shape.w*(1.0-smoothstep(0.0,0.76,r));
+ let rim=max(0.0,1.0-abs(r-0.80)/0.20);
+ value+=bowl+c.material.y*rim*rim;
+ }return value;
+}
+fn mineralPotential(xz: vec2<f32>, cs: array<CraterRecord,8>) -> f32 {
+ var value=0.0;
+ for(var i=0u;i<8u;i++){let c=cs[i];if(c.shape.z<=0.0){continue;}let r=length(xz-c.shape.xy)/c.shape.z;
+ let f=max(0.0,1.0-r);value+=c.material.x*f*f;}
+ return clamp(value,0.0,1.0);
+}
+`;
+const WGSL_COMPUTE = /* wgsl */`${WGSL_CRATERS}
+
 struct ArenaParams {
   radius: f32,
   pillarCount: f32,
@@ -505,6 +690,8 @@ struct SimParams {
   multi: MultiphaseParams,
   eco: EcologyParams,
   spTuning: array<SpeciesTuning, 6>,
+  craters: array<CraterRecord,8>,
+  impacts: array<vec4<f32>,4>,
 };
 
 struct Node {
@@ -629,7 +816,7 @@ fn smin(a: f32, b: f32, k: f32) -> f32 {
 // 7 Parametric Arena Families
 fn square(x: f32) -> f32 { return x * x; }
 
-fn terrainHeight(xz: vec2<f32>) -> f32 {
+fn baseTerrainHeight(xz: vec2<f32>) -> f32 {
   let r = length(xz);
   let s = f32(params.seed) * 0.137;
   let fam = params.multi.arenaFamily;
@@ -673,6 +860,8 @@ fn terrainHeight(xz: vec2<f32>) -> f32 {
   let wave = (sin(xz.x * 0.85 + s) * cos(xz.y * 0.85 - s)) * 0.14;
   return bowl + wave;
 }
+
+fn terrainHeight(xz:vec2<f32>)->f32{return baseTerrainHeight(xz)+craterOffset(xz,params.craters);}
 
 fn currentWaterLevel() -> f32 {
   let simT = f32(params.simTick) * 0.016;
@@ -771,7 +960,7 @@ fn updateEcology(@builtin(global_invocation_id) gid: vec3<u32>) {
       let shoreBonus = select(1.0, 1.35, abs(h - wLevel) < 0.45);
       let cap = u32(min(1000.0, mix(1000.0, 1000.0 * fertilityPatch, params.eco.floraPatchiness) * shoreBonus));
       if (flora < cap) {
-        let grow = u32(params.eco.floraRegrow * 8.0);
+        let grow = u32(params.eco.floraRegrow * 8.0 * (1.0 + mineralPotential(xz,params.craters)*0.8));
         atomicStore(&floraGrid[i], min(cap, flora + grow));
       }
     } else {
@@ -1035,12 +1224,16 @@ fn integrateVerlet(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
 
-  if (params.blastPower > 0.01) {
-    let dBlast = p - params.blastPos.xyz;
-    let bDist = length(dBlast);
-    if (bDist < 4.5 && bDist > 0.001) {
-      let f = 1.0 - bDist / 4.5;
-      vel += (normalize(dBlast) + vec3<f32>(0.0, 0.75, 0.0)) * (params.blastPower * f * 0.20);
+  // Each admitted impact is applied on one simulation step, not repeatedly during visual animation.
+  for(var hit=0u;hit<4u;hit++){
+    let ev=params.impacts[hit];if(ev.z<=0.0){continue;}
+    let center=vec3<f32>(ev.x,terrainHeight(ev.xy),ev.y);
+    let delta=p-center;let dist=length(delta);
+    if(dist<ev.z){
+      let falloff=1.0-dist/ev.z;
+      let direction=select(vec3<f32>(0.0,1.0,0.0),delta/max(dist,.0001),dist>.0001);
+      vel+=(direction+vec3<f32>(0.0,.55,0.0))*ev.w*falloff*.14;
+      if(lid==0u){let debit=takeEnergy(cid,u32(80.0*ev.w*falloff));atomicAdd(&stats[27u],debit);}
     }
   }
 
@@ -1058,7 +1251,7 @@ fn integrateVerlet(@builtin(global_invocation_id) gid: vec3<u32>) {
 @compute @workgroup_size(64)
 fn clearGrid(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (gid.x < 16384u) { atomicStore(&headPtrs[gid.x], 0xffffffffu); }
-  if (gid.x < 24u && gid.x != 20u) { atomicStore(&stats[gid.x], 0u); }
+  if (gid.x < 29u && gid.x != 20u && gid.x != 27u) { atomicStore(&stats[gid.x], 0u); }
 }
 
 @compute @workgroup_size(64)
@@ -1083,6 +1276,15 @@ fn finalizeCarrion(@builtin(global_invocation_id) gid: vec3<u32>){
 @compute @workgroup_size(64)
 fn collectStats(@builtin(global_invocation_id) gid: vec3<u32>){
   let i=gid.x;
+  if(i==0u){
+    var last:vec2<f32>=vec2<f32>(0.0);
+    var count=0u;
+    for(var j=0u;j<8u;j++){if(params.craters[j].shape.z>0.0){last=params.craters[j].shape.xy;count++;}}
+    atomicStore(&stats[24u],bitcast<u32>(baseTerrainHeight(last)));
+    atomicStore(&stats[25u],bitcast<u32>(terrainHeight(last)));
+    atomicStore(&stats[26u],bitcast<u32>(mineralPotential(last,params.craters)));
+    atomicStore(&stats[28u],count);
+  }
   if(i<16384u){atomicAdd(&stats[12u],atomicLoad(&floraGrid[i]));}
   if(i<params.totalCreatures){
     let energy=atomicLoad(&creatures[i].energy);
@@ -1284,7 +1486,8 @@ fn relaxConstraints(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `;
 
-const WGSL_RENDER = /* wgsl */`
+const WGSL_RENDER = /* wgsl */`${WGSL_CRATERS}
+
 struct ArenaParams {
   radius: f32,
   pillarCount: f32,
@@ -1317,6 +1520,7 @@ struct CameraUniforms {
   seed: u32,
   arena: ArenaParams,
   multi: MultiphaseParams,
+  craters: array<CraterRecord,8>,
 };
 
 struct Node {
@@ -1350,7 +1554,7 @@ struct VSOut {
 
 fn square(x: f32) -> f32 { return x * x; }
 
-fn terrainHeight(xz: vec2<f32>) -> f32 {
+fn baseTerrainHeight(xz: vec2<f32>) -> f32 {
   let r = length(xz);
   let s = f32(cam.seed) * 0.137;
   let fam = cam.multi.arenaFamily;
@@ -1375,6 +1579,8 @@ fn terrainHeight(xz: vec2<f32>) -> f32 {
   }
   return amp * (r * r * 0.07 - 1.2) + (sin(xz.x * 0.85 + s) * cos(xz.y * 0.85 - s)) * 0.14;
 }
+
+fn terrainHeight(xz:vec2<f32>)->f32{return baseTerrainHeight(xz)+craterOffset(xz,cam.craters);}
 
 fn speciesColor(sp: u32, lid: u32, cid: u32) -> vec3<f32> {
   if (cam.renderMode == 1u) {
@@ -1534,6 +1740,9 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4<f32> {
   let gridMask = 1.0 - min(min(grid.x, grid.y), 1.0);
   var col = in.color + vec3<f32>(0.04) * gridMask + vec3<f32>(0.04) * in.worldPos.y;
   col = mix(col, vec3<f32>(0.10, 0.44, 0.18), flora * 0.72);
+  let terrainChange=craterOffset(xz,cam.craters);
+  if(abs(terrainChange)>.008){col=mix(col,vec3<f32>(.29,.19,.12),.65);}
+  col=mix(col,vec3<f32>(.35,.47,.15),mineralPotential(xz,cam.craters)*.5);
 
   // Water table visualization
   if (in.worldPos.y < wLevel) {
@@ -1772,7 +1981,7 @@ function syncSliders() {
   map.forEach(([sId, lId, key, dec]) => {
     const el = document.getElementById(sId); el.value = state[key];
     document.getElementById(lId).textContent = Number(state[key]).toFixed(dec);
-    el.oninput = () => { state[key] = parseFloat(el.value); document.getElementById(lId).textContent = state[key].toFixed(dec); };
+    el.oninput = () => { if(key==='arenaRadius'&&(strikeWorld.pending||strikeWorld.craters.length)){el.value=state[key];strikeMessage='Reset world before changing arena radius.';strikeStatus();return;} state[key] = parseFloat(el.value); document.getElementById(lId).textContent = state[key].toFixed(dec); };
   });
 }
 syncSliders();
@@ -1788,7 +1997,8 @@ const FAMILY_CONFIGS = [
 ];
 for (let f = 0; f < 7; f++) {
   document.getElementById('fam-' + f).addEventListener('click', () => {
-    Object.assign(state, FAMILY_CONFIGS[f]);
+    if(strikeWorld.pending||strikeWorld.craters.length){strikeMessage='Reset world before changing arena family.';strikeStatus();return;}
+    Object.assign(state, FAMILY_CONFIGS[f]);viewDirty=true;
     syncSliders();
     for (let k = 0; k < 7; k++) document.getElementById('fam-' + k).classList.remove('active');
     document.getElementById('fam-' + f).classList.add('active');
@@ -1850,7 +2060,7 @@ function applyKnobPatch(patch) {
         if(!/^[0-5]$/.test(idx)||!values||typeof values!=='object'||Array.isArray(values))throw new RangeError('Invalid species');
         for(const [k,v] of Object.entries(values)){validate(speciesLimits,k,v);changes.push([speciesConfig[Number(idx)],k,v]);}
       }
-    }else{validate(knobLimits,key,value);changes.push([state,key,value]);}
+    }else{validate(knobLimits,key,value);if(key==='arenaRadius'&&(strikeWorld.pending||strikeWorld.craters.length)&&value!==state.arenaRadius)throw Error('Reset world before changing arena radius');changes.push([state,key,value]);}
   }
   for(const [obj,key,value] of changes)obj[key]=value;
   syncSliders(); syncSpeciesSliders();
@@ -1865,14 +2075,14 @@ function triggerSurprise(type) {
     if (gpuDevice && floraBufferRef) { const b = new Uint32Array(GRID_DIM * GRID_DIM); b.fill(950); gpuDevice.queue.writeBuffer(floraBufferRef, 0, b); }
     logEvent('SURPRISE: Solar Flora Bloom!');
   } else if (type === 'drought') { state.floraRegrow = 0.05; state.waterLevel = -0.85; logEvent('SURPRISE: Drought & Low Tide!'); }
-  else if (type === 'meteor') { state.blastX = (seededRandom() - 0.5) * state.arenaRadius; state.blastZ = (seededRandom() - 0.5) * state.arenaRadius; state.blastPower = 1.6; logEvent('SURPRISE: Meteor Impact!'); }
+  else if (type === 'meteor') { const a=seededRandom()*Math.PI*2,r=state.arenaRadius*.48; if(!strikeWorld.pending)attemptStrike('meteor',Math.cos(a)*r,Math.sin(a)*r,true); }
   else if (type === 'heatwave') { state.ambientTemp = 38.0; state.airWind = 0.85; logEvent('SURPRISE: Geothermal Heatwave & Thermal Updrafts!'); }
   else if (type === 'lowg') { state.gravityScale = 0.35; state.tidalAmp = 0.75; logEvent('SURPRISE: Low-Gravity Orbital Tide (0.35G)!'); }
   syncSliders();
   return { ok: true, surprise: type, tick: state.simTick };
 }
 
-['bloom', 'drought', 'meteor', 'heatwave', 'lowg'].forEach(t => document.getElementById('surp-' + t).addEventListener('click', () => triggerSurprise(t)));
+['bloom', 'drought', 'meteor', 'heatwave', 'lowg'].forEach(t => document.getElementById('surp-' + t).addEventListener('click', () => t==='meteor'?chooseStrike('meteor'):triggerSurprise(t)));
 document.getElementById('btn-apply-rec').addEventListener('click', () => { if (telemetry.latest.recommendation?.patch) applyKnobPatch(telemetry.latest.recommendation.patch); });
 document.getElementById('btn-auto-director').addEventListener('click', e => { state.autoDirector = !state.autoDirector; e.target.textContent = `Auto: ${state.autoDirector ? 'ON' : 'OFF'}`; e.target.classList.toggle('active', state.autoDirector); });
 document.getElementById('btn-auto-chaos').addEventListener('click', e => { state.autoSurprises = !state.autoSurprises; e.target.textContent = `Surprises: ${state.autoSurprises ? 'ON' : 'OFF'}`; e.target.classList.toggle('active', state.autoSurprises); });
@@ -1886,10 +2096,13 @@ document.getElementById('hud-toggle').addEventListener('click', () => {
 });
 
 window.__ARENA_RPC__ = Object.freeze({
-  getState: () => structuredClone({ ...experience, tick: state.simTick, telemetry: telemetry.latest, knobs: { state, speciesConfig } }),
+  getState: () => structuredClone({ ...experience, tick: state.simTick, telemetry: telemetry.latest, knobs: { state, speciesConfig }, interventions:interventionModel.snapshot(strikeWorld) }),
   setPaused: value => { setPaused(value); return window.__ARENA_RPC__.getState(); },
   setKnobs: patch => { applyKnobPatch(patch); return window.__ARENA_RPC__.getState(); },
   triggerSurprise: type => triggerSurprise(type),
+  armMeteor: (x,z,nutrients=true) => admitStrike('meteor',x,z,nutrients),
+  lightning: (x,z) => admitStrike('lightning',x,z,false),
+  cancelMeteor: () => cancelStrike(),
   resetEcosystem: () => { assertPlay(); if (!resetFnRef || stopped) throw new Error('Arena not ready'); resetFnRef(); return window.__ARENA_RPC__.getState(); }
 });
 if (mode === 'observe') {
@@ -1925,10 +2138,10 @@ async function init() {
   const creatureBuffer = device.createBuffer({ size: MAX_CREATURES * 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   const floraBuffer = device.createBuffer({ size: GRID_DIM * GRID_DIM * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   const scentBuffer = device.createBuffer({ size: GRID_DIM * GRID_DIM * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-  const statsBuffer = device.createBuffer({ size: 96, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
-  const statsReadBuffer = device.createBuffer({ size: 96, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
-  const simParamBuffer = device.createBuffer({ size: 288, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  const camParamBuffer = device.createBuffer({ size: 176, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const statsBuffer = device.createBuffer({ size: 116, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+  const statsReadBuffer = device.createBuffer({ size: 116, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  const simParamBuffer = device.createBuffer({ size: 608, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const camParamBuffer = device.createBuffer({ size: 432, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   floraBufferRef = floraBuffer;
 
   const computeModule = device.createShaderModule({ code: WGSL_COMPUTE });
@@ -2000,11 +2213,11 @@ async function init() {
 
   function uploadEcosystem() {
     eco = buildEcosystem();
-    resetEpoch++; state.simTick = 0; randomState = state.seed || 0x6d2b79f5; state.blastPower = 0;
+    resetEpoch++; state.simTick = 0; randomState = state.seed || 0x6d2b79f5; state.blastPower = 0;resetInterventions();
     telemetry.history = []; telemetry.latest = structuredClone(initialTelemetry);
     device.queue.writeBuffer(nodeBuffer, 0, eco.nodeBuf, 0, eco.activeNodes*48);
     device.queue.writeBuffer(nodeBuffer, eco.activeNodes*48*2, eco.templateBuf);
-    device.queue.writeBuffer(statsBuffer,0,new Uint32Array(24));
+    device.queue.writeBuffer(statsBuffer,0,new Uint32Array(29));
     const packed = new Uint8Array(MAX_CREATURES * 128);
     const genomes = new Uint8Array(eco.genomeBuf), brains = new Uint8Array(eco.brainBuf);
     for (let i=0;i<MAX_CREATURES;i++){
@@ -2042,7 +2255,8 @@ async function init() {
     lastTime = now;
     smoothDt = smoothDt * 0.9 + rawDt * 0.1;
     state.simTick++;
-    state.blastPower *= 0.84;
+    state.blastPower = 0;
+    stepInterventions();
 
     if (state.autoSurprises && state.simTick % 480 === 0) {
       const pool = ['bloom', 'drought', 'meteor', 'heatwave', 'lowg'];
@@ -2052,7 +2266,7 @@ async function init() {
     document.getElementById('perf-line').textContent = `${eco.activeNodes.toLocaleString()} Nodes | ${Math.round(1000 / smoothDt)} FPS`;
     document.getElementById('env-telemetry').textContent = `T_amb: ${state.ambientTemp.toFixed(0)}°C | g: ${state.gravityScale.toFixed(2)}G`;
 
-    const simBuf = new ArrayBuffer(288);
+    const simBuf = new ArrayBuffer(608);
     const u32 = new Uint32Array(simBuf), f32 = new Float32Array(simBuf);
     u32[0] = eco.activeNodes; u32[1] = eco.totalCreatures; u32[2] = state.renderMode; u32[3] = state.seed;
     u32[4] = state.simTick; f32[5] = state.kinBias; f32[6] = CELL_SIZE; f32[7] = NODE_RADIUS; f32[8] = state.blastPower;
@@ -2070,12 +2284,13 @@ async function init() {
       f32[40 + s*4 + 2] = speciesConfig[s].sense;
       f32[40 + s*4 + 3] = speciesConfig[s].split;
     }
+    packCraters(f32,72);packImpacts(f32,136);
     device.queue.writeBuffer(simParamBuffer, 0, simBuf);
     } else lastTime=now;
 
     const eye = cameraEye();
     const viewProj = multiplyMat4(perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 120.0), lookAt(eye, [state.camCenterX, 0.4, state.camCenterZ], [0, 1, 0]));
-    const camBuf = new ArrayBuffer(176);
+    const camBuf = new ArrayBuffer(432);
     const cf32 = new Float32Array(camBuf), cu32 = new Uint32Array(camBuf);
     cf32.set(viewProj, 0);
     cf32[16] = eye[0]; cf32[17] = eye[1]; cf32[18] = eye[2]; cf32[19] = 1.0;
@@ -2085,6 +2300,7 @@ async function init() {
     cf32[32] = state.bowlSlope; cf32[33] = state.lavaRadius; cf32[34] = state.crusherSpeed; cf32[35] = state.surfaceGrip;
     cf32[36] = state.waterLevel; cf32[37] = state.tidalAmp; cf32[38] = state.waterVisc; cf32[39] = state.airWind;
     cf32[40] = state.ambientTemp; cf32[41] = state.gravityScale; cf32[42] = state.bendStiff; cu32[43] = state.arenaFamily;
+    packCraters(cf32,44);
     device.queue.writeBuffer(camParamBuffer, 0, camBuf);
 
     const encoder = device.createCommandEncoder();
@@ -2108,7 +2324,7 @@ async function init() {
     cpass.setPipeline(collectPipe);cpass.dispatchWorkgroups(256);
     cpass.end();
 
-    if (!readingStats && state.simTick % 15 === 0) encoder.copyBufferToBuffer(statsBuffer, 0, statsReadBuffer, 0, 96);
+    if (!readingStats && state.simTick % 15 === 0) encoder.copyBufferToBuffer(statsBuffer, 0, statsReadBuffer, 0, 116);
     }
 
     const rpass = encoder.beginRenderPass({
@@ -2125,6 +2341,7 @@ async function init() {
     rpass.end();
 
     device.queue.submit([encoder.finish()]);
+    paintInterventions(viewProj,canvas.width,canvas.height);
     state.viewRevision++;
 
     if (stepping && !readingStats && state.simTick % 15 === 0) {
@@ -2151,6 +2368,7 @@ async function init() {
         telemetry.latest.contentionDrops = arr[21];
         telemetry.latest.neighborTruncations = arr[22];
         telemetry.latest.fastMovingNodes = arr[23];
+        const probe=new Float32Array(arr.buffer,arr.byteOffset,arr.length);telemetry.latest.terrainProbe={base:probe[24],surface:probe[25],minerals:probe[26],impactEnergyDebited:arr[27],craters:arr[28]};
         telemetry.latest.energy = { fauna: eFauna, flora: eFlora, carcass: eCarcass, total: totalE };
         telemetry.latest.guilds = { herbivore: arr[15], carnivore: arr[16], scavenger: arr[17], omnivore: arr[18] };
 
@@ -2217,10 +2435,7 @@ function worldPointer(e) {
   const sy=Math.sin(state.camYaw),cy=Math.cos(state.camYaw),sp=Math.sin(state.camPitch),cp=Math.cos(state.camPitch),f=Math.tan(Math.PI/8);
   const right=[sy,0,-cy],up=[-cy*sp,cp,-sy*sp],forward=[-cy*cp,-sp,-sy*cp];
   const ray=forward.map((v,i)=>v+right[i]*nx*f*rect.width/rect.height+up[i]*ny*f);
-  if(ray[1]>=-0.0001)return false;
-  const eye=cameraEye(),t=(0.4-eye[1])/ray[1];
-  state.targetX=clamp(eye[0]+ray[0]*t,-state.arenaRadius,state.arenaRadius);
-  state.targetZ=clamp(eye[2]+ray[2]*t,-state.arenaRadius,state.arenaRadius);return true;
+  strikeHover=intersectSurface(cameraEye(),ray);viewDirty=true;return !!strikeHover;
 }
 for(const id of ['orbit','pan','interact'])document.getElementById('cam-'+id).onclick=()=>cameraMode(id);
 document.getElementById('cam-interact').disabled=mode!=='play';
@@ -2258,7 +2473,7 @@ canvasEl.addEventListener('pointermove',e=>{
 function endPointer(e,allowAction) {
   const old=pointers.get(e.pointerId);pointers.delete(e.pointerId);gestureDistance=0;
   if(old&&allowAction&&!moved&&old.button===0&&pointers.size===0&&mode==='play'&&state.camMode==='interact'&&worldPointer(e)){
-    state.blastX=state.targetX;state.blastZ=state.targetZ;state.blastPower=1;
+    attemptStrike(strikeTool,strikeHover.x,strikeHover.z,strikeEl('strike-mineral').checked);
   }
 }
 canvasEl.addEventListener('pointerup',e=>endPointer(e,true));
