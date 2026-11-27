@@ -1,0 +1,118 @@
+name: Publish qualified EvoForge Pages
+
+on:
+  workflow_run:
+    workflows: ["Public candidate qualification"]
+    types: [completed]
+    branches: [release-source]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: evoforge-pages-promotion
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: ${{ github.repository == 'SemperSupra/EvoForge' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'release-source' && (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    outputs:
+      approved: ${{ steps.validate.outputs.approved }}
+    steps:
+      - name: Fetch reviewed release descriptor only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          test "${#SOURCE_SHA}" = 40
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          current="$(gh api repos/SemperSupra/EvoForge/git/ref/heads/release-source --jq .object.sha)"
+          test "$current" = "$SOURCE_SHA"
+          gh api "repos/SemperSupra/EvoForge/contents/public/release.json?ref=$SOURCE_SHA" --jq .content | base64 --decode > "$RUNNER_TEMP/release-descriptor.json"
+      - name: Download the successful run's exact site
+        uses: actions/download-artifact@v4
+        with:
+          name: qualified-site
+          path: site
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Download the same run's evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: qualification-evidence
+          path: evidence
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Independently validate scope, source, gate receipt and artifact
+        id: validate
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, os, re, hashlib, json
+          sha=os.environ['SOURCE_SHA']
+          root=pathlib.Path('site')
+          expected=['install','chromium','typecheck','unit','build','dist','golden','smoke']
+          assert pathlib.Path('evidence/result.txt').read_text().strip()=='PASS source='+sha
+          assert pathlib.Path('evidence/native-source.txt').read_text().strip()=='source='+sha
+          assert pathlib.Path('evidence/gates.tsv').read_text().splitlines()==[g+'\tPASS' for g in expected]
+          required={'LICENSE','release.json','index.html','experiences.json','experiences/alife/index.html','experiences/alife/manifest.webmanifest','experiences/alife/sw.js'}
+          found={}
+          for p in root.rglob('*'):
+              assert not p.is_symlink(), 'symbolic link'
+              rel=p.relative_to(root).as_posix()
+              if p.is_dir():
+                  assert rel in {'assets','experiences','experiences/alife'}, rel
+                  continue
+              assert p.is_file() and p.stat().st_nlink==1
+              assert rel in required or re.fullmatch(r'assets/[A-Za-z0-9_.-]+\.(js|css|wasm|png|svg|webp|woff2?)',rel),rel
+              found['./'+rel]=hashlib.sha256(p.read_bytes()).hexdigest()
+          assert required <= {x[2:] for x in found}
+          receipt={}
+          for line in pathlib.Path('evidence/dist-sha256.txt').read_text().splitlines():
+              h,rel=line.split('  ',1)
+              assert re.fullmatch('[0-9a-f]{64}',h) and rel not in receipt
+              receipt[rel]=h
+          assert found==receipt, 'exact manifest mismatch'
+          descriptor=json.loads(pathlib.Path(os.environ['RUNNER_TEMP'],'release-descriptor.json').read_text())
+          assert descriptor==json.loads((root/'release.json').read_text()),'release descriptor mismatch'
+          assert descriptor['schema']==1 and re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?',descriptor['version'])
+          approved=descriptor.get('promotion')=='approved'
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('approved='+str(approved).lower()+'\n')
+          print('Verified exact candidate',descriptor['version'],'promotion approved:',approved)
+          PY
+      - name: Prepare GitHub Pages
+        if: steps.validate.outputs.approved == 'true'
+        uses: actions/configure-pages@v5
+      - name: Package only the verified public site
+        if: steps.validate.outputs.approved == 'true'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: verify
+    if: needs.verify.outputs.approved == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Reject superseded release-source head before promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: test "$(gh api repos/SemperSupra/EvoForge/git/ref/heads/release-source --jq .object.sha)" = "$SOURCE_SHA"
+      - name: Deploy approved candidate
+        id: deployment
+        uses: actions/deploy-pages@v4
