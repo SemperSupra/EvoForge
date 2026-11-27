@@ -2,17 +2,17 @@ name: Guarded EvoForge Pages promotion
 on:
   push:
     branches: [rdte/readiness-probe-r19, gh-pages]
-    paths: ['.github/workflows/alpine-promotion-preflight.yml', '.github/release-approvals/4868538-3f25a79d.json']
+    paths: ['.github/workflows/alpine-promotion-preflight.yml', '.github/release-approvals/1b0cc3f-ecd6e8dd.json']
   workflow_dispatch:
     inputs:
       promotion:
-        description: 'Promote exact RC source 4868538 and signed subject 3f25a79d, or preflight only'
+        description: 'Promote exact RC source 1b0cc3f and signed subject ecd6e8dd, or preflight only'
         type: choice
         required: true
         default: preflight-only
         options:
           - preflight-only
-          - deploy-4868538-3f25a79d
+          - deploy-1b0cc3f-ecd6e8dd
 concurrency:
   group: evoforge-guarded-pages-promotion
   cancel-in-progress: false
@@ -20,10 +20,10 @@ permissions:
   contents: read
   actions: read
 env:
-  RELEASE_SOURCE: 48685389758792d26e58f531e22d7f2d2f4aca5f
-  RELEASE_RUN: '46056100441'
-  SUBJECT_SHA: 3f25a79dd50247c0281fbefc82e2779f91b904f9e73c0da00ad92479d4d2bdc7
-  MANIFEST_SHA: e8de245ab0b8152dea1ed2ff7585b1d4fd8688be1808945aca3928e8dcb69824
+  RELEASE_SOURCE: 1b0cc3f48ae27808d259f7d084127671abd96f20
+  RELEASE_RUN: '46076243185'
+  SUBJECT_SHA: ecd6e8dd017804d1dc5ea2c2bc788bbdc057d3e0ae96e183b7db6e4a8ccbe8a0
+  MANIFEST_SHA: cf2799650d74bab55beabc5c57bb022db0432df9c34f0d2ebc38fb70405862da
 jobs:
   promotion-preflight:
     if: github.repository == 'SemperSupra/EvoForge'
@@ -40,13 +40,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 48685389758792d26e58f531e22d7f2d2f4aca5f
+          ref: 1b0cc3f48ae27808d259f7d084127671abd96f20
           persist-credentials: false
       - name: Bind explicit promotion authority to exact candidate
         id: authorize
         env:
           GH_TOKEN: ${{ github.token }}
-          MANUAL_REQUEST: ${{ github.event_name == 'workflow_dispatch' && inputs.promotion == 'deploy-4868538-3f25a79d' }}
+          MANUAL_REQUEST: ${{ github.event_name == 'workflow_dispatch' && inputs.promotion == 'deploy-1b0cc3f-ecd6e8dd' }}
           PUSH_REQUEST: ${{ github.event_name == 'push' && github.ref == 'refs/heads/gh-pages' }}
           BEFORE_SHA: ${{ github.event.before }}
         run: |
@@ -62,9 +62,9 @@ jobs:
           import json,os,pathlib
           diff=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'evoforge-approval-diff.json').read_text())
           assert diff['status']=='ahead' and diff['total_commits']==1
-          assert [(f['filename'],f['status']) for f in diff['files']]==[('.github/release-approvals/4868538-3f25a79d.json','added')]
+          assert [(f['filename'],f['status']) for f in diff['files']]==[('.github/release-approvals/1b0cc3f-ecd6e8dd.json','added')]
           PY
-            gh api "repos/$GITHUB_REPOSITORY/contents/.github/release-approvals/4868538-3f25a79d.json?ref=$GITHUB_SHA" --jq .content | base64 -d > "$RUNNER_TEMP/evoforge-approval.json"
+            gh api "repos/$GITHUB_REPOSITORY/contents/.github/release-approvals/1b0cc3f-ecd6e8dd.json?ref=$GITHUB_SHA" --jq .content | base64 -d > "$RUNNER_TEMP/evoforge-approval.json"
             python3 - <<'PY'
           import json,os,pathlib
           receipt=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'evoforge-approval.json').read_text())
@@ -96,7 +96,7 @@ jobs:
           assert {j['name'] for j in jobs}=={'build','isolated-browser','metal','provenance'}
           assert all(j['conclusion']=='success' for j in jobs)
           a={x['name']:x for x in json.load(open('preflight/artifacts.json'))['artifacts']}
-          expected={'signed-release-candidate':(15225599416,'sha256:25e0765bbe6384c65aa473952d1c5e9bff7bfa65e1846ab3dcbb6bd709f2d71b'),'candidate-site':(15226302443,'sha256:7cb1896d9b7d3816a9eea05b112076bdf540af84d3c8d6f4642bff917023a901'),'candidate-build-evidence':(15226871979,'sha256:c438ea7c03ffffd87812cbb56348cfa3b2992d415ef2ab5c7dfe29db11bb8a78')}
+          expected={'signed-release-candidate':(15235980711,'sha256:5f6fe619dac04e52b00fb1743408902b92c1a324cd9185c20a19fd68607cff5a'),'candidate-site':(15234823790,'sha256:3057faee68157ea5c375e430b1ef79b49255509bf71fe8614c68418739271c98'),'candidate-build-evidence':(15234659331,'sha256:0fb415bd3cc191728573d2c1c3ad8b7877079958d33f9e799d5e554556bd0a08')}
           for name,(ident,digest) in expected.items():
               assert a[name]['id']==ident and a[name]['digest']==digest and not a[name]['expired']
           print('PASS exact release source, successful job graph and artifact identity')
@@ -104,14 +104,14 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: signed-release-candidate
-          run-id: 46056100441
+          run-id: 46076243185
           github-token: ${{ github.token }}
           digest-mismatch: error
           path: signed
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: candidate-site
-          run-id: 46056100441
+          run-id: 46076243185
           github-token: ${{ github.token }}
           digest-mismatch: error
           path: site
