@@ -22,18 +22,34 @@ jobs:
           mkdir evidence site
           git rev-parse HEAD > evidence/source.txt
           printf '%s  %s\n' 7552f1df20b233b04da2040c36eb5a992a262d7558149d1092c6deb9bb8e5812 package.json 65b6c770ed63455930bdc84c42aa9d00bd57f66ce6dd13943aa6af5baf2f8214 package-lock.json | sha256sum -c -
-          cp containers/alpine/Dockerfile evidence/Dockerfile
-          sed -i 's/apk add --no-cache ca-certificates libstdc++/apk add --no-cache ca-certificates=20261020-r0 libgcc=15.2.0-r5 libstdc++=15.2.0-r5/' evidence/Dockerfile
+          mkdir -p inputs
+          curl -fsSL --proto '=https' https://registry.npmjs.org/npm/-/npm-12.2.3.tgz -o inputs/npm.tgz
+          printf '%s  %s\n' fa0711dd513fa1386bbad3962a292cb813461cb57dedf07d6eb7efe76dffe897 inputs/npm.tgz | sha256sum -c -
+          cat > inputs/Dockerfile <<'DOCKER'
+          ARG BASE
+          FROM ${BASE} AS unpack
+          COPY npm.tgz /tmp/npm.tgz
+          RUN mkdir /npm && tar -xzf /tmp/npm.tgz -C /npm --strip-components=1
+          FROM ${BASE}
+          RUN apk add --no-cache nodejs=24.22.3-r0 ca-certificates=20261020-r0 ada-libs=4.0.0-r0 brotli-libs=1.2.1-r0 c-ares=1.34.9-r0 icu-data-en=78.1-r0 icu-libs=78.1-r0 libgcc=15.2.0-r5 libstdc++=15.2.0-r5 nghttp2-libs=1.70.0-r0 simdjson=4.2.4-r0 simdutf=9.0.0-r0 sqlite-libs=3.53.4-r0 zstd-libs=1.6.0-r1
+          COPY --from=unpack /npm /usr/local/lib/node_modules/npm
+          RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && addgroup -g 10001 app && adduser -D -u 10001 -G app -h /home/app app
+          WORKDIR /workspace
+          USER 10001:10001
+          CMD ["node"]
+          DOCKER
+          cp inputs/Dockerfile evidence/Dockerfile
+          cp inputs/npm.tgz evidence/npm.tgz
           for i in 1 2; do
-            docker build --no-cache --target compiler --build-arg ALPINE_BASE="$BASE" --build-arg NODE_DONOR="$DONOR" --iidfile "evidence/image-$i.txt" -f evidence/Dockerfile containers/alpine
+            docker build --no-cache --build-arg BASE="$BASE" --iidfile "evidence/image-$i.txt" -f inputs/Dockerfile inputs
             image="$(cat "evidence/image-$i.txt")"
             docker image inspect "$image" > "evidence/image-$i.json"
             docker run --rm --network none --entrypoint sh "$image" -ec 'apk info -v | sort' > "evidence/packages-$i.txt"
-            docker run --rm --network none --entrypoint sh "$image" -ec 'node --version; npm --version; sha256sum /usr/local/bin/node; find /usr/local/lib/node_modules/npm -type f -exec sha256sum {} + | sort' > "evidence/toolchain-$i.txt"
+            docker run --rm --network none --entrypoint sh "$image" -ec 'node --version; npm --version; sha256sum /usr/bin/node; find /usr/local/lib/node_modules/npm -type f -exec sha256sum {} + | sort' > "evidence/toolchain-$i.txt"
             scratch="$(mktemp -d)"
             trap 'rm -rf "$scratch"' EXIT
             git archive HEAD | tar -x -C "$scratch"
-            docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch:/workspace" -w /workspace --entrypoint sh "$image" -ec 'test "$(node --version)" = v22.23.5; npm ci --ignore-scripts; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist; npm audit --audit-level=low' 2>&1 | tee "evidence/build-$i.log"
+            docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -v "$scratch:/workspace" -w /workspace --entrypoint sh "$image" -ec 'test "$(node --version)" = v24.22.3; test "$(npm --version)" = 12.2.3; npm ci --ignore-scripts; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist; npm audit --audit-level=low' 2>&1 | tee "evidence/build-$i.log"
             (cd "$scratch/dist" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "evidence/dist-$i.sha256"
             if [ "$i" = 1 ]; then cp -a "$scratch/dist/." site/; fi
             rm -rf "$scratch"
@@ -59,6 +75,7 @@ jobs:
           for i in (1,2):
               a=json.load(open(f'evidence/audit-{i}.json'))
               assert any(r.get('Class')=='os-pkgs' and r.get('Packages') for r in a.get('Results',[]))
+              assert any(r.get('Type')=='node-pkg' and r.get('Packages') for r in a.get('Results',[])), 'npm coverage missing'
               v=[x for r in a['Results'] for x in r.get('Vulnerabilities') or []]
               print(i,dict(collections.Counter(x['Severity'] for x in v)))
               assert not any(x['Severity'] in ('HIGH','CRITICAL') for x in v)
