@@ -1,0 +1,39 @@
+name: R54 converged playback qualification
+on:
+  push:
+    branches: [rdte/playback-convergence-r54]
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run build
+      - run: |
+          set -euo pipefail
+          mkdir -p r47-desktop mobile-evidence
+          npm run preview -- --host 127.0.0.1 --port 5174 --strictPort --base / > r47-desktop/server.log 2>&1 &
+          p1=$!
+          trap 'kill "$p1" 2>/dev/null || true' EXIT
+          node scripts/wait-for-server.mjs http://127.0.0.1:5174/ || { cat r47-desktop/server.log; exit 1; }
+          EVOFORGE_SCREENSHOT_DIR=r47-desktop node scripts/playback-lenses-smoke.mjs
+          EVOFORGE_PREVIEW_BASE=http://127.0.0.1:5174/ node experiments/search-coverage-r39/mobile-smoke.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r47-playback-evidence
+          path: |
+            r47-desktop/
+            mobile-evidence/
+          retention-days: 30
