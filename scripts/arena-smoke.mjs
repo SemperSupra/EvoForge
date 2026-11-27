@@ -147,6 +147,11 @@ try{
   await progress(15);
   assert.equal((await snapshot()).mode,'observe');
   assert.deepEqual(errors,[],'Uncaught browser errors');
+  await page.setViewportSize({width:1600,height:1000});
+  await page.goto(base+'experiences/alife/index.html?mode=observe&seed=42');
+  const wide=await progress(15);assert.equal(wide.knobs.state.deviceProfile,'desktop');assert.equal(wide.knobs.state.arenaRadius,17);assert.equal(wide.knobs.state.popCounts.reduce((a,b)=>a+b,0),144);assert.ok(Number.isInteger(wide.telemetry.fastMovingNodes)&&wide.telemetry.fastMovingNodes>=0);await capture(page,'arena-desktop-spacious');
+  await page.evaluate(()=>window.__ARENA_RPC__.setPaused(true));await page.getByRole('button',{name:'Zoom in',exact:true}).click();await page.getByRole('button',{name:'Zoom in',exact:true}).click();await capture(page,'arena-desktop-creature-detail');
+  console.log('R40 desktop sample '+JSON.stringify({profile:wide.knobs.state.deviceProfile,radius:wide.knobs.state.arenaRadius,fastMovingNodes:wide.telemetry.fastMovingNodes,neighborTruncations:wide.telemetry.neighborTruncations}));
   await context.close();
   const noGpu=await browser.newContext({serviceWorkers:'block'});
   await noGpu.addInitScript(()=>Object.defineProperty(navigator,'gpu',{value:undefined,configurable:true}));

@@ -17,7 +17,7 @@ export function qualifyArenaHost(html, sw, Params, clone) {
   }
   function equalBytes(a,b){a=new Uint8Array(a);b=new Uint8Array(b);return a.length===b.length&&a.every((v,i)=>v===b[i]);}
   const def=start(''), small=start('?profile=smoke&mode=play&seed=42'), same=start('?profile=smoke&mode=play&seed=42'), different=start('?profile=smoke&mode=play&seed=43');
-  for(const [name,host,founders,reserve,expectedNodes] of [['default',def,238,48,3286],['smoke',small,16,12,328]]){
+  for(const [name,host,founders,reserve,expectedNodes] of [['default',def,144,36,2117],['smoke',small,16,12,328]]){
     const e=host.buildEcosystem(), c=new Uint32Array(e.creatureBuf), n=new Uint32Array(e.nodeBuf), f=new Float32Array(e.nodeBuf), t=new Float32Array(e.templateBuf), tu=new Uint32Array(e.templateBuf);
     check(name+' expected population and node capacity', e.totalCreatures===founders+reserve&&e.activeNodes===expectedNodes&&e.activeNodes<=7200);
     check(name+' ABI byte lengths',e.creatureBuf.byteLength===512*32&&e.nodeBuf.byteLength===7200*48&&e.templateBuf.byteLength===e.activeNodes*48&&e.genomeBuf.byteLength===512*64&&e.brainBuf.byteLength===512*64);
