@@ -40,5 +40,8 @@ trap stop_vite EXIT
 gate golden npm run golden:test
 stop_vite
 trap - EXIT
-gate smoke npm run arena:smoke
-echo 'NATIVE_GATES_PASS'
+case "${EVOFORGE_QUALIFICATION_PHASE:-full}" in
+ full) gate smoke npm run arena:smoke; echo 'NATIVE_GATES_PASS';;
+ container) echo 'CONTAINER_GATES_PASS_AWAITING_NATIVE_SMOKE';;
+ *) exit 2;;
+esac

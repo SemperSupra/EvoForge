@@ -1,19 +1,15 @@
 name: Public candidate qualification
-
 on:
   push:
     branches: [release-source]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: public-qualification-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
-  native-gates:
+  container-gates:
     if: ${{ github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/release-source' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -21,31 +17,119 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Qualify exact public source in disposable tooling container
+      - name: Seven container gates (not yet qualified)
         env:
           EVOFORGE_ZERO_COST: '1'
+          EVOFORGE_QUALIFICATION_PHASE: container
         run: bash scripts/rdte-direct.sh "$GITHUB_SHA" "$RUNNER_TEMP/evoforge-dist"
-      - name: Verify ordered gate receipt and exact candidate distribution
+      - name: Verify intermediate receipt
         run: |
           set -euo pipefail
           E="$RUNNER_TEMP/evoforge-dist.evidence"
-          test "$(cat "$E/result.txt")" = "PASS source=$GITHUB_SHA"
+          test "$(cat "$E/result.txt")" = "CONTAINER_PASS_AWAITING_NATIVE_SMOKE source=$GITHUB_SHA"
           test "$(cat "$E/native-source.txt")" = "source=$GITHUB_SHA"
-          test "$(grep -c $'\tPASS$' "$E/gates.tsv")" = 8
-          test -s "$E/dist-sha256.txt"
+          test "$(cat "$E/gates.tsv")" = "$(printf '%s\tPASS\n' install chromium typecheck unit build dist golden)"
           (cd "$RUNNER_TEMP/evoforge-dist" && sha256sum -c "$E/dist-sha256.txt")
-      - name: Retain bounded native evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: qualification-evidence
+          name: container-evidence
           path: ${{ runner.temp }}/evoforge-dist.evidence/
           if-no-files-found: warn
           retention-days: 3
-      - name: Retain exact qualified candidate
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-site
+          path: ${{ runner.temp }}/evoforge-dist/
+          if-no-files-found: error
+          retention-days: 3
+  native-metal:
+    needs: container-gates
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-site
+          path: ${{ runner.temp }}/evoforge-dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: container-evidence
+          path: ${{ runner.temp }}/evidence
+      - name: Verify exact source and artifact
+        run: |
+          set -euo pipefail
+          E="$RUNNER_TEMP/evidence"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(cat "$E/result.txt")" = "CONTAINER_PASS_AWAITING_NATIVE_SMOKE source=$GITHUB_SHA"
+          test "$(cat "$E/native-source.txt")" = "source=$GITHUB_SHA"
+          test "$(cat "$E/gates.tsv")" = "$(printf '%s\tPASS\n' install chromium typecheck unit build dist golden)"
+          (cd "$RUNNER_TEMP/evoforge-dist" && shasum -a 256 -c "$E/dist-sha256.txt")
+          node scripts/verify-dist.mjs "$RUNNER_TEMP/evoforge-dist"
+      - run: npm ci
+      - run: npx playwright install chromium
+      - name: Full built-site smoke on actual Apple WebGPU
+        env:
+          EVOFORGE_SMOKE_BACKEND: mac-metal
+          EVOFORGE_DIST_DIR: ${{ runner.temp }}/evoforge-dist
+        run: |
+          set -eo pipefail
+          E="$RUNNER_TEMP/evidence"
+          printf 'NOT_RUN\n' > "$E/metal-result.txt"
+          node scripts/arena-smoke.mjs 2>&1 | tee "$E/metal-smoke.log"
+          (cd "$RUNNER_TEMP/evoforge-dist" && shasum -a 256 -c "$E/dist-sha256.txt")
+          printf 'smoke\tPASS\n' >> "$E/gates.tsv"
+          printf 'PASS source=%s\n' "$GITHUB_SHA" > "$E/result.txt"
+          printf 'PASS backend=mac-metal source=%s\n' "$GITHUB_SHA" > "$E/metal-result.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qualification-evidence
+          path: ${{ runner.temp }}/evidence/
+          if-no-files-found: warn
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
         with:
           name: qualified-site
           path: ${{ runner.temp }}/evoforge-dist/
           if-no-files-found: error
+          retention-days: 3
+  dependency-audit:
+    if: ${{ github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/release-source' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inventory runtime and development advisories
+        run: |
+          set +e
+          mkdir -p audit-evidence
+          npm audit --omit=dev --json > audit-evidence/runtime.json; runtime=$?
+          npm audit --json > audit-evidence/all.json; all=$?
+          printf 'runtime_exit=%s\nall_exit=%s\n' "$runtime" "$all" > audit-evidence/exits.txt
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          for(const name of ['runtime','all']){
+            const a=JSON.parse(fs.readFileSync('audit-evidence/'+name+'.json','utf8'));
+            if(!a.metadata?.vulnerabilities || a.error)throw Error('Audit unavailable: '+name);
+            console.log(JSON.stringify({name,counts:a.metadata.vulnerabilities,packages:Object.entries(a.vulnerabilities??{}).map(([n,v])=>({name:n,severity:v.severity,direct:v.isDirect,range:v.range,fix:v.fixAvailable}))}));
+            if(name==='runtime'&&(a.metadata.vulnerabilities.high||a.metadata.vulnerabilities.critical))process.exitCode=1;
+          }
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-audit
+          path: audit-evidence/
           retention-days: 3

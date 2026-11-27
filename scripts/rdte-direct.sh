@@ -8,6 +8,8 @@ fi
 if [[ "${EVOFORGE_ZERO_COST:-}" != 1 ]]; then
   echo 'Zero-cost executor must be verified before starting.' >&2; exit 2
 fi
+phase="${EVOFORGE_QUALIFICATION_PHASE:-full}"
+[[ "$phase" = full || "$phase" = container ]] || exit 2
 sha="$1"
 [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || { echo 'Require full SHA' >&2; exit 2; }
 root="$(git rev-parse --show-toplevel)"
@@ -48,7 +50,7 @@ image="$(cat "$scratch/image.id")"
 [[ "$image" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo 'Invalid image identity' >&2; exit 1; }
 printf '%s\n' "$image" > "$evidence/image-id.txt"
 docker image inspect "$image" --format '{{.Id}} {{.Os}}/{{.Architecture}} {{json .RepoDigests}}' > "$evidence/image-info.txt"
-cid="$(docker create --init --shm-size=1gb -e CI=1 -e "EVOFORGE_SOURCE_SHA=$sha" -w /workspace "$image" bash scripts/rdte-container.sh)"
+cid="$(docker create --init --shm-size=1gb -e CI=1 -e "EVOFORGE_SOURCE_SHA=$sha" -e "EVOFORGE_QUALIFICATION_PHASE=$phase" -w /workspace "$image" bash scripts/rdte-container.sh)"
 [[ "$cid" =~ ^[a-f0-9]{64}$ ]] || { echo 'Invalid container identity' >&2; exit 1; }
 docker cp "$scratch/source/." "$cid:/workspace"
 # Save both successful and failed gate evidence. Inspect actual terminal
@@ -68,7 +70,7 @@ if [[ "$attach_rc" != 0 || "$tee_rc" != 0 || "$state" != "exited 0" ]]; then
   printf 'FAIL native-container\n' > "$evidence/result.txt"; exit 1
 fi
 # A successful exit without the complete ordered pass record is not a pass.
-expected=$'install\tPASS\nchromium\tPASS\ntypecheck\tPASS\nunit\tPASS\nbuild\tPASS\ndist\tPASS\ngolden\tPASS\nsmoke\tPASS'
+expected=
 [[ "$(cat "$evidence/native-source.txt")" == "source=$sha" ]] || { printf 'FAIL source-identity\n' > "$evidence/result.txt"; exit 1; }
 [[ "$(cat "$evidence/gates.tsv")" == "$expected" ]] || { printf 'FAIL incomplete-gates\n' > "$evidence/result.txt"; exit 1; }
 mkdir "$scratch/qualified-dist"
@@ -80,3 +82,33 @@ cp -R "$scratch/qualified-dist/." "$out/"
 (cd "$out" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum) > "$evidence/dist-sha256.txt"
 printf 'PASS source=%s\n' "$sha" > "$evidence/result.txt"
 echo "QUALIFICATION_PASS source=$sha evidence=$evidence"
+install\tPASS\nchromium\tPASS\ntypecheck\tPASS\nunit\tPASS\nbuild\tPASS\ndist\tPASS\ngolden\tPASS'
+if [[ "$phase" = full ]]; then expected+=
+[[ "$(cat "$evidence/native-source.txt")" == "source=$sha" ]] || { printf 'FAIL source-identity\n' > "$evidence/result.txt"; exit 1; }
+[[ "$(cat "$evidence/gates.tsv")" == "$expected" ]] || { printf 'FAIL incomplete-gates\n' > "$evidence/result.txt"; exit 1; }
+mkdir "$scratch/qualified-dist"
+docker cp "$cid:/workspace/dist/." "$scratch/qualified-dist/"
+[[ -s "$scratch/qualified-dist/index.html" ]] || { printf 'FAIL missing-dist\n' > "$evidence/result.txt"; exit 1; }
+# Recheck destinations before publication to a new local artifact path.
+mkdir -- "$out"
+cp -R "$scratch/qualified-dist/." "$out/"
+(cd "$out" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum) > "$evidence/dist-sha256.txt"
+printf 'PASS source=%s\n' "$sha" > "$evidence/result.txt"
+echo "QUALIFICATION_PASS source=$sha evidence=$evidence"
+\nsmoke\tPASS'; fi
+[[ "$(cat "$evidence/native-source.txt")" == "source=$sha" ]] || { printf 'FAIL source-identity\n' > "$evidence/result.txt"; exit 1; }
+[[ "$(cat "$evidence/gates.tsv")" == "$expected" ]] || { printf 'FAIL incomplete-gates\n' > "$evidence/result.txt"; exit 1; }
+mkdir "$scratch/qualified-dist"
+docker cp "$cid:/workspace/dist/." "$scratch/qualified-dist/"
+[[ -s "$scratch/qualified-dist/index.html" ]] || { printf 'FAIL missing-dist\n' > "$evidence/result.txt"; exit 1; }
+# Recheck destinations before publication to a new local artifact path.
+mkdir -- "$out"
+cp -R "$scratch/qualified-dist/." "$out/"
+(cd "$out" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum) > "$evidence/dist-sha256.txt"
+if [[ "$phase" = full ]]; then
+  printf 'PASS source=%s\n' "$sha" > "$evidence/result.txt"
+  echo "QUALIFICATION_PASS source=$sha evidence=$evidence"
+else
+  printf 'CONTAINER_PASS_AWAITING_NATIVE_SMOKE source=%s\n' "$sha" > "$evidence/result.txt"
+  echo "CONTAINER_PASS_AWAITING_NATIVE_SMOKE source=$sha evidence=$evidence"
+fi

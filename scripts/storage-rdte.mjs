@@ -13,7 +13,7 @@ try{
   const result=await a.evaluate(async()=>{
    if(!indexedDB)throw Error('IndexedDB absent');
    const open=()=>new Promise((r,j)=>{const q=indexedDB.open('fixture',1);q.onupgradeneeded=()=>q.result.createObjectStore('state');q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error);});
-   const tx=(db,abort=false)=>new Promise((r,j)=>{const t=db.transaction('state','readwrite');t.objectStore('state').put(abort?99:42,'pointer');if(abort)t.abort();t.oncomplete=()=>r(!abort);t.onabort=()=>r(abort);t.onerror=()=>j(t.error);});
+   const tx=(db,abort=false)=>new Promise((r,j)=>{const t=db.transaction('state','readwrite');const q=t.objectStore('state').put(abort?99:42,'pointer');let intentional=false;t.oncomplete=()=>r(!abort);t.onabort=()=>intentional?r(true):j(t.error??Error('Unexpected abort'));t.onerror=()=>{ /* terminal abort is the authority */ };if(abort)q.onsuccess=()=>{intentional=true;t.abort();};});
    const read=db=>new Promise((r,j)=>{const q=db.transaction('state').objectStore('state').get('pointer');q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error);});
    let db=await open();const ok=await tx(db)&&await tx(db,true);db.close();db=await open();const value=await read(db);db.close();return ok&&value===42;
   });return result&&await b.evaluate(()=>new Promise((r,j)=>{const q=indexedDB.open('fixture',1);q.onsuccess=()=>{const db=q.result,read=db.transaction('state').objectStore('state').get('pointer');read.onsuccess=()=>{db.close();r(read.result===42);};read.onerror=()=>{db.close();j(read.error);};};q.onerror=()=>j(q.error);}));

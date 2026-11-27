@@ -3,6 +3,7 @@ name: Public browser RDTE
 on:
   push:
     branches: [release-source]
+    paths: ['scripts/browser-rdte.mjs','scripts/browser-probe.mjs','package-lock.json','.github/workflows/browser-rdte.yml']
   workflow_dispatch:
 
 permissions:

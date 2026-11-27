@@ -19,3 +19,7 @@ The companion browser workflow runs on standard Ubuntu, Windows and macOS. Its c
 ## Targeted runtime diagnostics
 
 Run `node scripts/arena-runtime-rdte.mjs linux-swiftshader` or use the `mac-headed` / `mac-headless` profiles on the appropriate disposable native OS runner after installing the locked dependencies and Chromium. The test executes a synthetic compute/readback oracle, then traces the actual shipped ALife startup and first 15 telemetry ticks in a fresh page. This is diagnostic instrumentation, not the full release smoke. The separate `node scripts/storage-rdte.mjs chromium|firefox|webkit` probe exercises atomic IndexedDB abort/reopen, two-page Web Locks exclusion, Cache Storage, OPFS and offline Service Worker behavior in a fresh test context. Unsupported APIs or failed checks remain visible; these are not evidence of the complete product installer or its crash recovery. All results appear under runtime-evidence/ and in the public runtime workflow.
+
+## Split native qualification
+
+Seven container gates are required before transfer of an intermediate artifact. The full built-site smoke is then run on actual Apple WebGPU using macOS ARM64 Chromium; the input distribution is rehashed before and after testing. Only that full passing result completes the eight-gate receipt. The Linux SwiftShader failure is retained as a separate diagnostic and not claimed as supported. Local default rdte-direct.sh still requires full software smoke. Runtime dependency audit is a required independent promotion job. Development advisories are retained for triage.

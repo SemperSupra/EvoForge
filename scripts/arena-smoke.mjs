@@ -3,7 +3,10 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import assert from 'node:assert/strict';
-const root=resolve('dist');
+const root=resolve(process.env.EVOFORGE_DIST_DIR||'dist');
+const backend=process.env.EVOFORGE_SMOKE_BACKEND||'linux-swiftshader';
+assert.ok(['linux-swiftshader','mac-metal'].includes(backend),'Unknown smoke backend');
+if(backend==='mac-metal')assert.equal(process.platform,'darwin');
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript','.css':'text/css','.json':'application/json','.webmanifest':'application/manifest+json','.wasm':'application/wasm','.svg':'image/svg+xml'};
 const server=createServer(async(req,res)=>{
   try{
@@ -19,8 +22,16 @@ await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const base='http://127.0.0.1:'+server.address().port+'/EvoForge/';
 let browser;
 try{
-  browser=await chromium.launch({headless:true,args:['--enable-unsafe-webgpu','--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-dev-shm-usage']});
+  browser=await chromium.launch(backend==='mac-metal'?{channel:'chromium',headless:true,args:['--enable-unsafe-webgpu']}:{headless:true,args:['--enable-unsafe-webgpu','--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-dev-shm-usage']});
   const context=await browser.newContext({viewport:{width:960,height:640},serviceWorkers:'block'});
+  await context.addInitScript(()=>{
+    if(!navigator.gpu)return;
+    const request=navigator.gpu.requestAdapter.bind(navigator.gpu);
+    navigator.gpu.requestAdapter=async(...args)=>{
+      const a=await request(...args); if(a){const i=a.info??{};window.__smokeAdapter={vendor:i.vendor??'',architecture:i.architecture??'',description:i.description??'',fallback:i.isFallbackAdapter??a.isFallbackAdapter??null};}
+      return a;
+    };
+  });
   const errors=[];
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
   const snapshot=()=>page.evaluate(()=>window.__ARENA_RPC__.getState());
@@ -64,8 +75,9 @@ try{
   }
   await page.goto(base+'experiences/alife/index.html?mode=observe&profile=smoke&seed=42');
   const first=await progress(15);assert.equal(first.mode,'observe');assert.ok(first.telemetry.energy.flora>0);
-  const adapterInfo=await page.evaluate(async()=>{const a=await navigator.gpu.requestAdapter();return a?{vendor:a.info?.vendor||'',architecture:a.info?.architecture||'',device:a.info?.device||'',description:a.info?.description||'',fallback:a.info?.isFallbackAdapter??null}:null;});
-  console.log('Native browser '+browser.version()+' adapter '+JSON.stringify(adapterInfo));
+  const adapterInfo=await page.evaluate(()=>window.__smokeAdapter??null);
+  console.log('Native browser '+browser.version()+' backend '+backend+' adapter '+JSON.stringify(adapterInfo));
+  if(backend==='mac-metal'){assert.ok(adapterInfo&&adapterInfo.vendor.toLowerCase().includes('apple'),'Expected Apple adapter');assert.equal(adapterInfo.fallback,false,'Software fallback is not Metal qualification');}
   assert.ok(await page.locator('#sl-temp').isDisabled());
   assert.ok(await page.evaluate(()=>{try{window.__ARENA_RPC__.setKnobs({ambientTemp:32});return false;}catch{return true;}}));
   await page.evaluate(()=>window.__ARENA_RPC__.setPaused(true));
