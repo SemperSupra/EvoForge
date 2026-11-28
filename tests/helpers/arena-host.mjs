@@ -9,7 +9,7 @@ export function qualifyArenaHost(html, sw, Params, clone) {
   check('exact startup boundary', script.split(boot).length===2 && script.split(boot)[1].includes('else beginArena();'));
   function start(search) {
     const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
-    const elements = Object.fromEntries(ids.map(id => [id, {id, disabled:false, classList:{add(){},remove(){},toggle(){}}, addEventListener(){},getContext(){return {}},setAttribute(){}}]));
+    const elements = Object.fromEntries(ids.map(id => [id, {id, disabled:false, style:{setProperty(){}},dataset:{},classList:{add(){},remove(){},toggle(){}}, addEventListener(){},getContext(){return {}},setAttribute(){}}]));
     const document = {getElementById(id){if(!elements[id])throw Error('Missing DOM id: '+id);return elements[id];},querySelectorAll(){return Object.values(elements).filter(e=>e.id.startsWith('sl-')||e.id.startsWith('surp-')||e.id.startsWith('fam-')||['btn-apply-rec','btn-auto-director','btn-auto-chaos','btn-respawn'].includes(e.id));}};
     const window={addEventListener(){}};
     const host=new Function('document','window','navigator','location','isSecureContext','URLSearchParams','structuredClone',script.split(boot)[0]+'\nreturn {buildEcosystem,seededRandom,experience,state,paused:()=>paused};')(document,window,{}, {search},false,Params,clone);
