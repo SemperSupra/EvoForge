@@ -125,6 +125,15 @@
     @media(max-width:1199px),(pointer:coarse){#world-tool-dock{bottom:calc(60px + 26dvh);max-height:44dvh;overflow:auto}#world-tool-dock button{min-height:44px}#world-tool-dock input{min-height:44px}}
     @media(max-height:500px) and (pointer:coarse){#world-tool-dock{left:auto;right:8px;transform:none;width:min(48vw,340px);bottom:calc(60px + 38dvh);max-height:34dvh}#strike-panel{max-height:23dvh}}
     #strike-overlay{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:8}#strike-panel{border:1px solid var(--border);border-radius:6px;padding:6px;margin:6px 0}#strike-panel input[type=number]{width:4.6em;max-width:100%}#strike-panel button{min-height:30px}@media(pointer:coarse){#strike-panel button{min-height:44px}}
+    /* Edge-mounted toggles stay available when their respective panels are collapsed. */
+    #panel-controls{position:fixed;inset:calc(var(--toolbar-height) + 12px) 8px auto;display:flex;justify-content:space-between;gap:6px;pointer-events:none;max-width:none;z-index:25}
+    #panel-controls button{pointer-events:auto;min-height:36px;background:var(--panel);border:1px solid var(--border);white-space:nowrap}
+    #panel-life{order:0}#hud-toggle{order:1;margin-inline:auto}#panel-world{order:2}
+    #panel-controls button[aria-expanded=true]{border-color:#9ce5ff;background:#243e4d}
+    #hud-left,#hud-right{top:calc(var(--toolbar-height) + 58px)}
+    body.mobile-panel-left #hud-left{left:8px;right:auto}body.mobile-panel-right #hud-right{right:8px;left:auto}
+    @media(max-width:1199px),(pointer:coarse){#panel-controls button{min-height:44px}#hud-left,#hud-right{top:calc(var(--toolbar-height) + 66px)}}
+    @media(max-height:500px) and (pointer:coarse){#hud-left,#hud-right{max-height:calc(100dvh - var(--toolbar-height) - 120px)}}
   </style>
 </head>
 <body>
@@ -138,7 +147,7 @@
   </nav>
   <section id="mobile-start" hidden aria-labelledby="mobile-start-title" style="position:fixed;z-index:45;inset:0;background:#131c27;padding:24px;overflow:auto;color:white;font-size:16px"><h2 id="mobile-start-title" style="font-size:24px;display:block;margin-bottom:16px">ALife — mobile safe start</h2><p style="line-height:1.6;margin-bottom:20px">The simulation uses WebGPU. Start a reduced-load session only when ready. If your browser reloads or closes, return here instead of restarting automatically.</p><button id="mobile-start-button" style="min-height:48px;font-size:16px;padding:12px;width:100%;margin-bottom:16px">Start reduced-load simulation</button><p id="mobile-start-status" role="status" style="margin-bottom:20px"></p><a href="../../" style="color:#9ce5ff;display:inline-flex;align-items:center;min-height:44px">Return to all experiences</a></section>
   <section id="arena-message" role="status" hidden><p id="arena-error"></p><a href="../../">Return to EvoForge</a></section>
-  <div id="panel-controls" role="group" aria-label="Arena panels"><button id="panel-life">Life</button><button id="panel-world">World</button><button id="hud-toggle">Hide panels</button></div>
+  <div id="panel-controls" role="group" aria-label="Arena panels"><button id="panel-life" aria-controls="hud-left" aria-expanded="true">‹ Life</button><button id="panel-world" aria-controls="hud-right" aria-expanded="true">World ›</button><button id="hud-toggle" aria-label="Hide both panels">Hide panels</button></div>
   <div id="camera-controls" role="group" aria-label="Arena camera">
     <span id="navigation-help" class="visually-hidden">Drag to pan, right or Control drag to rotate, wheel or pinch to zoom. Arrow keys pan; Shift arrows rotate or tilt. Escape disarms world tools.</span>
     <button id="cam-orbit" aria-pressed="false" title="Drag to rotate the view">Orbit</button>
@@ -162,7 +171,7 @@
         <div id="strike-status" role="status">Select Meteor or Lightning, then tap terrain. Drag to navigate.</div>
       </div>
   </div>
-  <div id="hud-left">
+  <div id="hud-left" role="region" aria-label="Life panel">
     <h1>
       <span>ALIFE ARENA v7 — MULTIPHASE</span>
       <span id="backend-badge" class="badge">INIT</span>
@@ -234,7 +243,7 @@
     </div>
   </div>
 
-  <div id="hud-right">
+  <div id="hud-right" role="region" aria-label="World panel">
     <h2><span>7 PARAMETRIC ARENA FAMILIES</span><span id="seed-label" style="font-size:9px; color:#f0b429;">SEED #1337</span></h2>
     <div class="btn-row">
       <button id="fam-0" class="active" aria-pressed="true">1.Pillars</button>
@@ -2126,15 +2135,29 @@ document.getElementById('btn-export-json').addEventListener('click', () => {
  const data=JSON.stringify(window.__ARENA_RPC__.getState(),null,2),url=URL.createObjectURL(new Blob([data],{type:'application/json'})),a=document.createElement('a');
  a.href=url;a.download='evoforge-arena-'+state.seed+'-'+state.simTick+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);logEvent('Snapshot download requested.');
 });
+function compactPanels(){return (window.innerWidth||1440)<760||(mobileBudget&&Math.min(window.innerWidth||1440,window.innerHeight||1440)<640);}
+let lastPanel=mobileBudget?'life':'both';
 function showPanel(panel){
+ if(panel==='both'&&compactPanels())panel='life';
+ const life=panel==='life'||panel==='both',world=panel==='world'||panel==='both';
  const b=document.body.classList;b.remove('hud-hidden','mobile-panel-left','mobile-panel-right');
  if(panel==='none')b.add('hud-hidden');else if(panel==='life')b.add('mobile-panel-left');else if(panel==='world')b.add('mobile-panel-right');
- document.getElementById('panel-life').setAttribute('aria-pressed',String(panel==='life'));document.getElementById('panel-world').setAttribute('aria-pressed',String(panel==='world'));
- document.getElementById('hud-toggle').textContent=panel==='none'?'Show panels':'Hide panels';state.panel=panel;
+ const left=document.getElementById('panel-life'),right=document.getElementById('panel-world'),all=document.getElementById('hud-toggle');
+ left.setAttribute('aria-expanded',String(life));right.setAttribute('aria-expanded',String(world));
+ left.textContent=life?'‹ Life':'Life ›';right.textContent=world?'World ›':'‹ World';
+ all.textContent=panel==='none'?'Show panels':'Hide panels';all.setAttribute('aria-label',panel==='none'?'Restore panels':'Hide both panels');
+ if(panel!=='none')lastPanel=panel;state.panel=panel;
 }
-document.getElementById('panel-life').addEventListener('click',()=>showPanel('life'));
-document.getElementById('panel-world').addEventListener('click',()=>showPanel('world'));
-document.getElementById('hud-toggle').addEventListener('click',()=>showPanel(state.panel==='none'?(mobileBudget?'life':'both'):'none'));
+function togglePanel(which){
+ const life=state.panel==='life'||state.panel==='both',world=state.panel==='world'||state.panel==='both';
+ if(which==='life')showPanel(life?(world?'world':'none'):(world&&!compactPanels()?'both':'life'));
+ else showPanel(world?(life?'life':'none'):(life&&!compactPanels()?'both':'world'));
+}
+document.getElementById('panel-life').addEventListener('click',()=>togglePanel('life'));
+document.getElementById('panel-world').addEventListener('click',()=>togglePanel('world'));
+document.getElementById('hud-toggle').addEventListener('click',()=>showPanel(state.panel==='none'?lastPanel:'none'));
+window.addEventListener('resize',()=>{if(state.panel==='both'&&compactPanels())showPanel('life');});
+
 
 window.__ARENA_RPC__ = Object.freeze({
   getState: () => structuredClone({ ...experience, tick: state.simTick, telemetry: telemetry.latest, knobs: { state, speciesConfig }, interventions:interventionModel.snapshot(strikeWorld) }),
@@ -2555,6 +2578,7 @@ updateCamera();
 });
 
 // ARENA_STARTUP_BOUNDARY
+showPanel(state.panel);
 const beginArena=()=>init().catch(error => failArena(error.message || String(error)));
 if(mobileBudget){
   const entry=document.getElementById('mobile-start'),start=document.getElementById('mobile-start-button'),status=document.getElementById('mobile-start-status');
