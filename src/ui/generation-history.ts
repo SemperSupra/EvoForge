@@ -54,6 +54,18 @@ export class GenerationHistory{
  get warning(){return this.fault;}
  get(id:string){return this.archive.get(id);}
  export(){return this.archive.export();}
+ // Create a separate, explicit branch from an immutable recorded checkpoint.
+ // Queue with ordinary capture; never mutate the historical record.
+ createFork(id:string,branch:string,edits:Readonly<Record<string,CandidateStatus>>):Promise<{id:string;checkpoint:Checkpoint}>{
+  const operation=this.queue.then(async()=>{
+   if(this.readRows().some(r=>r.branch===branch))throw Error("branch already exists");
+   const parent=this.archive.get(id),checkpoint=await forkCheckpoint(parent,branch,edits);
+   const forkId=await this.archive.add(checkpoint);this.parents.set(branch,forkId);this.persist();
+   return {id:forkId,checkpoint:this.archive.get(forkId)};
+  });
+  this.queue=operation.then(()=>{},e=>{this.fault="Fork not recorded: "+String(e);});
+  return operation;
+ }
  async compare(id:string,branch:string,edits:Readonly<Record<string,CandidateStatus>>){
   await this.queue;const original=this.archive.get(id),baseline=await advanceCheckpoint(original);
   const fork=await forkCheckpoint(original,branch,edits),alternative=await advanceCheckpoint(fork);
