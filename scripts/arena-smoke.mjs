@@ -89,6 +89,7 @@ try{
   // View controls are presentation-only and must work during simulation pause.
   assert.equal(await page.locator('#cam-interact').isDisabled(),true);
   const initialView=paused.knobs.state;
+  await page.getByRole('button',{name:'Orbit',exact:true}).click();
   await page.getByRole('button',{name:'Rotate camera right',exact:true}).click();
   await page.waitForFunction(r=>window.__ARENA_RPC__.getState().knobs.state.viewRevision>r,initialView.viewRevision);
   const orbit=await snapshot();assert.notEqual(orbit.knobs.state.camYaw,initialView.camYaw);assert.equal(orbit.tick,paused.tick);
