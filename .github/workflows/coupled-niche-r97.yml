@@ -1,0 +1,24 @@
+name: R97-R98 coupled ecology and vertical niche evolution
+on:
+  pull_request:
+    branches: [rdte/strata-spatial-occupancy-r92]
+permissions:
+  contents: read
+jobs:
+  reference:
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [coupled, selection]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: node --test experiments/coupled-niche-r97/${{ matrix.lane }}.test.mjs
