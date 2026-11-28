@@ -12,6 +12,6 @@
     "alife-observe",
     "alife-play"
   ],
-  "notes": "Isolated Arena visual and display-budget candidate; not promoted. Experimental WebGPU required; no stable release or platform certification.",
-  "arenaVersion": "0.1.0-rdte.8"
+  "notes": "Isolated aspect-aware Arena camera and lifecycle visualization candidate; not promoted. Experimental WebGPU required; no stable release or platform certification.",
+  "arenaVersion": "0.1.0-rdte.9"
 }
