@@ -58,6 +58,9 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   let historyStorage:Storage|null=null;try{historyStorage=window.localStorage;}catch{/* explicit in-memory fallback */}
   const generationHistory=new GenerationHistory(engineId,engineVersion,historyStorage);
   let historyBranch="",generationHistoryOpen=false,historySelection="",historyParentCandidate="",historyCompareMessage="",historyCompareRequest=0;
+  let historyReplayRequest=0,historyReplayId="",historyReplayStatus="",historyReplayRunning=false,historyForkArmed=false,historyForkBusy=false;
+  const historyPixels=new Map<string,{rgba:Uint8ClampedArray;width:number;height:number}>();
+  function cancelHistoryReplay(){historyReplayRequest++;historyReplayId="";historyReplayStatus="";historyReplayRunning=false;historyPixels.clear();historyForkArmed=false;}
   void generationHistory.settled().then(()=>{if(generationHistoryOpen&&el.isConnected)render();});
 
   const settings: GASettingsSnapshot = {
@@ -133,12 +136,13 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   async function startNewSession() {
+    if(historyForkBusy)return;
     cancelReadyTimer();
     focusCandidateId = null;
     focusRender = null;
 
     const request=++sessionRequest;
-    historyBranch="s-"+crypto.randomUUID();generationHistoryOpen=false;historySelection="";historyCompareMessage="";historyCompareRequest++;
+    historyBranch="s-"+crypto.randomUUID();generationHistoryOpen=false;historySelection="";historyCompareMessage="";historyCompareRequest++;cancelHistoryReplay();
     generationIndex = 0;
     refineHold = false;
     generationId++;
@@ -342,7 +346,8 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     },stageInterval());
   }
   function timelineAction(command:"first"|"prev"|"next"|"reverse"|"forward"|"pause"|"live",seek?:number){
-    generationHistoryOpen=false;historyCompareRequest++;
+    if(historyForkBusy)return;
+    generationHistoryOpen=false;historyCompareRequest++;cancelHistoryReplay();
     stopHistoryTimer();historyDirection=0;
     if(command==="live"){journal.live();render();return;}
     if(!gen.candidates.length)return;
@@ -355,21 +360,71 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     else if(command==="forward"){historyDirection=1;}
     render();
   }
+  async function replayHistoricalImages(){
+    if(historyReplayRunning||historyForkBusy||!generationHistoryOpen||!historySelection)return;
+    const id=historySelection,cp=generationHistory.get(id),request=++historyReplayRequest;
+    historyReplayId=id;historyPixels.clear();historyReplayRunning=true;historyReplayStatus="Reconstructing archived images…";render();
+    try{
+      for(const c of cp.candidates){
+        if(request!==historyReplayRequest||!generationHistoryOpen||id!==historySelection||!el.isConnected)return;
+        const result=await renderAuxRGBA({engineId:cp.engineId,engineVersion:cp.engineVersion,engineConfig:cp.engineConfig,genomeQ16:Uint16Array.from(c.genomeQ16),intent:{kind:"thumb",width:192,height:108,lod:1}});
+        if(request!==historyReplayRequest||!generationHistoryOpen||id!==historySelection||!el.isConnected)return;
+        historyPixels.set(c.id,result);
+      }
+      historyReplayStatus=historyPixels.size+" historical images reconstructed at 192 × 108, LOD 1.";
+    }catch(e){if(request===historyReplayRequest)historyReplayStatus="Reconstruction incomplete: "+String(e);}
+    finally{if(request===historyReplayRequest){historyReplayRunning=false;render();}}
+  }
+  async function activateHistoryFork(){
+    if(historyForkBusy||!generationHistoryOpen||!historySelection||!historyParentCandidate||!historyForkArmed||!gen.candidates.length)return;
+    const id=historySelection,candidate=historyParentCandidate,cp=generationHistory.get(id),request=++historyCompareRequest;
+    const live={engineId,engineVersion,engineConfig,sessionSeed,effectiveSessionSeed,generationIndex,settings,candidates:gen.candidates};
+    const branch="fork-"+crypto.randomUUID(),edits=Object.fromEntries(cp.candidates.filter(c=>c.status!=="retired").map(c=>[c.id,c.id===candidate?"picked" as const:"normal" as const]));
+    historyForkBusy=true;cancelHistoryReplay();playback="paused";cancelReadyTimer();stopPresentationTimer();stopHistoryTimer();historyCompareMessage="Preserving current population and creating branch…";render();
+    try{
+      await generationHistory.record(historyBranch,live);
+      const fork=await generationHistory.createFork(id,branch,edits);
+      if(!el.isConnected||request!==historyCompareRequest)return;
+      const restored=fork.checkpoint;
+      // Monotonic worker identity is separate from logical archived generation.
+      // All in-flight gallery/focus jobs are invalidated before scheduling restored genomes.
+      ++sessionRequest;generationId++;renderIntentId=0;generationIndex=restored.generationIndex;
+      sessionSeed=restored.sessionSeed;effectiveSessionSeed=restored.effectiveSessionSeed;engineConfig=structuredClone(restored.engineConfig);Object.assign(settings,restored.settings);
+      historyBranch=restored.branch;gen={generationId,renderIntentId,candidates:restored.candidates.map(c=>({...c,genomeQ16:Uint16Array.from(c.genomeQ16)}))};
+      focusCandidateId=null;focusRender=null;activeFocusJob=null;radarCandidateId=null;refineHold=false;historyDirection=0;
+      journal.clear();presentationKey="";presentationLast=null;replaceGalleryPool();thumbMap.clear();
+      generationHistoryOpen=false;historySelection="";historyCompareMessage="";historyParentCandidate="";scheduleThumbs();
+      setLastAction("Alternative branch started; previous population retained in history.");
+    }catch(e){if(request===historyCompareRequest)historyCompareMessage="Branch not started: "+String(e);}
+    finally{historyForkBusy=false;if(el.isConnected)render();}
+  }
   function renderGenerationHistory(){
     const host=document.createElement("section");host.className="generation-history-panel";host.setAttribute("aria-label","Generation history");
     const heading=document.createElement("h2");heading.textContent="Generation checkpoints";host.append(heading);
-    const note=document.createElement("p");note.textContent="Read-only archive of actual pre-advance populations. Compare a different parent selection without changing the live population. Up to 64 checkpoints per engine.";host.append(note);
+    const note=document.createElement("p");note.textContent="Archive of actual pre-advance populations. Reconstruct recorded genomes or compare selections without changing the live population. Starting a branch requires confirmation. Up to 64 checkpoints per engine.";host.append(note);
     const rows=generationHistory.rows(),warning=generationHistory.warning;if(warning){const p=document.createElement("p");p.setAttribute("role","status");p.textContent=warning;host.append(p);}
     const buttons=document.createElement("div");buttons.className="generation-history-controls";
-    const close=document.createElement("button");close.textContent="Close history";close.onclick=()=>{generationHistoryOpen=false;historyCompareRequest++;render();};buttons.append(close);
+    const close=document.createElement("button");close.textContent="Close history";close.disabled=historyForkBusy;close.onclick=()=>{generationHistoryOpen=false;historyCompareRequest++;cancelHistoryReplay();render();};buttons.append(close);
     const exp=document.createElement("button");exp.textContent="Export history";exp.disabled=!rows.length;exp.onclick=()=>downloadBlob("evoforge-history.json",new Blob([generationHistory.export()],{type:"application/json"}));buttons.append(exp);host.append(buttons);
     if(!rows.length){const p=document.createElement("p");p.textContent="Advance a generation to record its checkpoint.";host.append(p);return host;}
     if(!rows.some(x=>x.id===historySelection))historySelection=rows.at(-1)!.id;
-    const select=document.createElement("select");select.setAttribute("aria-label","Recorded generation");select.dataset.lensFocus="history-generation";for(const row of rows){const opt=document.createElement("option");opt.value=row.id;opt.textContent="Gen "+row.generationIndex+" · "+row.branch.slice(0,10)+" · "+row.picked+" picks";select.append(opt);}select.value=historySelection;select.onchange=()=>{historySelection=select.value;historyParentCandidate="";historyCompareMessage="";historyCompareRequest++;render();};host.append(select);
+    const select=document.createElement("select");select.setAttribute("aria-label","Recorded generation");select.dataset.lensFocus="history-generation";for(const row of rows){const opt=document.createElement("option");opt.value=row.id;opt.textContent="Gen "+row.generationIndex+" · "+row.branch.slice(0,10)+" · "+row.picked+" picks";select.append(opt);}select.value=historySelection;select.onchange=()=>{historySelection=select.value;historyParentCandidate="";historyCompareMessage="";historyCompareRequest++;cancelHistoryReplay();render();};select.disabled=historyForkBusy;host.append(select);
     const cp=generationHistory.get(historySelection);host.dataset.checkpoint=historySelection;host.dataset.generation=String(cp.generationIndex);
     const summary=document.createElement("p");summary.textContent=cp.candidates.length+" candidates · "+cp.candidates.filter(c=>c.status==="picked").length+" recorded picks · seed "+cp.sessionSeed;host.append(summary);
-    const parents=cp.candidates.filter(c=>c.status!=="retired"),parent=document.createElement("select");parent.setAttribute("aria-label","Alternative parent");parent.dataset.lensFocus="history-parent";for(const c of parents){const opt=document.createElement("option");opt.value=c.id;opt.textContent=c.id+" · "+c.status;parent.append(opt);}if(!parents.some(x=>x.id===historyParentCandidate))historyParentCandidate=parents[0]?.id??"";parent.value=historyParentCandidate;parent.onchange=()=>{historyParentCandidate=parent.value;historyCompareMessage="";historyCompareRequest++;render();};host.append(parent);
-    const compare=document.createElement("button");compare.textContent="Compare alternative next generation";compare.disabled=!historyParentCandidate;compare.onclick=()=>{const id=historySelection,candidate=historyParentCandidate,request=++historyCompareRequest;const edits=Object.fromEntries(cp.candidates.filter(c=>c.status!=="retired").map(c=>[c.id,c.id===candidate?"picked" as const:"normal" as const]));historyCompareMessage="Comparing…";render();void generationHistory.compare(id,"preview-"+crypto.randomUUID(),edits).then(result=>{if(request!==historyCompareRequest||!generationHistoryOpen)return;historyCompareMessage=result.changedSlots+" of "+result.baseline.candidates.length+" next-generation slots differ. Preview only; live population unchanged.";render();},err=>{if(request!==historyCompareRequest||!generationHistoryOpen)return;historyCompareMessage="Comparison failed: "+String(err);render();});};host.append(compare);
+    const parents=cp.candidates.filter(c=>c.status!=="retired"),parent=document.createElement("select");parent.setAttribute("aria-label","Alternative parent");parent.dataset.lensFocus="history-parent";for(const c of parents){const opt=document.createElement("option");opt.value=c.id;opt.textContent=c.id+" · "+c.status;parent.append(opt);}if(!parents.some(x=>x.id===historyParentCandidate))historyParentCandidate=parents[0]?.id??"";parent.value=historyParentCandidate;parent.onchange=()=>{historyParentCandidate=parent.value;historyCompareMessage="";historyCompareRequest++;historyForkArmed=false;render();};parent.disabled=historyForkBusy;host.append(parent);
+    const compare=document.createElement("button");compare.textContent="Compare alternative next generation";compare.disabled=!historyParentCandidate||historyForkBusy;compare.onclick=()=>{const id=historySelection,candidate=historyParentCandidate,request=++historyCompareRequest;const edits=Object.fromEntries(cp.candidates.filter(c=>c.status!=="retired").map(c=>[c.id,c.id===candidate?"picked" as const:"normal" as const]));historyCompareMessage="Comparing…";render();void generationHistory.compare(id,"preview-"+crypto.randomUUID(),edits).then(result=>{if(request!==historyCompareRequest||!generationHistoryOpen)return;historyCompareMessage=result.changedSlots+" of "+result.baseline.candidates.length+" next-generation slots differ. Preview only; live population unchanged.";render();},err=>{if(request!==historyCompareRequest||!generationHistoryOpen)return;historyCompareMessage="Comparison failed: "+String(err);render();});};host.append(compare);
+    const replay=document.createElement("button");replay.textContent=historyReplayRunning?"Reconstructing images…":"Reconstruct historical images";replay.disabled=historyReplayRunning||historyForkBusy;replay.onclick=()=>void replayHistoricalImages();host.append(replay);
+    const fork=document.createElement("button");fork.textContent=historyForkArmed?"Confirm new branch":"Start alternative branch";fork.disabled=historyForkBusy||!historyParentCandidate||!gen.candidates.length;fork.dataset.lensFocus="history-fork";
+    fork.onclick=()=>{if(historyForkArmed){void activateHistoryFork();return;}historyForkArmed=true;render();};host.append(fork);
+    if(historyForkArmed){const p=document.createElement("p");p.textContent="This preserves your current population and starts a new paused branch from the selected historical generation.";host.append(p);}
+    if(historyReplayId===historySelection){
+      const note=document.createElement("p");note.setAttribute("role","status");note.className="history-replay-status";note.textContent=historyReplayStatus;host.append(note);
+      const tiles=document.createElement("div");tiles.className="history-replay-grid";tiles.setAttribute("aria-label","Reconstructed historical images");
+      for(const c of cp.candidates){const image=historyPixels.get(c.id);if(!image)continue;
+        const item=document.createElement("figure"),canvas=document.createElement("canvas"),caption=document.createElement("figcaption");canvas.width=image.width;canvas.height=image.height;canvas.dataset.historyCandidate=c.id;canvas.setAttribute("aria-label","Historical candidate "+c.id);
+        canvas.getContext("2d")?.putImageData(new ImageData(new Uint8ClampedArray(image.rgba),image.width,image.height),0,0);caption.textContent=c.id+" · "+c.status;item.append(canvas,caption);tiles.append(item);
+      }host.append(tiles);
+    }
     const result=document.createElement("p");result.className="generation-history-result";result.setAttribute("role","status");result.textContent=historyCompareMessage;host.append(result);
     return host;
   }
@@ -395,7 +450,8 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     const output=document.createElement("output");const show=()=>{output.textContent=(stageInterval()/1000).toFixed(2)+" s";range.setAttribute("aria-valuetext",output.textContent+" per stage");};show();
     range.oninput=()=>{lensState.stageMs=clampDwell(Number(range.value));show();stopHistoryTimer();};
     range.onchange=()=>{saveLensLayout(lensState);commitInteraction();render();};rate.append(label,range,output);
-    const archive=document.createElement("button");archive.type="button";archive.textContent="Generations";archive.setAttribute("aria-label","Generation history");archive.setAttribute("aria-expanded",String(generationHistoryOpen));archive.dataset.lensFocus="generation-history-toggle";archive.onclick=()=>{generationHistoryOpen=!generationHistoryOpen;historyCompareRequest++;if(generationHistoryOpen){playback="paused";cancelReadyTimer();stopPresentationTimer();stopHistoryTimer();historyDirection=0;presentationLast=null;}render();};
+    const archive=document.createElement("button");archive.type="button";archive.textContent="Generations";archive.setAttribute("aria-label","Generation history");archive.setAttribute("aria-expanded",String(generationHistoryOpen));archive.dataset.lensFocus="generation-history-toggle";archive.disabled=historyForkBusy;archive.onclick=()=>{generationHistoryOpen=!generationHistoryOpen;historyCompareRequest++;cancelHistoryReplay();if(generationHistoryOpen){playback="paused";cancelReadyTimer();stopPresentationTimer();stopHistoryTimer();historyDirection=0;presentationLast=null;}render();};
+    if(historyForkBusy){for(const b of buttons.querySelectorAll("button"))b.disabled=true;scrub.disabled=true;range.disabled=true;}
     section.append(heading,buttons,scrub,rate,archive);
     return section;
   }
@@ -522,6 +578,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function refreshDesign() {
+    if(generationHistoryOpen||historyForkBusy)return;
     cancelReadyTimer(); refineHold=false; focusCandidateId=null; focusRender=null;
     activeFocusJob=null;
     replaceGalleryPool();
@@ -530,7 +587,8 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function setPlayback(p: Playback) {
-    if(p==="playing"){generationHistoryOpen=false;historyCompareRequest++;journal.live();historyDirection=0;stopHistoryTimer();presentationLast=null;}
+    if(historyForkBusy)return;
+    if(p==="playing"){generationHistoryOpen=false;historyCompareRequest++;cancelHistoryReplay();journal.live();historyDirection=0;stopHistoryTimer();presentationLast=null;}
     playback = p;
     cancelReadyTimer();
     if (p === "playing" && pace === "manual") { setPace("medium"); return; }
@@ -538,6 +596,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function setPace(newPace: Pace) {
+    if(generationHistoryOpen||historyForkBusy)return;
     pace = newPace;
     if (newPace === "manual") playback = "paused";
     refineHold = playback === "playing" && gen.candidates.length > 0;
@@ -560,7 +619,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   async function favoriteCandidate(c: Candidate) {
-    if(journal.reviewing)return;
+    if(journal.reviewing||generationHistoryOpen||historyForkBusy)return;
     const prof = paceProfile(pace);
     const recipe = makeRecipe({
       engineId: engineRef.engineId,
@@ -578,13 +637,14 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function toggleCandidateStatus(id: string, next: CandidateStatus) {
-    if(journal.reviewing)return;
+    if(journal.reviewing||generationHistoryOpen||historyForkBusy)return;
     gen = { ...gen, candidates: gen.candidates.map(c => c.id === id ? { ...c, status: next } : c) };
     cancelReadyTimer();
     render();
   }
 
   function openFocus(id: string) {
+    if(generationHistoryOpen||historyForkBusy)return;
     focusCandidateId = id;
     cancelReadyTimer();
     scheduleFocusRender(id);
@@ -908,6 +968,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     newBtn.onclick = () => { if(atelier)sessionSeed=(sessionSeed+1)>>>0; void startNewSession(); };
     controls.appendChild(newBtn);
 
+    if(generationHistoryOpen||historyForkBusy){for(const c of controls.querySelectorAll<HTMLInputElement|HTMLButtonElement|HTMLSelectElement>("button,input,select"))c.disabled=true;}
     header.appendChild(controls);
     el.appendChild(header);
 
@@ -923,7 +984,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
 
     const grid = document.createElement("div"); grid.className = "grid";
     grid.dataset.playback = playback; grid.dataset.pace = pace; grid.dataset.advanceGate = currentGate();
-    grid.dataset.engineId=engineRef.engineId;grid.dataset.engineVersion=engineRef.engineVersion;grid.dataset.generation=String(gen.generationId);
+    grid.dataset.engineId=engineRef.engineId;grid.dataset.engineVersion=engineRef.engineVersion;grid.dataset.generation=String(gen.generationId);grid.dataset.logicalGeneration=String(generationIndex);grid.dataset.historyBranch=historyBranch;
 
     for (const c of gen.candidates) {
       const card = document.createElement("div"); card.className = "card";
@@ -955,7 +1016,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
         ctx.fillStyle = "rgba(255,255,255,0.75)"; ctx.fillText(entry?.status === "err" ? "render error" : "…", 10, 20);
       }
 
-      canvas.onclick = () => { if (c.status !== "retired") openFocus(c.id); };
+      canvas.onclick = () => { if (!generationHistoryOpen&&!historyForkBusy&&c.status !== "retired") openFocus(c.id); };
       wrap.appendChild(canvas);
 
       if (c.status !== "normal") {
@@ -979,19 +1040,19 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
 
       const pickBtn = document.createElement("button");
       pickBtn.textContent = "✓";pickBtn.setAttribute("aria-label",c.status==="picked"?"Unpick":"Pick");pickBtn.title=c.status==="picked"?"Unpick":"Pick";pickBtn.setAttribute("aria-pressed",String(c.status==="picked"));
-      pickBtn.disabled = journal.reviewing || c.status === "retired";
+      pickBtn.disabled = generationHistoryOpen || historyForkBusy || journal.reviewing || c.status === "retired";
       pickBtn.onclick = () => toggleCandidateStatus(c.id, c.status === "picked" ? "normal" : "picked");
       footer.appendChild(pickBtn);
 
       const skipBtn = document.createElement("button");
       skipBtn.textContent = "×";skipBtn.setAttribute("aria-label",c.status==="skipped"?"Unskip":"Skip");skipBtn.title=c.status==="skipped"?"Unskip":"Skip";skipBtn.setAttribute("aria-pressed",String(c.status==="skipped"));
-      skipBtn.disabled = journal.reviewing || c.status === "retired";
+      skipBtn.disabled = generationHistoryOpen || historyForkBusy || journal.reviewing || c.status === "retired";
       skipBtn.onclick = () => toggleCandidateStatus(c.id, c.status === "skipped" ? "normal" : "skipped");
       footer.appendChild(skipBtn);
 
       const favBtn = document.createElement("button");
       favBtn.textContent = "☆";favBtn.setAttribute("aria-label","Favorite");favBtn.title="Save to library";
-      favBtn.disabled = journal.reviewing || c.status === "retired";
+      favBtn.disabled = generationHistoryOpen || historyForkBusy || journal.reviewing || c.status === "retired";
       favBtn.onclick = () => favoriteCandidate(c);
       footer.appendChild(favBtn);
 
