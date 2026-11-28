@@ -19,7 +19,8 @@ try{
   await p.waitForFunction(()=>{const s=window.__ARENA_RPC__?.getState();return s&&(s.phase==='error'||s.telemetry.tick>=15);},null,{timeout:120000});
   const snap=()=>p.evaluate(()=>window.__ARENA_RPC__.getState()),initial=await snap();assert.notEqual(initial.phase,'error',initial.error);assert.equal(initial.version,'0.1.0-rdte.9');assert.equal(await p.evaluate(()=>window.__adapter.fallback),false);
   await p.evaluate(()=>window.__ARENA_RPC__.setPaused(true));
-  const refresh=async id=>{const rev=(await snap()).knobs.state.viewRevision;await p.locator('#'+id).click();await p.waitForFunction(r=>window.__ARENA_RPC__.getState().knobs.state.viewRevision>r,rev,{timeout:20000});};
+  const matchedFrame=()=>p.waitForFunction(()=>{const v=lastSubmittedCamera,c=document.getElementById('canvas'),r=c.getBoundingClientRect();return v&&v.width===c.width&&v.height===c.height&&Math.abs(v.cssWidth-r.width)<=1&&Math.abs(v.cssHeight-r.height)<=1&&v.revision===window.__ARENA_RPC__.getState().knobs.state.viewRevision;},null,{timeout:20000});
+  const refresh=async id=>{const rev=(await snap()).knobs.state.viewRevision;await p.locator('#'+id).click();await p.waitForFunction(r=>window.__ARENA_RPC__.getState().knobs.state.viewRevision>r,rev,{timeout:20000});await matchedFrame();};
   await refresh('cam-home');const before=await snap();
   const projection=()=>p.evaluate(()=>{
    const s=window.__ARENA_RPC__.getState(),R=s.knobs.state.arenaRadius,m=window.__cameraMatrix,rect=document.getElementById('canvas').getBoundingClientRect();
@@ -28,7 +29,7 @@ try{
    const target={x:2,z:1},q=project(target.x,surface(target.x,target.z),target.z);
    const screen={clientX:rect.left+(q[0]+1)*rect.width/2,clientY:rect.top+(1-q[1])*rect.height/2};
    const hit=worldPointer(screen),picked=hit?{x:strikeHover.x,z:strikeHover.z}:null;
-   return {outline,extent:{x:Math.max(...outline.map(v=>Math.abs(v[0]))),y:Math.max(...outline.map(v=>Math.abs(v[1])))},target,picked,error:picked?Math.hypot(picked.x-target.x,picked.z-target.z):null,screen,aspect:rect.width/rect.height};
+   return {camera:{...lastSubmittedCamera},outline,extent:{x:Math.max(...outline.map(v=>Math.abs(v[0]))),y:Math.max(...outline.map(v=>Math.abs(v[1])))},target,picked,error:picked?Math.hypot(picked.x-target.x,picked.z-target.z):null,screen,aspect:rect.width/rect.height};
   });
   const fit=await projection();assert.ok(fit.error!==null&&fit.error<.08,JSON.stringify(fit));if(width<height)assert.ok(fit.extent.x<.95&&fit.extent.y<.95,'portrait home must fit actual ring projection');
   await refresh('scene-only');await p.screenshot({path:out+'/'+width+'x'+height+'-home.png'});await refresh('scene-only');
@@ -39,8 +40,8 @@ try{
   await refresh('cam-under');const lower=await snap();assert.ok(lower.knobs.state.camPitch<0);assert.equal(lower.visual.visible,false);assert.deepEqual(lower.interventions,before.interventions);
   await refresh('cam-home');assert.equal((await snap()).tick,before.tick);const restored=await projection();assert.ok(restored.error!==null&&restored.error<.08);assert.deepEqual(restored.extent,fit.extent);
   if(touch&&width<height){
-   await p.setViewportSize({width:height,height:width});await refresh('cam-home');const rotated=await projection();assert.ok(rotated.error!==null&&rotated.error<.08);assert.equal((await snap()).tick,before.tick);
-   await p.setViewportSize({width,height});await refresh('cam-home');const returned=await projection();assert.ok(returned.extent.x<.95&&returned.error<.08);assert.equal((await snap()).tick,before.tick);
+   await p.setViewportSize({width:height,height:width});await matchedFrame();await refresh('cam-home');await p.waitForFunction(()=>lastSubmittedCamera.pitch===.72&&lastSubmittedCamera.eye.every((n,i)=>Math.abs(n-cameraEye()[i])<1e-6));const rotated=await projection();assert.ok(rotated.error!==null&&rotated.error<.08,JSON.stringify(rotated));assert.equal((await snap()).tick,before.tick);
+   await p.setViewportSize({width,height});await matchedFrame();await refresh('cam-home');await p.waitForFunction(()=>lastSubmittedCamera.pitch===.72&&lastSubmittedCamera.eye.every((n,i)=>Math.abs(n-cameraEye()[i])<1e-6));const returned=await projection();assert.ok(returned.extent.x<.95&&returned.error!==null&&returned.error<.08,JSON.stringify(returned));assert.equal((await snap()).tick,before.tick);
   }
   assert.deepEqual(errors,[]);rows.push({width,height,touch,fit:{extent:fit.extent,error:fit.error,aspect:fit.aspect},restored:restored.extent,inspectionKinds:[10,11,6,9],pausedTick:before.tick,pass:true});await ctx.close();
  }
