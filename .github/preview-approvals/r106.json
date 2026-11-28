@@ -1,0 +1,12 @@
+{
+  "action": "publish-experimental-preview",
+  "scope": "preview/",
+  "production_source": "02d587a0d684fb59af5d097ca6b81dfd5c87bf0a",
+  "source": "f2d0065b1213d75aaf87c619d25665927546de42",
+  "qualified_run": "46149139809",
+  "manifest": "af8428d144382959be335d9b469c13ee1866316c0ac41377e71c623dec106eb7",
+  "site_artifact": 15264763837,
+  "site_digest": "sha256:026c38bcb1493e4e15e912cba6a723309625a78ce1a2df5fd6108b140e6a3e4d",
+  "evidence_artifact": 15265101218,
+  "evidence_digest": "sha256:ec8b1501ed846b6d5cb45af2ad35a5a773be4b6ddce0d9b5a633bfdf9619f4af"
+}
