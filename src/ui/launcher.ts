@@ -1,5 +1,7 @@
 import { EXPERIENCES } from "../experiences";
 import { RESEARCH_ARTICLES, RESEARCH_SOURCES } from "./research-encyclopedia";
+import { DEMO_LIMITATIONS } from "./research-limitations";
+import { mountTeachingModel } from "./research-visuals";
 
 type Action = {readonly label:string;readonly href:string};
 export type Demo = {id:string;title:string;category:"life"|"art"|"archive";description:string;features:readonly string[];requirement:string;preview:"arena"|"craft"|"motif"|"emblem"|"mosaic"|"legacy";actions:readonly Action[]};
@@ -39,15 +41,18 @@ export function mountLauncher(root:HTMLElement){
  const cardButtons=new Map<string,HTMLButtonElement>();
  const research=node("section","launcher-research");research.hidden=true;research.setAttribute("aria-label","Research encyclopedia");
  let previousFocus:HTMLElement|null=null;
+ let stopTeaching:(()=>void)|undefined;
  function showResearch(d:Demo,trigger:HTMLElement){
-   previousFocus=trigger;const article=RESEARCH_ARTICLES[d.id];research.replaceChildren();research.hidden=false;workspace.hidden=true;
-   const top=node("div","research-top"),back=node("button",undefined,"Back to demos");back.onclick=()=>{research.hidden=true;workspace.hidden=false;previousFocus?.focus();};top.append(back);
+   stopTeaching?.();previousFocus=trigger;const article=RESEARCH_ARTICLES[d.id];research.replaceChildren();research.hidden=false;workspace.hidden=true;
+   const top=node("div","research-top"),back=node("button",undefined,"Back to demos");back.onclick=()=>{stopTeaching?.();research.hidden=true;workspace.hidden=false;previousFocus?.focus();};top.append(back);
    const h=node("h2",undefined,article.title);h.tabIndex=-1;const lead=node("p","research-lead",article.lead);const links=node("div","launcher-actions");for(const a of d.actions)links.append(actionLink(a));research.append(top,h,lead,links);
    const concept=node("p","research-terms","Explore concepts: "+article.terms.join(" · "));research.append(concept);
    const ids=[...new Set(article.sections.flatMap(s=>s.refs))],numbers=new Map(ids.map((id,i)=>[id,i+1]));
    for(const s of article.sections){const section=node("details","research-section"),title=node("summary",undefined,s.heading),body=node("p",undefined,s.body);section.append(title,body);if(s.refs.length){const line=node("p","research-citations","Original and related research: ");for(const id of s.refs){const source=RESEARCH_SOURCES[id],link=node("a",undefined,"["+numbers.get(id)+"] "+source.author.split(",")[0]+" ("+source.year+")");link.href=source.url;line.append(link,document.createTextNode(" "));}section.append(line);}research.append(section);}
+   const teaching=mountTeachingModel(d.id);stopTeaching=teaching.stop;research.append(teaching.element);
    const challenge=node("section","research-challenge"),ct=node("h3",undefined,"Investigate it yourself"),q=node("p",undefined,article.challenge.question),steps=node("ol");for(const step of article.challenge.steps)steps.append(node("li",undefined,step));challenge.append(ct,q,steps,node("p",undefined,article.challenge.next));research.append(challenge);
    const scope=node("section","research-scope");scope.append(node("h3",undefined,"What EvoForge actually implements"),node("p",undefined,article.scope));research.append(scope);
+   const limits=node("section","research-limitations");limits.append(node("h3",undefined,"Limitations and why they exist"),node("p",undefined,"Use these boundaries to interpret the demo as an experiment rather than as a perfect model."));for(const item of DEMO_LIMITATIONS[d.id]){const entry=node("details","research-section");entry.append(node("summary",undefined,item.title),node("p",undefined,"Why: "+item.why),node("p",undefined,"What this means: "+item.effect),node("p",undefined,"How to investigate: "+item.investigate));limits.append(entry);}research.append(limits);
    const bibliography=node("section","research-references");bibliography.append(node("h3",undefined,"Original publications and primary sources"));const ol=node("ol");for(const id of ids){const s=RESEARCH_SOURCES[id],li=node("li"),a=node("a",undefined,s.author+" ("+s.year+"). "+s.title+". "+s.venue+".");a.href=s.url;li.append(a,node("p",undefined,s.why));ol.append(li);}bibliography.append(ol);research.append(bibliography);
    const code=node("details","research-section");code.append(node("summary",undefined,"Inspect the implementation"));for(const path of article.paths){const a=node("a",undefined,path);a.href="https://github.com/SemperSupra/EvoForge/blob/release-source/"+path;const line=node("p");line.append(a);code.append(line);}research.append(code);
    h.focus();window.scrollTo(0,0);
