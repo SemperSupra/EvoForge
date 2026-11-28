@@ -40,11 +40,11 @@ try{
      if(s.phase==='error'||performance.now()-start>110000){reject(Error('event frame unavailable '+JSON.stringify({kind,id,tick:s.tick,visual:v,age,error:s.error})));return;}requestAnimationFrame(check);
     };check();
    }),{kind,id,minAge,maxAge});
-   const events=await p.evaluate(()=>{const a=window.__ARENA_RPC__;return a.armMeteor(0,0,true).pending.id;});
-   await pause(false);const descent=await capture('descent',events);await shot('meteor-descent');assert.ok(descent.visual.meteorBodies>0);
+   const events=await p.evaluate(()=>{const a=window.__ARENA_RPC__;a.setPaused(false);return a.armMeteor(0,0,true).pending.id;});
+   const descent=await capture('descent',events);await shot('meteor-descent');assert.ok(descent.visual.meteorBodies>0);
    await pause(false);const impact=await capture('dust',events,0,12);await shot('impact');assert.ok(impact.visual.dustParticles>0);
    await pause(false);const plume=await capture('dust',events,35,75);await shot('plume');assert.ok(plume.tick>impact.tick);
-   await p.evaluate(()=>window.__ARENA_RPC__.lightning(-3,0));
+   await p.evaluate(()=>{const a=window.__ARENA_RPC__;a.setPaused(false);return a.lightning(-3,0);});
    const lightning=await capture('lightning',0);await shot('lightning');assert.ok(lightning.visual.lightningStrokes>0);
    assert.equal(lightning.visual.sceneOnly,true);
    await toggle.click();await p.locator('#cam-under').click();await p.waitForFunction(()=>window.__ARENA_RPC__.getState().visual.visible===false);
