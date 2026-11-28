@@ -119,11 +119,16 @@
     #panel-controls button,#hud-toggle{min-width:44px}.faction-card[aria-pressed=true]{border:2px solid #f1dc9a;background:#34423d}#hud-left,#hud-right{scroll-padding:8px}#strike-panel label,#hud-left label{display:inline-block} @media(pointer:coarse){#strike-panel input[type=number],#strike-panel input[type=checkbox],#audio-level{min-height:44px}}
     #budget-status{display:block;margin:4px 0}#performance-mode{min-height:36px;max-width:100%;color:var(--text);background:var(--panel)} @media(pointer:coarse){#performance-mode{min-height:44px}}
     #panel-controls{position:fixed;z-index:22;bottom:8px;left:8px;display:flex;gap:5px;max-width:calc(100vw - 16px)}#panel-controls button{position:static;min-height:36px;font-size:13px;flex:0 0 auto;padding:7px 10px}#panel-controls button[aria-pressed=true],button[aria-pressed=true]{border-color:#9ce5ff;background:#243e4d}body.mobile-panel-left #hud-right,body.mobile-panel-right #hud-left{display:none}#hud-left,#hud-right{font-size:12px}.section-title,.control label,.faction-stat,.faction-name{font-size:12px}.faction-card:focus-visible{outline:2px solid #9ce5ff}#inspection-status{display:block;font-size:12px;margin:6px 0}#strike-panel .section-title{font-size:12px} @media(max-width:1199px),(pointer:coarse){#panel-controls button,#hud-left button,#hud-right button,.faction-card,#hud-left input[type=range],#hud-right input[type=range],#hud-left select{min-height:44px}#camera-controls{bottom:60px;max-width:calc(100vw - 16px);max-height:26dvh;overflow:auto}#hud-left,#hud-right{max-height:42dvh;bottom:auto}body.mobile-panel-left #hud-left,body.mobile-panel-right #hud-right{width:min(calc(100vw - 16px),430px);left:8px;right:auto}#hud-left,#hud-right{backdrop-filter:none}} @media(max-width:640px){#experience-toolbar{height:var(--toolbar-height);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible;gap:3px}#experience-toolbar a,#experience-toolbar button{min-width:0;font-size:12px}#experience-mode{font-size:11px;text-align:center}#camera-controls{bottom:60px}#panel-controls{bottom:5px}} @media(max-height:500px) and (pointer:coarse){:root{--toolbar-height:48px}#experience-toolbar{height:48px;display:flex;flex-wrap:nowrap;font-size:11px}#experience-toolbar a,#experience-toolbar button{min-height:36px}#hud-left,#hud-right{max-height:calc(100dvh - 120px);width:min(42vw,350px)!important}#camera-controls{left:auto;right:8px;transform:none;width:min(48vw,340px);max-height:38dvh}#panel-controls{bottom:4px}}
+    .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+    #world-tool-dock{position:fixed;z-index:24;left:50%;transform:translateX(-50%);bottom:76px;width:min(420px,calc(100vw - 16px));background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px;display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+    #world-tool-dock>button{flex:0 0 auto;padding:7px 10px;font-size:13px;min-height:36px}#tool-status{font-size:12px;flex:1;min-width:100px}#strike-panel{width:100%;margin:0;max-height:32dvh;overflow:auto}#strike-panel[hidden]{display:none}#strike-panel button{font-size:13px}
+    @media(max-width:1199px),(pointer:coarse){#world-tool-dock{bottom:calc(60px + 26dvh);max-height:44dvh;overflow:auto}#world-tool-dock button{min-height:44px}#world-tool-dock input{min-height:44px}}
+    @media(max-height:500px) and (pointer:coarse){#world-tool-dock{left:auto;right:8px;transform:none;width:min(48vw,340px);bottom:calc(60px + 38dvh);max-height:34dvh}#strike-panel{max-height:23dvh}}
     #strike-overlay{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:8}#strike-panel{border:1px solid var(--border);border-radius:6px;padding:6px;margin:6px 0}#strike-panel input[type=number]{width:4.6em;max-width:100%}#strike-panel button{min-height:30px}@media(pointer:coarse){#strike-panel button{min-height:44px}}
   </style>
 </head>
 <body>
-  <canvas id="canvas" aria-label="Artificial life simulation arena"></canvas>
+  <canvas id="canvas" tabindex="0" aria-label="Artificial life simulation arena" aria-describedby="navigation-help"></canvas>
   <canvas id="strike-overlay" aria-hidden="true"></canvas>
   <nav id="experience-toolbar" aria-label="EvoForge experience controls">
     <a href="../../">All experiences</a>
@@ -135,16 +140,29 @@
   <section id="arena-message" role="status" hidden><p id="arena-error"></p><a href="../../">Return to EvoForge</a></section>
   <div id="panel-controls" role="group" aria-label="Arena panels"><button id="panel-life">Life</button><button id="panel-world">World</button><button id="hud-toggle">Hide panels</button></div>
   <div id="camera-controls" role="group" aria-label="Arena camera">
-    <button id="cam-orbit" aria-pressed="true" title="Drag to rotate the view">Orbit</button>
-    <button id="cam-pan" aria-pressed="false" title="Drag to move the view across the world">Pan</button>
-    <button id="cam-interact" aria-pressed="false" title="Tap terrain to intervene in Play mode">Interact</button>
+    <span id="navigation-help" class="visually-hidden">Drag to pan, right or Control drag to rotate, wheel or pinch to zoom. Arrow keys pan; Shift arrows rotate or tilt. Escape disarms world tools.</span>
+    <button id="cam-orbit" aria-pressed="false" title="Drag to rotate the view">Orbit</button>
+    <button id="cam-pan" aria-pressed="true" title="Drag to move the view across the world">Pan</button>
+    <button id="cam-interact" aria-pressed="false" title="Open direct world tools">Edit</button>
     <button id="cam-left" aria-label="Rotate camera left">←</button><button id="cam-right" aria-label="Rotate camera right">→</button>
     <button id="cam-up" aria-label="Tilt camera up">↑</button><button id="cam-down" aria-label="Tilt camera down">↓</button>
     <button id="cam-in" aria-label="Zoom in">+</button><button id="cam-out" aria-label="Zoom out">−</button>
     <button id="cam-top">Top</button><button id="cam-home">Reset view</button>
-    <output id="camera-status">Orbit</output>
+    <output id="camera-status">Pan</output>
   </div>
 
+  <div id="world-tool-dock" role="group" aria-label="Direct arena interaction">
+    <button id="tool-toggle" aria-expanded="false" aria-controls="strike-panel">World tools</button>
+    <button id="tool-navigate" aria-pressed="true">Navigate</button>
+    <span id="tool-status" role="status">Navigation · no armed tool</span>
+      <div id="strike-panel" aria-label="Direct world tools" hidden>
+        <div class="section-title">Direct world tools</div>
+        <div class="btn-row"><button id="strike-meteor" aria-pressed="false">Meteor</button><button id="strike-lightning" aria-pressed="false">Lightning</button><button id="strike-cancel">Cancel meteor</button></div>
+        <label><input type="checkbox" id="strike-mineral" checked> Mineral-bearing impact</label>
+        <div class="btn-row"><label for="strike-x">X <input aria-label="Target X" id="strike-x" type="number" value="3" step=".1"></label><label for="strike-z">Z <input aria-label="Target Z" id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Strike target</button></div>
+        <div id="strike-status" role="status">Select Meteor or Lightning, then tap terrain. Drag to navigate.</div>
+      </div>
+  </div>
   <div id="hud-left">
     <h1>
       <span>ALIFE ARENA v7 — MULTIPHASE</span>
@@ -232,13 +250,6 @@
     </div>
 
     <div class="section-title">Environmental interventions</div>
-      <div id="strike-panel" aria-label="Environmental interventions">
-        <div class="section-title">Environmental interventions · experimental</div>
-        <div class="btn-row"><button id="strike-meteor" aria-pressed="true">Meteor</button><button id="strike-lightning" aria-pressed="false">Lightning</button><button id="strike-cancel">Cancel meteor</button></div>
-        <label><input type="checkbox" id="strike-mineral" checked> Mineral-bearing impact</label>
-        <div class="btn-row"><label for="strike-x">X <input aria-label="Target X" id="strike-x" type="number" value="3" step=".1"></label><label for="strike-z">Z <input aria-label="Target Z" id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Strike target</button></div>
-        <div id="strike-status" role="status">Select a tool and tap terrain, or enter coordinates.</div>
-      </div>
       <div class="btn-row">
         <button class="surprise" id="surp-bloom">Bloom</button>
         <button class="surprise" id="surp-drought">Drought</button>
@@ -368,7 +379,7 @@ const state = {
   camYaw: 0.65,
   camPitch: 0.72,
   camDist: arenaProfile.name==='smoke'?21:arenaProfile.radius*2.4,
-  camCenterX: 0, camCenterZ: 0, camMode: "orbit", viewRevision: 0,
+  camCenterX: 0, camCenterZ: 0, camMode: "pan", worldTool:null, viewRevision: 0,
   targetX: 0,
   targetZ: 0,
   blastX: 0,
@@ -548,7 +559,9 @@ function strikeStatus(){
  strikeEl('strike-status').textContent=phase+' · '+strikeWorld.craters.length+'/8 craters'+(strikeMessage?' · '+strikeMessage:'');
  strikeEl('strike-cancel').disabled=mode!=='play'||p?.phase!=='countdown';
 }
-function chooseStrike(tool){assertPlay();if(!Object.hasOwn(strikeProfiles,tool))throw Error('Unknown strike');strikeTool=tool;cameraMode('interact');for(const t of ['meteor','lightning'])strikeEl('strike-'+t).setAttribute('aria-pressed',String(t===tool));viewDirty=true;strikeStatus();}
+function showWorldTools(open){if(mode!=='play')return;strikeEl('strike-panel').hidden=!open;strikeEl('tool-toggle').setAttribute('aria-expanded',String(open));strikeEl('cam-interact').setAttribute('aria-pressed',String(open));if(!open)disarmTool();}
+function disarmTool(){state.worldTool=null;strikeHover=null;canvasEl.style.cursor='grab';for(const t of ['meteor','lightning'])strikeEl('strike-'+t).setAttribute('aria-pressed','false');strikeEl('tool-navigate').setAttribute('aria-pressed','true');strikeEl('tool-status').textContent='Navigation · no armed tool';viewDirty=true;}
+function chooseStrike(tool){assertPlay();if(!Object.hasOwn(strikeProfiles,tool))throw Error('Unknown strike');strikeTool=tool;state.worldTool=tool;showWorldTools(true);canvasEl.style.cursor='crosshair';for(const t of ['meteor','lightning'])strikeEl('strike-'+t).setAttribute('aria-pressed',String(t===tool));strikeEl('tool-navigate').setAttribute('aria-pressed','false');strikeEl('tool-status').textContent=(tool==='meteor'?'Meteor':'Lightning')+' armed · tap terrain once';viewDirty=true;strikeStatus();}
 function admitStrike(tool,x,z,nutrients=true){
  assertPlay();if(stopped||experience.phase!=='running'||paused)throw Error('Resume a running arena first');
  const p=strikeProfiles[tool];if(!p||!Number.isFinite(x)||!Number.isFinite(z))throw Error('Invalid target');
@@ -613,7 +626,7 @@ function paintInterventions(matrix,width,height){
  function textAt(label,p,color){if(!p)return;ctx.font='bold '+Math.round(14*dpr)+'px system-ui';ctx.fillStyle=color;ctx.textAlign='center';ctx.fillText(label,p[0],p[1]-15*dpr)}
  function dot(p,r,c){if(!p)return;ctx.beginPath();ctx.arc(p[0],p[1],r*dpr,0,Math.PI*2);ctx.fillStyle=c;ctx.fill()}
  const e=strikeWorld.pending;
- if(strikeHover&&!e&&mode==='play'&&state.camMode==='interact')ring(strikeHover.x,strikeHover.z,strikeProfiles[strikeTool].radius,'rgba(255,220,150,.55)',1);
+ if(strikeHover&&!e&&mode==='play'&&state.worldTool)ring(strikeHover.x,strikeHover.z,strikeProfiles[strikeTool].radius,'rgba(255,220,150,.55)',1);
  if(e){const h=surface(e.x,e.z),p=proj(e.x,h+.05,e.z);ring(e.x,e.z,strikeProfiles.meteor.radius,'#ffd083');if(p){line([[p[0]-9*dpr,p[1]],[p[0]+9*dpr,p[1]]],'#ffe6b2',2);line([[p[0],p[1]-9*dpr],[p[0],p[1]+9*dpr]],'#ffe6b2',2);}
  if(e.phase==='countdown')textAt('METEOR · '+(e.launchAt-strikeWorld.tick)+' ticks',p,'#ffe5ac');
  else{const f=Math.max(0,Math.min(1,(strikeWorld.tick-e.launchAt)/interventionModel.DESCENT)),m=proj(e.x-(1-f)*1.1,h+(1-f)*7,e.z-(1-f)*.6),tail=proj(e.x-(1-f)*1.1-.4,h+(1-f)*7+1.4,e.z-(1-f)*.6-.3);if(!reducedStrike)line([tail,m],'#f5a455',9);dot(m,9,'#f3a455');dot(m,4,'#fff2b8');textAt('DESCENT · COMMITTED',p,'#ffe5ac');}}
@@ -624,9 +637,11 @@ function paintInterventions(matrix,width,height){
 strikeEl('strike-meteor').onclick=()=>chooseStrike('meteor');
 strikeEl('strike-lightning').onclick=()=>chooseStrike('lightning');
 strikeEl('strike-cancel').onclick=()=>cancelStrike();
-strikeEl('strike-place').onclick=()=>attemptStrike(strikeTool,Number(strikeEl('strike-x').value),Number(strikeEl('strike-z').value),strikeEl('strike-mineral').checked);
-document.addEventListener?.('keydown',e=>{if(e.key==='Escape'&&mode==='play'&&strikeWorld.pending?.phase==='countdown')cancelStrike();});
-if(mode==='observe')for(const id of ['strike-meteor','strike-lightning','strike-place','strike-mineral','strike-x','strike-z','strike-cancel'])strikeEl(id).disabled=true;
+strikeEl('strike-place').onclick=()=>{if(!state.worldTool){strikeMessage='Select a world tool first.';strikeStatus();return;}if(attemptStrike(state.worldTool,Number(strikeEl('strike-x').value),Number(strikeEl('strike-z').value),strikeEl('strike-mineral').checked))disarmTool();};
+strikeEl('tool-toggle').onclick=()=>showWorldTools(strikeEl('strike-panel').hidden);
+strikeEl('tool-navigate').onclick=()=>disarmTool();
+document.addEventListener?.('keydown',e=>{if(e.key==='Escape'&&mode==='play'){disarmTool();if(strikeWorld.pending?.phase==='countdown')cancelStrike();}});
+if(mode==='observe')for(const id of ['tool-toggle','strike-meteor','strike-lightning','strike-place','strike-mineral','strike-x','strike-z','strike-cancel'])strikeEl(id).disabled=true;
 strikeStatus();
 
 const WGSL_CRATERS = /* wgsl */`
@@ -2460,10 +2475,10 @@ function updateCamera() {
   document.getElementById('camera-status').textContent=state.camMode+' · '+Math.round(state.camDist)+' units';
 }
 function cameraMode(m) {
-  if(m==='interact'&&mode!=='play')return;
-  state.camMode=m;
-  for(const id of ['orbit','pan','interact'])document.getElementById('cam-'+id).setAttribute('aria-pressed',String(id===m));
-  canvasEl.style.cursor=m==='interact'?'crosshair':'grab';updateCamera();
+  if(m==='interact'){showWorldTools(strikeEl('strike-panel').hidden);return;}
+  disarmTool();state.camMode=m;
+  for(const id of ['orbit','pan'])document.getElementById('cam-'+id).setAttribute('aria-pressed',String(id===m));
+  updateCamera();
 }
 function panView(dx,dy) {
   const scale=2*state.camDist*Math.tan(Math.PI/8)/Math.max(1,canvasEl.clientHeight);
@@ -2489,38 +2504,47 @@ for(const [id,fn] of Object.entries({
   top:()=>state.camPitch=1.50,
   home:()=>{state.camYaw=0.65;state.camPitch=0.72;state.camDist=arenaProfile.name==='smoke'?21:state.arenaRadius*2.4;state.camCenterX=0;state.camCenterZ=0;}
 }))document.getElementById('cam-'+id).onclick=()=>{fn();updateCamera();};
-const pointers=new Map();
-let moved=false,gestureDistance=0;
+const pointers=new Map();let moved=false,gesture=null;
+const multi=()=>{const [a,b]=pointers.values();return {x:(a.x+b.x)/2,y:(a.y+b.y)/2,d:Math.hypot(b.x-a.x,b.y-a.y),angle:Math.atan2(b.y-a.y,b.x-a.x)};};
+const orbit=(dx,dy)=>{state.camYaw-=dx*.006;state.camPitch+=dy*.006;updateCamera();};
 canvasEl.addEventListener('contextmenu',e=>e.preventDefault());
 canvasEl.addEventListener('pointerdown',e=>{
-  if(e.button!==0&&e.button!==2)return;
-  if(pointers.size===0)moved=false;
-  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,button:e.button});
-  canvasEl.setPointerCapture(e.pointerId);
-  if(pointers.size===2){const [a,b]=pointers.values();gestureDistance=Math.hypot(a.x-b.x,a.y-b.y);moved=true;}
+ if(![0,1,2].includes(e.button))return;
+ if(pointers.size===0)moved=false;
+ pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,button:e.button});
+ canvasEl.setPointerCapture(e.pointerId);
+ if(pointers.size===2){gesture=multi();moved=true;}
 });
 canvasEl.addEventListener('pointermove',e=>{
-  const old=pointers.get(e.pointerId);
-  if(!old){if(mode==='play'&&state.camMode==='interact')worldPointer(e);return;}
-  const dx=e.clientX-old.x,dy=e.clientY-old.y;
-  if(Math.abs(dx)+Math.abs(dy)>1)moved=true;
-  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,button:old.button});
-  if(pointers.size===2){const [a,b]=pointers.values(),d=Math.hypot(a.x-b.x,a.y-b.y);if(d>5&&gestureDistance>5)state.camDist*=gestureDistance/d;gestureDistance=d;updateCamera();return;}
-  if(pointers.size!==1)return;
-  if(state.camMode==='pan'||e.shiftKey)panView(dx,dy);
-  else if(state.camMode==='orbit'||old.button===2){state.camYaw-=dx*0.006;state.camPitch+=dy*0.006;updateCamera();}
-  else if(mode==='play')worldPointer(e);
+ const old=pointers.get(e.pointerId);
+ if(!old){if(mode==='play'&&state.worldTool)worldPointer(e);return;}
+ const dx=e.clientX-old.x,dy=e.clientY-old.y;
+ if(Math.hypot(e.clientX-old.startX,e.clientY-old.startY)>5)moved=true;
+ pointers.set(e.pointerId,{...old,x:e.clientX,y:e.clientY});
+ if(pointers.size===2){const next=multi();if(gesture&&next.d>8&&gesture.d>8){
+   const angle=Math.atan2(Math.sin(next.angle-gesture.angle),Math.cos(next.angle-gesture.angle)),ratio=gesture.d/next.d;
+   if(Math.abs(Math.log(ratio))>.012)state.camDist*=ratio;
+   if(Math.abs(angle)>.012)state.camYaw-=angle;
+   if(Math.abs(Math.log(ratio))<.018&&Math.abs(angle)<.018&&Math.abs(next.y-gesture.y)>Math.abs(next.x-gesture.x)*1.8){state.camPitch+=(next.y-gesture.y)*.004;updateCamera();}
+   else panView(next.x-gesture.x,next.y-gesture.y);
+ }gesture=next;updateCamera();return;}
+ if(pointers.size!==1||!moved)return;
+ if(old.button===1){state.camDist*=Math.exp(dy*.012);updateCamera();}
+ else if(old.button===2||e.ctrlKey||e.metaKey||e.altKey||(!e.shiftKey&&state.camMode==='orbit'))orbit(dx,dy);
+ else panView(dx,dy);
 });
-function endPointer(e,allowAction) {
-  const old=pointers.get(e.pointerId);pointers.delete(e.pointerId);gestureDistance=0;
-  if(old&&allowAction&&!moved&&old.button===0&&pointers.size===0&&mode==='play'&&state.camMode==='interact'&&worldPointer(e)){
-    attemptStrike(strikeTool,strikeHover.x,strikeHover.z,strikeEl('strike-mineral').checked);
-  }
+function endPointer(e,allowAction){
+ const old=pointers.get(e.pointerId);pointers.delete(e.pointerId);gesture=null;
+ if(old&&allowAction&&!moved&&old.button===0&&pointers.size===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey&&mode==='play'&&state.worldTool&&worldPointer(e)){
+   if(attemptStrike(state.worldTool,strikeHover.x,strikeHover.z,strikeEl('strike-mineral').checked))disarmTool();
+ }
 }
 canvasEl.addEventListener('pointerup',e=>endPointer(e,true));
 canvasEl.addEventListener('pointercancel',e=>endPointer(e,false));
 canvasEl.addEventListener('lostpointercapture',e=>endPointer(e,false));
-canvasEl.addEventListener('wheel',e=>{e.preventDefault();state.camDist*=Math.exp(clamp(e.deltaY,-300,300)*0.0018);updateCamera();},{passive:false});
+canvasEl.addEventListener('wheel',e=>{e.preventDefault();state.camDist*=Math.exp(clamp(e.deltaY,-300,300)*.0018);updateCamera();},{passive:false});
+canvasEl.addEventListener('dblclick',e=>{if(!state.worldTool){state.camDist*=.82;updateCamera();}});
+canvasEl.addEventListener('keydown',e=>{const k=e.key;if(k==='Escape'){disarmTool();return;}if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','+','=','-','Home'].includes(k)){e.preventDefault();if(k==='+'||k==='=')state.camDist*=.82;else if(k==='-')state.camDist/=.82;else if(k==='Home'){document.getElementById('cam-home').onclick();return;}else{const dx=k==='ArrowLeft'?-36:k==='ArrowRight'?36:0,dy=k==='ArrowUp'?-36:k==='ArrowDown'?36:0;if(e.shiftKey)orbit(dx,dy);else panView(dx,dy);}updateCamera();}});
 updateCamera();
 
 ['mode-species', 'mode-guild', 'mode-temp'].forEach((id, idx) => {
