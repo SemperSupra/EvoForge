@@ -1,0 +1,34 @@
+# Normalize line endings to LF in the working tree to match .editorconfig
+# (end_of_line = lf) and the LF-only committed blobs. Prevents recurring
+# CRLF churn when files are checked out/edited on Windows or with core.autocrlf.
+* text=auto eol=lf
+
+# Text sources that must stay LF on every platform (normalization forced).
+*.sh   text eol=lf
+*.mjs  text eol=lf
+*.js   text eol=lf
+*.ts   text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+*.md   text eol=lf
+*.svg  text eol=lf
+
+# Binary assets: never treat as text, never rewrite bytes/line endings.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.otf   binary
+*.wasm  binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
