@@ -1,4 +1,5 @@
 import { EXPERIENCES } from "../experiences";
+import { RESEARCH_ARTICLES, RESEARCH_SOURCES } from "./research-encyclopedia";
 
 type Action = {readonly label:string;readonly href:string};
 export type Demo = {id:string;title:string;category:"life"|"art"|"archive";description:string;features:readonly string[];requirement:string;preview:"arena"|"craft"|"motif"|"emblem"|"mosaic"|"legacy";actions:readonly Action[]};
@@ -13,7 +14,7 @@ export const DEMOS:readonly Demo[]=[
 ];
 export const CATEGORIES=[["all","All demos"],["life","Artificial life"],["art","Generative art"],["archive","Archive"]] as const;
 export type Category=typeof CATEGORIES[number][0];
-export function filterDemos(category:Category,query:string){const words=query.trim().toLowerCase().split(/\s+/).filter(Boolean);return DEMOS.filter(d=>(category==="all"||d.category===category)&&words.every(w=>[d.title,d.description,d.requirement,...d.features,...d.actions.map(a=>a.label)].join(" ").toLowerCase().includes(w)));}
+export function filterDemos(category:Category,query:string){const words=query.trim().toLowerCase().split(/\s+/).filter(Boolean);return DEMOS.filter(d=>(category==="all"||d.category===category)&&words.every(w=>[d.title,d.description,d.requirement,...d.features,...d.actions.map(a=>a.label),...RESEARCH_ARTICLES[d.id].terms].join(" ").toLowerCase().includes(w)));}
 
 // Inline, lightweight illustrative covers, not screenshots or proof of live output.
 function cover(d:Demo):string{
@@ -36,13 +37,28 @@ export function mountLauncher(root:HTMLElement){
  const categoryButtons=new Map<Category,HTMLButtonElement>();
  for(const [id,name] of CATEGORIES){const b=node("button",undefined,name);b.type="button";b.setAttribute("aria-pressed",String(id===category));b.onclick=()=>{category=id;refresh();};nav.append(b);categoryButtons.set(id,b);}
  const cardButtons=new Map<string,HTMLButtonElement>();
+ const research=node("section","launcher-research");research.hidden=true;research.setAttribute("aria-label","Research encyclopedia");
+ let previousFocus:HTMLElement|null=null;
+ function showResearch(d:Demo,trigger:HTMLElement){
+   previousFocus=trigger;const article=RESEARCH_ARTICLES[d.id];research.replaceChildren();research.hidden=false;workspace.hidden=true;
+   const top=node("div","research-top"),back=node("button",undefined,"Back to demos");back.onclick=()=>{research.hidden=true;workspace.hidden=false;previousFocus?.focus();};top.append(back);
+   const h=node("h2",undefined,article.title);h.tabIndex=-1;const lead=node("p","research-lead",article.lead);const links=node("div","launcher-actions");for(const a of d.actions)links.append(actionLink(a));research.append(top,h,lead,links);
+   const concept=node("p","research-terms","Explore concepts: "+article.terms.join(" · "));research.append(concept);
+   const ids=[...new Set(article.sections.flatMap(s=>s.refs))],numbers=new Map(ids.map((id,i)=>[id,i+1]));
+   for(const s of article.sections){const section=node("details","research-section"),title=node("summary",undefined,s.heading),body=node("p",undefined,s.body);section.append(title,body);if(s.refs.length){const line=node("p","research-citations","Original and related research: ");for(const id of s.refs){const source=RESEARCH_SOURCES[id],link=node("a",undefined,"["+numbers.get(id)+"] "+source.author.split(",")[0]+" ("+source.year+")");link.href=source.url;line.append(link,document.createTextNode(" "));}section.append(line);}research.append(section);}
+   const challenge=node("section","research-challenge"),ct=node("h3",undefined,"Investigate it yourself"),q=node("p",undefined,article.challenge.question),steps=node("ol");for(const step of article.challenge.steps)steps.append(node("li",undefined,step));challenge.append(ct,q,steps,node("p",undefined,article.challenge.next));research.append(challenge);
+   const scope=node("section","research-scope");scope.append(node("h3",undefined,"What EvoForge actually implements"),node("p",undefined,article.scope));research.append(scope);
+   const bibliography=node("section","research-references");bibliography.append(node("h3",undefined,"Original publications and primary sources"));const ol=node("ol");for(const id of ids){const s=RESEARCH_SOURCES[id],li=node("li"),a=node("a",undefined,s.author+" ("+s.year+"). "+s.title+". "+s.venue+".");a.href=s.url;li.append(a,node("p",undefined,s.why));ol.append(li);}bibliography.append(ol);research.append(bibliography);
+   const code=node("details","research-section");code.append(node("summary",undefined,"Inspect the implementation"));for(const path of article.paths){const a=node("a",undefined,path);a.href="https://github.com/SemperSupra/EvoForge/blob/release-source/"+path;const line=node("p");line.append(a);code.append(line);}research.append(code);
+   h.focus();window.scrollTo(0,0);
+ }
  function actionLink(action:Action){const a=node("a","launcher-launch",action.label);a.href=action.href;return a;}
  function updateDetail(list:readonly Demo[]){detail.replaceChildren();const d=list.find(x=>x.id===selected);if(!d){detail.hidden=true;return;}detail.hidden=false;const title=node("h2",undefined,d.title),description=node("p",undefined,d.description),requirement=node("p","launcher-requirement",d.requirement),tags=node("div","launcher-tags");for(const f of d.features)tags.append(node("span",undefined,f));detail.append(title,description,tags,requirement);if(d.id==="arena"&&!(navigator as Navigator & {gpu?:unknown}).gpu)detail.append(node("p","launcher-compatibility","WebGPU is not exposed by this browser. The arena may be unavailable; CPU demos remain available."));const note=node("p","launcher-detail-note",d.id==="arena"?"Choose Observe for read-only exploration or Play to modify the world.":"Launch the demo from its card above.");detail.append(note);for(const [id,b] of cardButtons)b.setAttribute("aria-pressed",String(id===selected));}
  function refresh(){const list=filterDemos(category,search.value);for(const [id,b] of categoryButtons)b.setAttribute("aria-pressed",String(id===category));if(!list.some(d=>d.id===selected))selected=list[0]?.id??"";count.textContent=list.length+" "+(list.length===1?"demo":"demos");grid.replaceChildren();cardButtons.clear();if(!list.length){grid.append(node("p","launcher-empty","No demos match. Try a different search or category."));updateDetail(list);return;}
- for(const d of list){const card=node("article","launcher-card");card.dataset.demo=d.id;const preview=node("div","launcher-cover");preview.innerHTML=cover(d);const select=node("button","launcher-select",d.title);select.type="button";select.setAttribute("aria-pressed",String(d.id===selected));select.onclick=()=>{selected=d.id;updateDetail(list);};cardButtons.set(d.id,select);const summary=node("p","launcher-summary",d.description);const req=node("p","launcher-requirement",d.requirement);const actions=node("div","launcher-actions");for(const a of d.actions)actions.append(actionLink(a));card.append(preview,select,summary,req,actions);grid.append(card);}
+ for(const d of list){const card=node("article","launcher-card");card.dataset.demo=d.id;const preview=node("div","launcher-cover");preview.innerHTML=cover(d);const select=node("button","launcher-select",d.title);select.type="button";select.setAttribute("aria-pressed",String(d.id===selected));select.onclick=()=>{selected=d.id;updateDetail(list);};cardButtons.set(d.id,select);const summary=node("p","launcher-summary",d.description);const req=node("p","launcher-requirement",d.requirement);const actions=node("div","launcher-actions");for(const a of d.actions)actions.append(actionLink(a));const science=node("button","launcher-research-link","Explore the science");science.type="button";science.onclick=()=>showResearch(d,science);card.append(preview,select,summary,req,actions,science);grid.append(card);}
  updateDetail(list);}
  search.addEventListener("input",refresh);
  body.append(toolbar,grid,detail);workspace.append(nav,body);
  const footer=node("footer","launcher-footer"),api=node("a",undefined,"Machine-readable experience catalog");api.href="./experiences.json";footer.append(node("span",undefined,"Illustrative demo covers · no simulation starts until launched"),api);
- shell.append(header,workspace,footer);root.append(shell);refresh();
+ shell.append(header,workspace,research,footer);root.append(shell);refresh();
 }

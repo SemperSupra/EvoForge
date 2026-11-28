@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { Script } from "node:vm";
 import { EXPERIENCES, resolveExperience } from "../src/experiences";
 import { DEMOS, filterDemos } from "../src/ui/launcher";
+import { RESEARCH_ARTICLES, RESEARCH_SOURCES } from "../src/ui/research-encyclopedia";
 const read = (path:string) => readFileSync(new URL("../"+path,import.meta.url),"utf8");
 describe("multi-experience contract",()=>{
   it("defaults to launcher, preserves Mosaic and golden routes",()=>{
@@ -22,6 +23,11 @@ describe("multi-experience contract",()=>{
     expect(filterDemos("art","heraldry").map(d=>d.id)).toEqual(["motif"]);
     expect(filterDemos("all","unmatched-keyword")).toEqual([]);
     expect(filterDemos("archive","legacy").map(d=>d.id)).toEqual(["legacy"]);
+  });
+  it("gives every demo an accessible research article with resolved primary references and investigation",()=>{
+    expect(Object.keys(RESEARCH_ARTICLES).sort()).toEqual(DEMOS.map(d=>d.id).sort());
+    for(const a of Object.values(RESEARCH_ARTICLES)){expect(a.sections.length).toBeGreaterThanOrEqual(5);expect(a.challenge.steps.length).toBeGreaterThanOrEqual(3);expect(a.scope.length).toBeGreaterThan(30);expect(a.paths.length).toBeGreaterThan(0);for(const s of a.sections)for(const id of s.refs)expect(RESEARCH_SOURCES[id]?.url).toMatch(/^https:\/\//);}
+    expect(filterDemos("all","spatial hashing").map(d=>d.id)).toEqual(["arena"]);
   });
   it("parses shipped JavaScript and constrains GPU bindings",()=>{
     const arena=read("public/experiences/alife/index.html");
