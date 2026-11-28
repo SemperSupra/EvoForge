@@ -1,0 +1,38 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stratified Arena · reference inspector</title>
+<style>
+:root{color-scheme:light dark;font:16px/1.4 system-ui,sans-serif;--line:color-mix(in srgb,CanvasText 25%,transparent)}
+*{box-sizing:border-box}body{margin:0;background:Canvas;color:CanvasText}main{max-width:900px;margin:auto;padding:16px}h1{font-size:1.5rem;margin:0 0 6px}p{margin:8px 0}.controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}button,select,input{font:inherit;color:inherit;min-height:44px}button,select{padding:6px 10px;border:1px solid var(--line);background:Canvas;border-radius:6px}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid Highlight;outline-offset:2px}.panes{display:grid;grid-template-columns:minmax(260px,1.5fr) minmax(230px,1fr);gap:16px}.panel{border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}.layer-list{display:grid;gap:4px}.layer{display:grid;grid-template-columns:1fr 110px;align-items:center;text-align:left;gap:8px;min-height:50px;white-space:normal}.layer[aria-pressed=true]{outline:2px solid Highlight}.bar{display:flex;height:18px;border:1px solid var(--line);overflow:hidden;border-radius:3px}.bar span{height:100%;display:block}.legend{font-size:.8rem;display:flex;flex-wrap:wrap;gap:8px}.swatch{display:inline-block;width:12px;height:12px;border:1px solid var(--line);margin-right:4px}dl{display:grid;grid-template-columns:1fr auto;gap:8px;margin:0}dt,dd{margin:0}dd{font-variant-numeric:tabular-nums}#summary{font-size:.85rem;overflow-wrap:anywhere}input[type=range]{width:100%;accent-color:Highlight}#current-layer{font-size:1.05rem}#state{font-size:.9rem}@media(max-width:620px){main{padding:10px}.panes{grid-template-columns:minmax(0,1fr);gap:8px}.layer{grid-template-columns:1fr 95px}.controls{gap:5px}}
+</style>
+<main><h1>Stratified Arena · layer inspector</h1><p>Reference model, normalized units. View controls do not modify the environment.</p>
+<div class="controls"><label for="field">Overlay</label><select id="field"><option value="phase">Solid / liquid / gas</option><option value="oxygen">Oxygen (phase-specific)</option><option value="heat">Temperature</option><option value="nutrients">Dissolved nutrients</option><option value="light">Light</option></select><button id="step">Step environment</button><button id="reset">Reset fixture</button></div>
+<p id="state" aria-live="polite">Step 0</p><div class="panes"><section class="panel" aria-label="Depth section"><label for="depth">Inspection depth</label><input id="depth" type="range" min="0" max="6" step="1" value="0"><div class="layer-list" id="layers"></div><p class="legend" id="legend"></p></section><section class="panel" aria-label="Layer properties"><h2 id="current-layer"></h2><dl id="properties"></dl><h3>Conservation receipt</h3><p id="summary"></p></section></div></main>
+<script type="module">
+import {example} from '../stratified-arena-r91/fixtures.mjs';
+import {conditions,inventory,exchange} from '../stratified-arena-r91/strata.mjs';
+let layers=example(),step=0,selected=0;
+const $=id=>document.getElementById(id);
+const palette={solid:'#9b8160',water:'#328ab4',gas:'#a5c3d5',oxygenWater:'#146d96',oxygenGas:'#468c77',heat:'#bc673a',nutrients:'#a2863e',light:'#d6b95a'};
+function snapshot(){return {step,inventory:inventory(layers),layers:layers.map(l=>conditions(layers,(l.bottom+l.top)/2))};}
+function draw(){
+ const reversed=snapshot().layers.slice().reverse(),active=reversed[selected],mode=$('field').value;
+ $('depth').value=String(selected);$('depth').setAttribute('aria-valuetext',active.id.replaceAll('-',' '));
+ $('state').textContent='Step '+step+' · '+layers.length+' layers';
+ $('layers').replaceChildren();$('legend').replaceChildren();
+ const scales={oxygen:Math.max(1,...reversed.flatMap(l=>[l.oxygenWater??0,l.oxygenGas??0])),heat:Math.max(1,...reversed.map(l=>l.temperature)),nutrients:Math.max(1,...reversed.map(l=>l.nutrient??0)),light:100};
+ const legend=[];
+ function bar(parent,value,color,title){const s=document.createElement('span');s.style.width=(Math.max(0,Math.min(1,value))*100)+'%';s.style.background=color;s.title=title;parent.append(s);}
+ for(let i=0;i<reversed.length;i++){
+  const c=reversed[i],b=document.createElement('button'),label=document.createElement('span'),bars=document.createElement('span');b.className='layer';b.dataset.layer=c.id;b.setAttribute('aria-pressed',String(i===selected));label.textContent=c.id.replaceAll('-',' ');b.append(label);bars.className='bar';
+  if(mode==='phase'){bar(bars,c.solidFraction,palette.solid,'Solid');bar(bars,c.waterFraction,palette.water,'Liquid');bar(bars,c.gasFraction,palette.gas,'Gas space');}
+  else if(mode==='oxygen'){bar(bars,(c.oxygenWater??0)/scales.oxygen/2,palette.oxygenWater,'Dissolved oxygen');bar(bars,(c.oxygenGas??0)/scales.oxygen/2,palette.oxygenGas,'Gas oxygen');}
+  else{const key=mode==='heat'?'temperature':mode==='nutrients'?'nutrient':'light';bar(bars,(c[key]??0)/scales[mode],palette[mode],mode);}
+  b.append(bars);b.onclick=()=>{selected=i;draw();$('layers').querySelector('[data-layer="'+c.id+'"]').focus();};$('layers').append(b);
+ }
+ const labels=mode==='phase'?[['solid','Solid matrix'],['water','Liquid'],['gas','Gas space']]:mode==='oxygen'?[['oxygenWater','Dissolved O₂ (half scale)'],['oxygenGas','Gas O₂ (half scale)']]:[[mode,mode+' · relative scale']];
+ for(const [key,label] of labels){const el=document.createElement('span'),sw=document.createElement('i');sw.className='swatch';sw.style.background=palette[key];el.append(sw,document.createTextNode(label));$('legend').append(el);}
+ $('current-layer').textContent=active.id.replaceAll('-',' ');$('properties').replaceChildren();
+ for(const [k,v] of Object.entries(active)){if(k==='id')continue;const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=k.replace(/([A-Z])/g,' $1');dd.textContent=v===null?'N/A':Number(v.toFixed(3)).toString();dd.dataset.property=k;$('properties').append(dt,dd);}
+ $('summary').textContent=Object.entries(inventory(layers)).map(([k,v])=>k+' '+v).join(' · ');
+}
+$('field').onchange=draw;$('depth').oninput=()=>{selected=Number($('depth').value);draw()};$('step').onclick=()=>{layers=exchange(layers,{drain:8,conduct:70,oxygenDiffusion:4}).layers;step++;draw()};$('reset').onclick=()=>{layers=example();step=0;selected=0;draw()};window.__STRATA_INSPECTOR__={getState:snapshot};draw();
+</script></html>
