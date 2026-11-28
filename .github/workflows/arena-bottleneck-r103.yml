@@ -1,0 +1,32 @@
+name: R103 Arena bottleneck attribution
+on:
+  pull_request:
+    branches: [rdte/arena-visual-endurance-r101]
+permissions:
+  contents: read
+jobs:
+  profile:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify exact qualified R101 Arena product blob
+        shell: bash
+        run: test "$(git hash-object public/experiences/alife/index.html)" = "40c8357da97212aa2a6a03b7994537f5b7d15eb6"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install chromium
+      - run: npm run build
+      - run: node experiments/arena-r103/profile.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r103-native-profile
+          path: arena-r103-evidence/
+          retention-days: 30
