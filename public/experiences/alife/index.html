@@ -662,6 +662,7 @@ function strikeVisual(id,i=0){
  let x=(Math.imul(id+1,0x9e3779b1)^Math.imul(i+17,0x85ebca6b)^state.seed)>>>0;
  x^=x>>>16;x=Math.imul(x,0x7feb352d);x^=x>>>15;return (x>>>0)/4294967296;
 }
+let sceneOnly=false;
 let strikeVisualFrame={tick:0,viewRevision:0,visible:false,pendingId:null,phase:null,meteorBodies:0,dustParticles:0,lightningStrokes:0,impactIds:[]};
 function paintInterventions(matrix,width,height){
  if(strikeCanvas.width!==width||strikeCanvas.height!==height){strikeCanvas.width=width;strikeCanvas.height=height;}
@@ -2395,7 +2396,7 @@ window.addEventListener('resize',()=>{if(state.panel==='both'&&compactPanels())s
 
 
 window.__ARENA_RPC__ = Object.freeze({
-  getState: () => structuredClone({ ...experience, tick: state.simTick, telemetry: telemetry.latest, knobs: { state, speciesConfig }, interventions:interventionModel.snapshot(strikeWorld),visual:{...strikeVisualFrame,sceneOnly:document.body.classList.contains('scene-only')} }),
+  getState: () => structuredClone({ ...experience, tick: state.simTick, telemetry: telemetry.latest, knobs: { state, speciesConfig }, interventions:interventionModel.snapshot(strikeWorld),visual:{...strikeVisualFrame,sceneOnly} }),
   setPaused: value => { setPaused(value); return window.__ARENA_RPC__.getState(); },
   setKnobs: patch => { applyKnobPatch(patch); return window.__ARENA_RPC__.getState(); },
   triggerSurprise: type => triggerSurprise(type),
@@ -2992,7 +2993,7 @@ installChrome(document.getElementById("experience-toolbar"),true);
 const toolStack=document.getElementById("viewport-tool-stack");
 const sceneButton=document.getElementById("scene-only");
 sceneButton.addEventListener("click",()=>{
- const enabled=!document.body.classList.contains("scene-only");
+ const enabled=!sceneOnly;sceneOnly=enabled;
  if(enabled){disarmTool();showWorldTools(false);}
  document.body.classList.toggle("scene-only",enabled);
  sceneButton.setAttribute("aria-pressed",String(enabled));sceneButton.textContent=enabled?"Restore controls":"Scene view";
