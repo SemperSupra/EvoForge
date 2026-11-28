@@ -3,7 +3,7 @@ import type { PresentationStage } from "./lens-presentation";
 type Preview = { w:number; h:number; rgba:Uint8ClampedArray; status:"gen"|"ready"|"err" };
 type Metric = "brightness"|"contrast"|"saturation"|"edge";
 type Metrics = Record<Metric,number>;
-export type LensState = { ringsOpen:boolean; radarOpen:boolean; selected:string|null; filters: {metric:Metric;minimum:number}[]; stage:number; angleMetric?:Metric; radiusMetric?:Metric; layout?:'auto'|'stages'|'lanes'|'rings'; radarPlot?:boolean; leftWidth?:number;rightWidth?:number;combined?:boolean;pipelineMode?:'walkthrough'|'live' };
+export type LensState = { ringsOpen:boolean; radarOpen:boolean; selected:string|null; filters: {metric:Metric;minimum:number}[]; stage:number; angleMetric?:Metric; radiusMetric?:Metric; layout?:'auto'|'stages'|'lanes'|'rings'; radarPlot?:boolean; leftWidth?:number;rightWidth?:number;combined?:boolean;pipelineMode?:'walkthrough'|'live'; stageMs?:number };
 const names:Record<Metric,string>={brightness:"Brightness",contrast:"Contrast",saturation:"Saturation",edge:"Edge variation"};
 const keys=Object.keys(names) as Metric[];
 const cache=new WeakMap<Uint8ClampedArray,Metrics>();
@@ -52,25 +52,26 @@ function svg(tag:string,attrs:Record<string,string|number>){const n=document.cre
 const panelKey="evoforge:mosaic-lens-layout-v1";
 export function readLensLayout():Partial<LensState>{
  try{const x=JSON.parse(localStorage.getItem(panelKey)||'{}');const size=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)?Math.max(220,Math.min(640,v)):320;
- return {leftWidth:size(x.leftWidth),rightWidth:size(x.rightWidth),combined:x.combined===true,pipelineMode:x.pipelineMode==='live'?'live':'walkthrough',...(typeof x.ringsOpen==='boolean'?{ringsOpen:x.ringsOpen}:{}),...(typeof x.radarOpen==='boolean'?{radarOpen:x.radarOpen}:{})};}catch{return {};}
+ return {leftWidth:size(x.leftWidth),rightWidth:size(x.rightWidth),combined:x.combined===true,pipelineMode:x.pipelineMode==='live'?'live':'walkthrough',...(typeof x.stageMs==="number"&&Number.isFinite(x.stageMs)?{stageMs:Math.max(250,Math.min(10000,x.stageMs))}:{}),...(typeof x.ringsOpen==='boolean'?{ringsOpen:x.ringsOpen}:{}),...(typeof x.radarOpen==='boolean'?{radarOpen:x.radarOpen}:{})};}catch{return {};}
 }
-function saveLayout(s:LensState){try{localStorage.setItem(panelKey,JSON.stringify({leftWidth:s.leftWidth,rightWidth:s.rightWidth,ringsOpen:s.ringsOpen,radarOpen:s.radarOpen,combined:s.combined,pipelineMode:s.pipelineMode}));}catch{/* storage is optional */}}
-export function renderEvolutionLenses(candidates:Candidate[],previews:Map<string,Preview>,state:LensState,onChange:()=>void,onInspect:(id:string)=>void,viewer?:HTMLElement,presentation?:ReadonlyMap<string,PresentationStage>){
+export function saveLensLayout(s:LensState){try{localStorage.setItem(panelKey,JSON.stringify({leftWidth:s.leftWidth,rightWidth:s.rightWidth,ringsOpen:s.ringsOpen,radarOpen:s.radarOpen,combined:s.combined,pipelineMode:s.pipelineMode,stageMs:s.stageMs}));}catch{/* storage is optional */}}
+export function renderEvolutionLenses(candidates:Candidate[],previews:Map<string,Preview>,state:LensState,onChange:()=>void,onInspect:(id:string)=>void,viewer?:HTMLElement,presentation?:ReadonlyMap<string,PresentationStage>,history?:{filters:LensState["filters"]}){
  const host=document.createElement("section");host.className="evolution-lenses mosaic-workspace";host.setAttribute("aria-label","Evolution lenses");
  const make=(tag:string,text:string)=>{const n=document.createElement(tag);n.textContent=text;return n;};
  const button=(label:string,fn:()=>void)=>{const b=document.createElement("button");b.type="button";b.textContent=label;b.onclick=fn;return b;};
  const compact=()=>window.matchMedia("(max-width: 999px)").matches;
- const setOpen=(side:"left"|"right",v:boolean)=>{if(side==="left"){state.ringsOpen=v;if(v&&compact())state.radarOpen=false;}else{state.radarOpen=v;if(v){state.combined=false;if(compact())state.ringsOpen=false;}}saveLayout(state);onChange();};
+ const setOpen=(side:"left"|"right",v:boolean)=>{if(side==="left"){state.ringsOpen=v;if(v&&compact())state.radarOpen=false;}else{state.radarOpen=v;if(v){state.combined=false;if(compact())state.ringsOpen=false;}}saveLensLayout(state);onChange();};
  if(compact()&&state.ringsOpen&&state.radarOpen)state.radarOpen=false;
  const details=(label:string,side:"left"|"right",open:boolean)=>{const d=document.createElement("details");d.open=open;d.className="lens-pane lens-pane-"+side;d.id="mosaic-lens-"+side;d.setAttribute("aria-label",label);const summary=make("summary",label);summary.dataset.lensFocus=side+"-summary";d.append(summary);summary.addEventListener("click",event=>{event.preventDefault();setOpen(side,!d.open);});return d;};
  const rings=details("Reality Rings", "left",state.ringsOpen);
  rings.append(make("p","Outer exploration → rendered → eligible → view filters → human picks. View-only; not critic scores."));
  const presentationControl=document.createElement("select");presentationControl.setAttribute("aria-label","Pipeline presentation");presentationControl.dataset.lensFocus="pipeline-mode";
  for(const [value,label] of [["walkthrough","Watch stages"],["live","Live / instant"]]){const o=document.createElement("option");o.value=value;o.textContent=label;presentationControl.append(o);}
- presentationControl.value=state.pipelineMode??"walkthrough";presentationControl.onchange=()=>{state.pipelineMode=presentationControl.value==="live"?"live":"walkthrough";saveLayout(state);onChange();};
- const combined=button(state.combined?"Separate rings and radar":"Combined rings + radar",()=>{state.combined=!state.combined;if(state.combined)state.radarOpen=false;else if(!compact())state.radarOpen=true;saveLayout(state);onChange();});combined.dataset.lensFocus="combined";combined.setAttribute("aria-pressed",String(!!state.combined));
+ presentationControl.value=state.pipelineMode??"walkthrough";presentationControl.onchange=()=>{state.pipelineMode=presentationControl.value==="live"?"live":"walkthrough";saveLensLayout(state);onChange();};
+ const combined=button(state.combined?"Separate rings and radar":"Combined rings + radar",()=>{state.combined=!state.combined;if(state.combined)state.radarOpen=false;else if(!compact())state.radarOpen=true;saveLensLayout(state);onChange();});combined.dataset.lensFocus="combined";combined.setAttribute("aria-pressed",String(!!state.combined));
  const modeRow=document.createElement("div");modeRow.className="lens-mode-row";modeRow.append(presentationControl,combined);rings.append(modeRow);
- const stages=lensStages(candidates,previews,state.filters,presentation);state.stage=Math.max(0,Math.min(state.stage,stages.length-1));
+ const filters=history?.filters??state.filters;
+ const stages=lensStages(candidates,previews,filters,presentation);state.stage=Math.max(0,Math.min(state.stage,stages.length-1));
  rings.dataset.layout=state.combined?"rings":state.layout??"auto";rings.dataset.combined=String(!!state.combined);
  const layout=document.createElement("select");layout.setAttribute("aria-label","Reality Rings layout");
  for(const [value,label] of [["auto","Automatic layout"],["stages","Stage browser"],["lanes","Stage lanes"],["rings","Concentric rings"]]){const o=document.createElement("option");o.value=value;o.textContent=label;layout.append(o);}
@@ -118,28 +119,44 @@ export function renderEvolutionLenses(candidates:Candidate[],previews:Map<string
  const list=document.createElement("div");list.className="lens-stage-list ring-stage-legend";
  stages.forEach((s,i)=>{const b=button(s.label+" · "+s.ids.length+" · "+s.removed.length+" removed",()=>{state.stage=i;onChange();});b.setAttribute("aria-pressed",String(state.stage===i));list.append(b);});rings.append(list);
  const filterRow=document.createElement("div");filterRow.className="lens-stage-list";
- const metric=document.createElement("select");metric.setAttribute("aria-label","View filter metric");metric.dataset.lensFocus="filter-metric";for(const k of keys){const o=document.createElement("option");o.value=k;o.textContent=names[k];metric.append(o);}
- const threshold=document.createElement("input");threshold.type="number";threshold.min="0";threshold.max="100";threshold.value="40";threshold.setAttribute("aria-label","Minimum metric percent");threshold.dataset.lensFocus="filter-threshold";
- filterRow.append(metric,threshold,button("Add filter ring",()=>{const v=Number(threshold.value);if(state.filters.length<3&&Number.isFinite(v)&&v>=0&&v<=100){state.filters.push({metric:metric.value as Metric,minimum:v/100});onChange();}}));
- state.filters.forEach((f,i)=>filterRow.append(button("Remove "+names[f.metric]+" ring "+(i+1),()=>{state.filters.splice(i,1);onChange();})));
+ const metric=document.createElement("select");metric.disabled=!!history;metric.setAttribute("aria-label","View filter metric");metric.dataset.lensFocus="filter-metric";for(const k of keys){const o=document.createElement("option");o.value=k;o.textContent=names[k];metric.append(o);}
+ const threshold=document.createElement("input");threshold.type="number";threshold.disabled=!!history;threshold.min="0";threshold.max="100";threshold.value="40";threshold.setAttribute("aria-label","Minimum metric percent");threshold.dataset.lensFocus="filter-threshold";
+ filterRow.append(metric,threshold,button("Add filter ring",()=>{const v=Number(threshold.value);if(!history&&state.filters.length<3&&Number.isFinite(v)&&v>=0&&v<=100){state.filters.push({metric:metric.value as Metric,minimum:v/100});onChange();}}));
+ filters.forEach((f,i)=>{const b=button("Remove "+names[f.metric]+" ring "+(i+1),()=>{if(!history){state.filters.splice(i,1);onChange();}});b.disabled=!!history;filterRow.append(b);});
+ if(history){const b=filterRow.querySelectorAll("button")[0];if(b)b.disabled=true;rings.append(make("p","Recorded filter and selection state · read-only history."));}
  rings.append(filterRow);
  const stage=stages[state.stage];const resident=document.createElement("div");resident.className="lens-stage-list ring-stage-legend";for(const m of memberships.filter(m=>m.ring===state.stage))resident.append(button(String(candidates.findIndex(c=>c.id===m.id)+1)+" · "+m.id,()=>onInspect(m.id)));rings.append(make("p","Residents at this ring: "+memberships.filter(m=>m.ring===state.stage).length),resident,make("p","Passed this stage: "+stage.ids.length));
  const radar=details("Population radar","right",state.radarOpen);
- const ready=candidates.filter(c=>previews.get(c.id)?.status==="ready");
+ const membership=new Map(memberships.map(m=>[m.id,m.ring]));
+ const ready=candidates.filter(c=>(membership.get(c.id)??0)>0&&previews.get(c.id)?.status==="ready");
+ const pending=candidates.filter(c=>(membership.get(c.id)??0)===0);
  const selectors=document.createElement("div");selectors.className="lens-stage-list";
  const axis=(label:string,value:Metric,change:(k:Metric)=>void)=>{const s=document.createElement("select");s.setAttribute("aria-label",label);s.dataset.lensFocus="metric-"+label;for(const k of keys){const o=document.createElement("option");o.value=k;o.textContent=label+": "+names[k];s.append(o);}s.value=value;s.onchange=()=>{change(s.value as Metric);onChange();};return s;};
  const angle=state.angleMetric??"brightness",radius=state.radiusMetric??"contrast";
  selectors.append(axis("Angle",angle,k=>state.angleMetric=k),axis(state.combined?"Marker size":"Radius",radius,k=>state.radiusMetric=k));(state.combined?rings:radar).append(selectors);
- radar.append(make("p","Each marker is one rendered candidate. Angle and distance from center represent the selected measured dimensions; not a critic score. Overlapping markers indicate similar values."));
+ radar.append(make("p","Position uses measured raster metrics. Color and outline follow the same stage as Reality Rings; no invented movement when image metrics stay unchanged. Unrendered candidates appear below the plot."));
  const chart=svg("svg",{viewBox:"0 0 320 320",role:"group","aria-label":"Population radar candidate positions"});
  for(const f of [.25,.5,.75,1])chart.append(svg("circle",{cx:160,cy:160,r:130*f,fill:"none",stroke:"currentColor","stroke-opacity":.25}));
  for(const f of [0,.25,.5,.75,1]){const a=(-135+270*f)*Math.PI/180;chart.append(svg("line",{x1:160,y1:160,x2:160+130*Math.cos(a),y2:160+130*Math.sin(a),stroke:"currentColor","stroke-opacity":.25}));const t=svg("text",{x:160+145*Math.cos(a),y:164+145*Math.sin(a),"text-anchor":"middle","font-size":9,fill:"currentColor"});t.textContent=String(f*100);chart.append(t);}
  const roster=document.createElement("div");roster.className="lens-stage-list";
- for(const c of ready){const p=previews.get(c.id)!,m=previewMetrics(p);if(!m)continue;const q=populationProjection(m,angle,radius);inspectMarker(chart,c.id,160+130*q.x,160+130*q.y,c.status==="picked"?"#15803d":"#0e7490",c.id+" · "+names[angle]+" "+Math.round(m[angle]*100)+"% · "+names[radius]+" "+Math.round(m[radius]*100)+"%");roster.append(button(String(candidates.findIndex(v=>v.id===c.id)+1)+" · "+c.id,()=>onInspect(c.id)));}
+ for(const c of ready){const p=previews.get(c.id)!,m=previewMetrics(p);if(!m)continue;const q=populationProjection(m,angle,radius),i=membership.get(c.id)!;
+  const desc=c.id+" · "+stages[i].label+" · "+names[angle]+" "+Math.round(m[angle]*100)+"% · "+names[radius]+" "+Math.round(m[radius]*100)+"%";
+  inspectMarker(chart,c.id,160+130*q.x,160+130*q.y,colors[i%colors.length],desc,i);
+  const marker=chart.lastElementChild!;marker.setAttribute("data-stage-label",stages[i].label);
+  const halo=svg("circle",{r:16,fill:"none",stroke:colors[i%colors.length],"stroke-width":2,"stroke-dasharray":i===1?"3 2":"none","pointer-events":"none"});marker.append(halo);
+  const b=button(String(candidates.findIndex(v=>v.id===c.id)+1)+" · "+stages[i].label,()=>onInspect(c.id));b.title=desc;b.dataset.radarCandidate=c.id;b.dataset.ring=String(i);roster.append(b);
+ }
  const plotSwitch=button(state.radarPlot?"Hide plot":"Show plot",()=>{state.radarPlot=!state.radarPlot;onChange();});plotSwitch.className="radar-plot-toggle";plotSwitch.setAttribute("aria-expanded",String(!!state.radarPlot));
  chart.classList.add("population-plot");radar.dataset.showPlot=String(!!state.radarPlot);roster.classList.add("radar-roster");
- const mobileRoster=document.createElement("div");mobileRoster.className="radar-cards";for(const c of ready){const m=previewMetrics(previews.get(c.id)!);if(m)mobileRoster.append(cardFor(c.id,names[angle]+" "+Math.round(m[angle]*100)+"% · "+names[radius]+" "+Math.round(m[radius]*100)+"%"));}
- radar.append(plotSwitch,chart,make("p",ready.length+" of "+candidates.length+" rendered"),roster,mobileRoster);
+ const mobileRoster=document.createElement("div");mobileRoster.className="radar-cards";for(const c of ready){const m=previewMetrics(previews.get(c.id)!);if(m)mobileRoster.append(cardFor(c.id,stages[membership.get(c.id)!].label+" · "+names[angle]+" "+Math.round(m[angle]*100)+"% · "+names[radius]+" "+Math.round(m[radius]*100)+"%"));}
+ const pendingStrip=document.createElement("div");pendingStrip.className="radar-pending";pendingStrip.setAttribute("aria-label","Candidates awaiting radar measurements");
+ pendingStrip.append(make("span","Exploration · "+pending.length));
+ const pendingItems=document.createElement("div");pendingItems.className="radar-pending-items";
+ for(const c of pending){const b=button(String(candidates.findIndex(v=>v.id===c.id)+1),()=>onInspect(c.id));b.setAttribute("aria-label",c.id+" · "+(previews.get(c.id)?.status==="err"?"Render failed":"Exploration · no displayed raster metrics"));b.dataset.candidateId=c.id;b.dataset.ring="0";b.dataset.lensFocus="radar-"+c.id;pendingItems.append(b);}
+ pendingStrip.append(pendingItems);
+ const legend=document.createElement("div");legend.className="radar-stage-key";legend.setAttribute("aria-label","Current stage residents");
+ stages.forEach((s,i)=>{const t=make("span",s.label+" "+memberships.filter(m=>m.ring===i).length);t.style.setProperty("--stage-color",colors[i%colors.length]);t.dataset.stageCount=String(memberships.filter(m=>m.ring===i).length);t.dataset.ring=String(i);legend.append(t);});
+ radar.append(plotSwitch,chart,pendingStrip,legend,make("p",ready.length+" of "+candidates.length+" shown with measured raster metrics"),roster,mobileRoster);
  const dock=document.createElement("div");dock.className="lens-dock";
  const dockButton=(side:"left"|"right",label:string,open:boolean)=>{const b=button(label,()=>setOpen(side,!open));b.dataset.lensFocus=side+"-dock";b.setAttribute("aria-expanded",String(open));b.setAttribute("aria-controls","mosaic-lens-"+side);return b;};
  dock.append(dockButton("left","Reality Rings",state.ringsOpen),dockButton("right","Population radar",state.radarOpen));
@@ -150,9 +167,9 @@ export function renderEvolutionLenses(candidates:Candidate[],previews:Map<string
   let drag:{id:number;x:number;w:number}|null=null;
   sep.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();sep.setPointerCapture(e.pointerId);drag={id:e.pointerId,x:e.clientX,w:layoutWidths()[side==="left"?0:1]};};
   sep.onpointermove=e=>{if(drag?.id===e.pointerId)resize(drag.w+(side==="left"?1:-1)*(e.clientX-drag.x));};
-  const finish=()=>{if(drag){drag=null;saveLayout(state);}};sep.onpointerup=finish;sep.onpointercancel=finish;sep.onlostpointercapture=finish;
-  sep.onkeydown=e=>{const value=layoutWidths()[side==="left"?0:1];let next:number;if(e.key==="Home")next=220;else if(e.key==="End")next=640;else if(e.key==="ArrowLeft"||e.key==="ArrowRight")next=value+(e.key==="ArrowRight"?1:-1)*(side==="left"?1:-1)*(e.shiftKey?64:16);else return;e.preventDefault();resize(next);saveLayout(state);};
-  sep.ondblclick=()=>{resize(320);saveLayout(state);};const value=layoutWidths()[side==="left"?0:1];sep.setAttribute("aria-valuemin","220");sep.setAttribute("aria-valuemax","640");sep.setAttribute("aria-valuenow",String(Math.round(value)));return sep;
+  const finish=()=>{if(drag){drag=null;saveLensLayout(state);}};sep.onpointerup=finish;sep.onpointercancel=finish;sep.onlostpointercapture=finish;
+  sep.onkeydown=e=>{const value=layoutWidths()[side==="left"?0:1];let next:number;if(e.key==="Home")next=220;else if(e.key==="End")next=640;else if(e.key==="ArrowLeft"||e.key==="ArrowRight")next=value+(e.key==="ArrowRight"?1:-1)*(side==="left"?1:-1)*(e.shiftKey?64:16);else return;e.preventDefault();resize(next);saveLensLayout(state);};
+  sep.ondblclick=()=>{resize(320);saveLensLayout(state);};const value=layoutWidths()[side==="left"?0:1];sep.setAttribute("aria-valuemin","220");sep.setAttribute("aria-valuemax","640");sep.setAttribute("aria-valuenow",String(Math.round(value)));return sep;
  };
  host.dataset.leftOpen=String(state.ringsOpen);host.dataset.rightOpen=String(state.radarOpen);applyWidths();
  if(viewer){viewer.classList.add("mosaic-viewer");host.append(dock,rings,separator("left",state.ringsOpen),viewer,separator("right",state.radarOpen),radar);}
