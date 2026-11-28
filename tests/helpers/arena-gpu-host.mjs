@@ -9,7 +9,7 @@ export async function testGpuHost(html,Params,clone){
   const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(x=>x[1]);
   const frames=[],buffers=[],writes=[],groups=[],pipes=[],submissions=[],retired=[],events={};let lost;
   const ctx={configure(){},getCurrentTexture(){return{createView(){return{}}}}};
-  const elements=Object.fromEntries(ids.map(id=>[id,{id,style:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},setAttribute(){},getContext(k){return k==='webgpu'?ctx:{clearRect(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},closePath(){},arc(){},fill(){},fillText(){}}}}]));
+  const elements=Object.fromEntries(ids.map(id=>[id,{id,style:{setProperty(){}},dataset:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},setAttribute(){},getContext(k){return k==='webgpu'?ctx:{clearRect(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},closePath(){},arc(){},fill(){},fillText(){},fillRect(){},createRadialGradient(){return {addColorStop(){}}}}}}]));
   const doc={getElementById(id){if(!elements[id])throw Error('missing DOM id '+id);return elements[id]},querySelectorAll(){return Object.values(elements)},body:{classList:{toggle(){}}}};
   const win={innerWidth:960,innerHeight:640,addEventListener(k,fn){events[k]=fn}};
   const noop=()=>{}, makeRender=()=>({setBindGroup:noop,setPipeline:noop,draw:noop,executeBundles:noop,end:noop,finish(){return{}}});
@@ -35,10 +35,10 @@ export async function testGpuHost(html,Params,clone){
   return {...h,frames,buffers,writes,groups,pipes,submissions,retired,events,lost,frame,drain,elements};
  }
  const h=await start('?mode=play&profile=smoke&seed=42');
- assert('initialized',h.experience.phase==='running'&&h.pipes.length===11&&h.frames.length===1,{experience:h.experience,pipes:h.pipes,frames:h.frames.length});
+ assert('initialized',h.experience.phase==='running'&&h.pipes.length===12&&h.frames.length===1,{experience:h.experience,pipes:h.pipes,frames:h.frames.length});
  const e=h.buildEcosystem();
- assert('binding counts',h.groups.length===2&&h.groups[0].length===9&&h.groups[1].length===5);
- assert('ABI buffer sizes',h.buffers[0].size===7200*48*3&&h.buffers[3].size===512*128&&h.buffers[4].size===512*32);
+ assert('binding counts',h.groups.length===2&&h.groups[0].length===9&&h.groups[1].length===6);
+ assert('ABI buffer sizes',h.buffers[0].size===7200*48*3&&h.buffers[3].size===512*128&&h.buffers[4].size===512*32&&h.buffers[6].size===16384*4*5&&h.buffers[7].size===164&&h.buffers[8].size===164);
  assert('template upload',h.writes.some(w=>w.b===h.buffers[0]&&w.o===e.activeNodes*96&&w.len===e.activeNodes*48));
  await h.frame();
  const cmd=h.submissions.at(-1);
