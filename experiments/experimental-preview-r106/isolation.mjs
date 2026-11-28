@@ -10,7 +10,7 @@ assert.equal(source,process.env.EXPECTED_SOURCE);
 const evidence='preview-isolation-evidence';await mkdir(evidence,{recursive:true});
 const root=await mkdtemp(join(tmpdir(),'evoforge-preview-'));
 await cp('dist',join(root,'preview'),{recursive:true});
-await writeFile(join(root,'index.html'),'<!doctype html><title>Production isolation fixture</title><p>Production fixture</p>');
+await writeFile(join(root,'index.html'),'<!doctype html><title>Production isolation fixture</title><link rel="icon" href="data:,"><p>Production fixture</p>');
 const errors=[],httpErrors=[],rows=[],mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.webmanifest':'application/manifest+json','.svg':'image/svg+xml'};
 const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');let path=decodeURIComponent(u.pathname.slice(1));if(!path||path.endsWith('/'))path+='index.html';const target=resolve(root,path);assert.ok(target.startsWith(root+sep));const bytes=await readFile(target);res.writeHead(200,{'content-type':mime[extname(target)]||'application/octet-stream'});res.end(bytes);}catch{if(!res.headersSent)res.writeHead(404);res.end();httpErrors.push(req.url);}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
