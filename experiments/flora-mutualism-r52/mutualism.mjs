@@ -13,7 +13,7 @@ export function run(seed,withAnimals=true,ticks=240,resourcePolicy=null){
   for(const a of w.animals){
    a.energy=Math.max(0,a.energy-.013);a.rest=Math.max(0,a.rest-1);
    // Gut transit and continued movement create dispersal rather than a direct scripted deposit.
-   const eligible=w.plants.filter(p=>p.g.species===(a.role==='pollinator'?'flower-tree':'fruit-tree')&&p.age>=p.g.bloomAge&&p.energy>.2);
+   const eligible=w.plants.filter(p=>(p.g.species===(a.role==='pollinator'?'flower-tree':'fruit-tree')||(resourcePolicy?.generalists&&p.g.species!=='herb'))&&p.age>=p.g.bloomAge&&p.energy>.2);
    const targets=eligible.filter(p=>p.id!==a.last);
    if(!targets.length)continue;
    let p=targets.find(p=>p.id===a.target);

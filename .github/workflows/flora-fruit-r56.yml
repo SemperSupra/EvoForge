@@ -1,0 +1,26 @@
+name: R56 fruit lifecycle and dispersal
+on:
+  push:
+    branches: [rdte/flora-fruit-lifecycle-r56]
+permissions:
+  contents: read
+jobs:
+  fruit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.3'
+          package-manager-cache: false
+      - run: node --test experiments/alife-flora-r51/flora.node-check.mjs experiments/flora-mutualism-r52/mutualism.node-check.mjs experiments/flora-capacity-r53/capacity.node-check.mjs experiments/flora-budget-r55/budget.node-check.mjs experiments/flora-fruit-r56/lifecycle.node-check.mjs
+      - run: node experiments/flora-fruit-r56/produce.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r56-fruit-lifecycle
+          path: fruit-lifecycle-evidence/
+          retention-days: 30

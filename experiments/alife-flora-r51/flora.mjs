@@ -9,21 +9,21 @@ export function createWorld(seed=42){if(!Number.isSafeInteger(seed)||seed<0||see
 function rnd(w){w.seed=(Math.imul(w.seed,1664525)+1013904223)>>>0;return w.seed/4294967296;}
 function record(w,type,data){w.receipts.push({tick:w.tick,type,...data});if(w.receipts.length>256)w.receipts.shift();}
 function position(x,z){if(!valid(x)||!valid(z)||Math.hypot(x,z)>20)throw Error('position');}
-export function plant(w,g,x,z,age=0){position(x,z);if(w.plants.length>=128||!SPECIES.includes(g.species)||!Number.isSafeInteger(age)||age<0||age>10000)throw Error('plant admission');const p={id:w.nextId++,g:{...g},x,z,age,energy:1,pollinated:false,fruit:0};w.plants.push(p);return p;}
+export function plant(w,g,x,z,age=0){position(x,z);if(w.plants.length>=128||!SPECIES.includes(g.species)||!Number.isSafeInteger(age)||age<0||age>10000)throw Error('plant admission');const p={id:w.nextId++,g:{...g},x,z,age,energy:1,pollinated:false,fruit:0,fruitSeeds:[]};w.plants.push(p);return p;}
 export function animal(w,x,z){position(x,z);if(w.animals.length>=64)throw Error('animal capacity');const a={id:w.nextId++,x,z,energy:0,pollen:null,gut:[]};w.animals.push(a);return a;}
 export function visit(w,a,p){if(!w.animals.includes(a)||!w.plants.includes(p)||distance(a,p)>1||p.age<p.g.bloomAge||p.energy<.2)throw Error('visit not admitted');
  if(p.g.species==='flower-tree'||p.g.species==='fruit-tree'){
-  if(a.pollen&&a.pollen.id!==p.id&&a.pollen.g.species===p.g.species&&!p.pollinated){p.pollinated=true;p.mate={...a.pollen.g};record(w,'cross-pollination',{plant:p.id,donor:a.pollen.id,animal:a.id});}
+  if(a.pollen&&a.pollen.id!==p.id&&a.pollen.g.species===p.g.species&&!p.pollinated){p.pollinated=true;p.mate={...a.pollen.g};p.donorId=a.pollen.id;record(w,'cross-pollination',{plant:p.id,donor:a.pollen.id,animal:a.id});}
   a.pollen={id:p.id,g:{...p.g}};a.energy+=p.g.nectar*.1;
  }
- if(p.g.species==='fruit-tree'&&p.fruit>0&&a.gut.length<8){p.fruit--;a.gut.push({g:mutate(p.g,p.mate??p.g,()=>rnd(w)),parent:p.id,due:w.tick+6});a.energy+=p.g.fruit*.25;record(w,'fruit-eaten',{plant:p.id,animal:a.id});}
+ if(p.g.species==='fruit-tree'&&p.fruit>0&&a.gut.length<8){p.fruit--;const stored=p.fruitSeeds.shift();a.gut.push({g:stored?.g??mutate(p.g,p.mate??p.g,()=>rnd(w)),parent:p.id,donor:stored?.donor??p.donorId,due:w.tick+6});a.energy+=p.g.fruit*.25;record(w,'fruit-eaten',{plant:p.id,animal:a.id});}
 }
 export function move(a,x,z){position(x,z);a.x=x;a.z=z;}
 function seed(w,g,x,z,parent,via){if(w.seeds.length>=256)return;w.seeds.push({g,x,z,parent,via,due:w.tick+4});record(w,'seed-deposited',{parent,via,x,z});}
 export function step(w,ticks=1,policy=null){if(!Number.isSafeInteger(ticks)||ticks<0||ticks>300)throw Error('tick budget');for(let i=0;i<ticks;i++){
  w.tick++;
- for(const p of w.plants){p.age++;p.energy=clamp(p.energy+(policy?policy.energyDelta(p):(w.water-.5)*.03-(1-p.g.droughtTolerance)*.004),0,1);
-  if(p.age>=p.g.bloomAge&&p.energy>.25&&p.pollinated&&p.age%8===0&&(!policy?.reproduce||policy.reproduce(p))){if(p.g.species==='fruit-tree'){p.fruit=Math.min(4,p.fruit+1);if(policy?.reproduce)p.pollinated=false;}else if(p.g.species==='flower-tree'){const angle=rnd(w)*Math.PI*2,x=p.x+Math.cos(angle)*1.5,z=p.z+Math.sin(angle)*1.5;if(Math.hypot(x,z)<=20)seed(w,mutate(p.g,p.mate,()=>rnd(w)),x,z,p.id,'wind');p.pollinated=false;}}
+ for(const p of w.plants){p.age++;if(policy?.fallenFruit){while(p.fruitSeeds.length&&w.tick-p.fruitSeeds[0].ripeAt>=policy.fallenFruit){const fruit=p.fruitSeeds.shift();p.fruit--;const angle=rnd(w)*Math.PI*2,x=p.x+Math.cos(angle)*.9,z=p.z+Math.sin(angle)*.9;if(Math.hypot(x,z)<=20)seed(w,fruit.g,x,z,p.id,'fallen-fruit');}}p.energy=clamp(p.energy+(policy?policy.energyDelta(p):(w.water-.5)*.03-(1-p.g.droughtTolerance)*.004),0,1);
+  if(p.age>=p.g.bloomAge&&p.energy>.25&&p.pollinated&&p.age%8===0&&(!policy?.reproduce||policy.reproduce(p))){if(p.g.species==='fruit-tree'){if(p.fruit<4){p.fruit++;p.fruitSeeds.push({g:mutate(p.g,p.mate??p.g,()=>rnd(w)),donor:p.donorId,ripeAt:w.tick});}if(policy?.reproduce)p.pollinated=false;}else if(p.g.species==='flower-tree'){const angle=rnd(w)*Math.PI*2,x=p.x+Math.cos(angle)*1.5,z=p.z+Math.sin(angle)*1.5;if(Math.hypot(x,z)<=20)seed(w,mutate(p.g,p.mate,()=>rnd(w)),x,z,p.id,'wind');p.pollinated=false;}}
   if(p.g.species==='herb'&&p.age>=p.g.bloomAge&&p.age%16===0&&p.energy>.25&&(!policy?.reproduce||policy.reproduce(p))){const x=p.x+(rnd(w)-.5)*3,z=p.z+(rnd(w)-.5)*3;if(Math.hypot(x,z)<=20)seed(w,mutate(p.g,p.g,()=>rnd(w)),x,z,p.id,'self');}
  }
  for(const a of w.animals){const due=a.gut.filter(s=>s.due<=w.tick);a.gut=a.gut.filter(s=>s.due>w.tick);for(const s of due)seed(w,s.g,a.x,a.z,s.parent,'gut');}
