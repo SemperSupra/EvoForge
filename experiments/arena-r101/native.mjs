@@ -21,7 +21,7 @@ try{
   if(touch)await p.locator('#mobile-start-button').click();
   const snap=()=>p.evaluate(()=>window.__ARENA_RPC__.getState());
   const ready=await p.waitForFunction(()=>{const s=window.__ARENA_RPC__?.getState();return s&&(s.phase==='error'||s.telemetry.tick>=15);},null,{timeout:120000});
-  const initial=await snap();assert.notEqual(initial.phase,'error',initial.error);assert.equal(initial.version,'0.1.0-rdte.8');const adapter=await p.evaluate(()=>window.__adapter);assert.equal(adapter.fallback,false);assert.ok(adapter.vendor.toLowerCase().includes('apple'));
+  const initial=await snap();assert.notEqual(initial.phase,'error',initial.error);assert.equal(initial.version,'0.1.0-rdte.9');const adapter=await p.evaluate(()=>window.__adapter);assert.equal(adapter.fallback,false);assert.ok(adapter.vendor.toLowerCase().includes('apple'));
   const pause=value=>p.evaluate(v=>window.__ARENA_RPC__.setPaused(v),value);
   const shot=label=>p.screenshot({path:out+'/'+width+'x'+height+'-'+label+'.png'});
   if(lane==='visual'){
