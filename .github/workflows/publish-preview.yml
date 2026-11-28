@@ -1,0 +1,280 @@
+name: Guarded EvoForge experimental preview publication
+on:
+  push:
+    branches: [gh-pages]
+    paths: ['.github/preview-approvals/r106.json']
+concurrency:
+  group: evoforge-guarded-pages-promotion
+  cancel-in-progress: false
+permissions:
+  contents: read
+  actions: read
+env:
+  PROD_SOURCE: 02d587a0d684fb59af5d097ca6b81dfd5c87bf0a
+  PROD_RUN: '46086500560'
+  PROD_SUBJECT: 41e4c5bc9f658cb4a21a4803412170679146bc6065de75ee7ea77b92a0bd6c82
+  PROD_MANIFEST: bd4a36625418c9efb946f110534ac390593de31ab5fd8832a2cb58b9c32d8e1e
+  PREVIEW_BRANCH: rdte/experimental-preview-r106
+  PREVIEW_PATH: preview/
+  SITE_URL: https://sempersupra.github.io/EvoForge/
+jobs:
+  prepare:
+    if: github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/gh-pages'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+      pages: read
+    outputs:
+      source: ${{ steps.authorize.outputs.source }}
+      run: ${{ steps.authorize.outputs.run }}
+    steps:
+      - name: Verify one exact owner-authorized preview-only receipt
+        id: authorize
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          mkdir evidence
+          gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE_SHA...$GITHUB_SHA" > evidence/approval-diff.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/.github/preview-approvals/r106.json?ref=$GITHUB_SHA" --jq .content | base64 -d > evidence/approval.json
+          python3 - <<'PY'
+          import json,os,re
+          diff=json.load(open('evidence/approval-diff.json'))
+          assert diff['status']=='ahead' and diff['total_commits']==1
+          assert [(f['filename'],f['status']) for f in diff['files']]==[('.github/preview-approvals/r106.json','added')]
+          a=json.load(open('evidence/approval.json'))
+          assert set(a)=={'action','scope','production_source','source','qualified_run','manifest','site_artifact','site_digest','evidence_artifact','evidence_digest'}
+          assert a['action']=='publish-experimental-preview' and a['scope']=='preview/' and a['production_source']==os.environ['PROD_SOURCE']
+          assert re.fullmatch('[a-f0-9]{40}',a['source']) and re.fullmatch('[0-9]+',a['qualified_run'])
+          assert re.fullmatch('[a-f0-9]{64}',a['manifest'])
+          for k in ('site_artifact','evidence_artifact'): assert type(a[k]) is int and a[k]>0
+          for k in ('site_digest','evidence_digest'): assert re.fullmatch('sha256:[a-f0-9]{64}',a[k])
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('source='+a['source']+'\nrun='+a['qualified_run']+'\n')
+          PY
+      - name: Verify immutable qualification and production pins
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: ${{ steps.authorize.outputs.source }}
+          RUN: ${{ steps.authorize.outputs.run }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/release-source" --jq .object.sha)" = "$PROD_SOURCE"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$PREVIEW_BRANCH" --jq .object.sha)" = "$SOURCE"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type)" = workflow
+          for item in "$RUN" "$PROD_RUN"; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$item" > "evidence/run-$item.json"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$item/jobs?per_page=100" > "evidence/jobs-$item.json"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$item/artifacts?per_page=100" > "evidence/artifacts-$item.json"
+          done
+          python3 - <<'PY'
+          import json,os
+          a=json.load(open('evidence/approval.json'))
+          def read(name,run): return json.load(open('evidence/'+name+'-'+run+'.json'))
+          run=a['qualified_run']; r=read('run',run)
+          assert r['head_sha']==a['source'] and r['head_branch']==os.environ['PREVIEW_BRANCH'] and r['head_repository']['full_name']==os.environ['GITHUB_REPOSITORY']
+          assert r['event']=='pull_request' and r['status']=='completed' and r['conclusion']=='success'
+          assert r['path'].split('@')[0]=='.github/workflows/experimental-preview-r106.yml'
+          jobs=read('jobs',run)['jobs']
+          expected={'container','offline','mosaic (ubuntu-24.04, firefox)','mosaic (ubuntu-24.04, webkit)','mosaic (windows-latest, chromium)','native (visual)','native (governor)','native (endurance)'}
+          assert len(jobs)==len(expected) and {j['name'] for j in jobs}==expected and all(j['conclusion']=='success' for j in jobs)
+          artifacts={x['name']:x for x in read('artifacts',run)['artifacts']}
+          for name,ident,digest in [('preview-site',a['site_artifact'],a['site_digest']),('r106-container',a['evidence_artifact'],a['evidence_digest'])]:
+              item=artifacts[name]; assert item['id']==ident and item['digest']==digest and not item['expired']
+          run=os.environ['PROD_RUN']; r=read('run',run)
+          assert r['head_sha']==os.environ['PROD_SOURCE'] and r['head_branch']=='release-source' and r['status']=='completed' and r['conclusion']=='success'
+          jobs=read('jobs',run)['jobs']; assert {j['name'] for j in jobs}=={'build','isolated-browser','metal','provenance'} and all(j['conclusion']=='success' for j in jobs)
+          artifacts={x['name']:x for x in read('artifacts',run)['artifacts']}
+          for name,ident,digest in [('candidate-site',15239546483,'sha256:b961dc53d4b5a358042a98daa61384cdf37f94a925d486d61196293553dfb439'),('signed-release-candidate',15239506884,'sha256:cf41940507a54b96a68771f5e4fc5cca9f1f4c51d564b83b3c913e28a4dcd279')]:
+              item=artifacts[name]; assert item['id']==ident and item['digest']==digest and not item['expired']
+          print('PASS exact preview-only approval, independent qualification and production pins')
+          PY
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.authorize.outputs.source }}
+          path: preview-source
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: candidate-site
+          run-id: '46086500560'
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: site
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: signed-release-candidate
+          run-id: '46086500560'
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: signed
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: preview-site
+          run-id: ${{ steps.authorize.outputs.run }}
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: preview-site
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: r106-container
+          run-id: ${{ steps.authorize.outputs.run }}
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: preview-evidence
+      - name: Verify both sites and current production HTTPS before composition
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: ${{ steps.authorize.outputs.source }}
+        run: |
+          set -euo pipefail
+          test "$(git -C preview-source rev-parse HEAD)" = "$SOURCE"
+          test "$(cat preview-evidence/product-source.txt)" = "$SOURCE"
+          test "$(cat signed/EvoForge/EvoForge/package/source.txt)" = "$PROD_SOURCE"
+          test "$(cat signed/EvoForge/EvoForge/package/run.txt)" = "$PROD_RUN"
+          printf '%s  %s\n' "$PROD_SUBJECT" signed/EvoForge/EvoForge/package/evoforge-site.tar "$PROD_MANIFEST" signed/EvoForge/EvoForge/package/dist-1.sha256 | sha256sum -c -
+          gh attestation verify signed/EvoForge/EvoForge/package/evoforge-site.tar --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/public-qualification.yml" --source-digest "$PROD_SOURCE" --format json > evidence/production-attestation.json
+          cp signed/EvoForge/EvoForge/package/dist-1.sha256 evidence/production.sha256
+          cp preview-evidence/dist-1.sha256 evidence/preview.sha256
+          cmp preview-evidence/dist-1.sha256 preview-evidence/dist-2.sha256
+          printf '%s  %s\n' "$(python3 -c "import json;print(json.load(open('evidence/approval.json'))['manifest'])")" evidence/preview.sha256 | sha256sum -c -
+          node preview-source/scripts/verify-artifact.mjs site evidence/production.sha256
+          node preview-source/scripts/verify-artifact.mjs preview-site evidence/preview.sha256
+          node preview-source/scripts/verify-dist.mjs preview-site
+          python3 - <<'PY'
+          import json,pathlib,hashlib,urllib.request,urllib.parse,os,tarfile
+          def manifest(path): return {line.split('  ',1)[1][2:]:line.split('  ',1)[0] for line in pathlib.Path(path).read_text().splitlines()}
+          prod=manifest('evidence/production.sha256'); preview=manifest('evidence/preview.sha256')
+          assert len(prod)==13 and len(preview)==13
+          assert all(not p.startswith('preview/') for p in prod)
+          assert json.load(open('preview-site/release.json'))['channel']=='experimental-preview'
+          assert json.load(open('preview-site/release.json'))['preview']=='R106'
+          with tarfile.open('signed/EvoForge/EvoForge/package/evoforge-site.tar','r:') as t:
+              found={}
+              for m in t:
+                  path=m.name.removeprefix('./')
+                  if m.isdir(): continue
+                  assert m.isfile() and path in prod and path not in found
+                  found[path]=hashlib.sha256(t.extractfile(m).read()).hexdigest()
+              assert found==prod
+          checks={}
+          for path,expected in prod.items():
+              url=os.environ['SITE_URL']+urllib.parse.quote(path,safe='/')+'?preview-preflight='+os.environ['PROD_SOURCE']
+              with urllib.request.urlopen(urllib.request.Request(url,headers={'Cache-Control':'no-cache'}),timeout=12) as r:
+                  assert r.url.startswith(os.environ['SITE_URL'])
+                  actual=hashlib.sha256(r.read(2*1024*1024+1)).hexdigest()
+              checks[path]={'expected':expected,'actual':actual,'pass':actual==expected}
+          pathlib.Path('evidence/preexisting-production.json').write_text(json.dumps(checks,indent=2))
+          assert all(x['pass'] for x in checks.values()),'Existing production bytes changed; refusing to deploy'
+          print('PASS all 13 current production HTTPS file hashes')
+          PY
+          test ! -e site/preview
+          mv preview-site site/preview
+          { cat evidence/production.sha256; sed 's@  \./@  ./preview/@' evidence/preview.sha256; } | LC_ALL=C sort -k2 > evidence/combined.sha256
+          node preview-source/scripts/verify-artifact.mjs site evidence/combined.sha256
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
+        with:
+          enablement: false
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+        with:
+          path: site
+          name: github-pages
+          retention-days: 1
+      - name: Verify official Pages archive contains only the two exact allowlisted sites
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,tarfile,pathlib,hashlib,json
+          expected={line.split('  ',1)[1][2:]:line.split('  ',1)[0] for line in pathlib.Path('evidence/combined.sha256').read_text().splitlines()}
+          assert len(expected)==26
+          found={}
+          with tarfile.open(pathlib.Path(os.environ['RUNNER_TEMP'])/'artifact.tar','r:') as t:
+              for m in t:
+                  path=m.name.removeprefix('./')
+                  if m.isdir(): continue
+                  assert m.isfile() and path in expected and path not in found
+                  found[path]=hashlib.sha256(t.extractfile(m).read()).hexdigest()
+          assert found==expected
+          pathlib.Path('evidence/package.json').write_text(json.dumps({'files':len(found),'production_files':13,'preview_files':13,'manifest_match':True},indent=2))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: preview-publication-preflight
+          path: evidence/
+          retention-days: 30
+  deploy:
+    needs: prepare
+    if: github.repository == 'SemperSupra/EvoForge' && github.ref == 'refs/heads/gh-pages' && needs.prepare.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Reject production or preview pin drift
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: ${{ needs.prepare.outputs.source }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/release-source" --jq .object.sha)" = "$PROD_SOURCE"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$PREVIEW_BRANCH" --jq .object.sha)" = "$SOURCE"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type)" = workflow
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
+        id: deployment
+  live-acceptance:
+    needs: [prepare, deploy]
+    if: needs.deploy.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: preview-publication-preflight
+          path: evidence
+          digest-mismatch: error
+      - name: Verify unchanged production and every preview file over HTTPS
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          SOURCE: ${{ needs.prepare.outputs.source }}
+        run: |
+          set -euo pipefail
+          mkdir live-evidence
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,hashlib,pathlib,json,time,os
+          base=os.environ['SITE_URL']; assert os.environ['PAGE_URL'].rstrip('/')==base.rstrip('/')
+          expected={line.split('  ',1)[1][2:]:line.split('  ',1)[0] for line in pathlib.Path('evidence/combined.sha256').read_text().splitlines()}
+          assert len(expected)==26
+          for attempt in range(12):
+              results={}
+              for path,digest in expected.items():
+                  url=base+urllib.parse.quote(path,safe='/')+'?preview-qualification='+os.environ['SOURCE']
+                  try:
+                      with urllib.request.urlopen(urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'EvoForge-preview-acceptance'}),timeout=8) as r:
+                          assert r.url.startswith(base)
+                          actual=hashlib.sha256(r.read(2*1024*1024+1)).hexdigest()
+                      results[path]={'expected':digest,'actual':actual,'pass':actual==digest}
+                  except Exception as e: results[path]={'expected':digest,'pass':False,'error':str(e)}
+              if all(v['pass'] for v in results.values()): break
+              time.sleep(10)
+          report={'production_url':base,'preview_url':base+'preview/','preview_source':os.environ['SOURCE'],'production_source':os.environ['PROD_SOURCE'],'production_verified':sum(v['pass'] for k,v in results.items() if not k.startswith('preview/')),'preview_verified':sum(v['pass'] for k,v in results.items() if k.startswith('preview/')),'files':results,'pass':all(v['pass'] for v in results.values())}
+          pathlib.Path('live-evidence/acceptance.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report))
+          assert report['pass'],'Do not claim deployment accepted until all live hashes match'
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: live-preview-acceptance
+          path: live-evidence/
+          retention-days: 30
