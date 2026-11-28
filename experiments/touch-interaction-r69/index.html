@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Touch interaction laboratory</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:16px system-ui,sans-serif;background:#121e24;color:#e9f1f0}button,select{font:inherit;color:inherit;background:#203a44;border:1px solid #8ea9b3;border-radius:9px;min-height:44px;padding:6px 10px}button{min-width:44px}button:focus-visible,select:focus-visible{outline:3px solid #ffdf85;outline-offset:2px}button[aria-pressed=true]{background:#2c826d}button:disabled{opacity:.55}header{padding:max(8px,env(safe-area-inset-top)) 8px 6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}h1{font-size:18px;margin:0 8px 0 0}#stage{height:clamp(240px,64dvh,620px);position:relative;overflow:hidden;isolation:isolate;background:radial-gradient(ellipse at center,#71916e,#263f38 70%,#14252b);border-block:1px solid #8ea9b3}#surface{position:absolute;inset:0;background:radial-gradient(circle at 46% 54%,#698f9d 0 9%,transparent 10%),repeating-radial-gradient(ellipse at center,transparent 0 28px,#ddedb91c 30px 31px)}#surface::after{content:"Illustrative world — no simulation";position:absolute;top:12px;left:50%;transform:translateX(-50%);color:#f4fff8;font-size:13px;white-space:nowrap}#stage .menu{position:absolute;inset:0;pointer-events:none}svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}path{fill:#142832;stroke:#93aeb0;stroke-width:1.3;opacity:.95}.item{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;touch-action:none;min-width:44px;min-height:44px;padding:4px 6px;font-size:13px;white-space:nowrap;background:#142832f2}.item.hot{background:#2c826d}.hub{position:absolute;transform:translate(-50%,-50%);width:56px;height:56px;touch-action:none;pointer-events:auto;border-radius:50%;padding:0;background:#203a44;z-index:2;font-size:13px}.hub.active{outline:3px solid #ffdf85}.item:disabled{opacity:.65}#list{padding:8px;display:flex;gap:6px;flex-wrap:wrap}#list[hidden],.menu[hidden]{display:none}#readout{padding:8px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}#live{min-width:180px;font-size:14px}#target{margin:4px 8px}#target[hidden]{display:none}#help{font-size:13px;margin:4px 8px 8px;color:#c8d8df}#context{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;touch-action:none}#context[hidden]{display:none}label{font-size:14px}
+</style></head><body>
+<header><h1>Touch lab</h1><label>Profile <select id="profile"><option value="auto">Auto</option><option value="portrait">Single radial</option><option value="landscape">Dual arcs</option><option value="list">List</option></select></label><button id="mirror" aria-pressed="false">Mirror</button><button id="mode" aria-pressed="false">Play mode</button></header>
+<main><div id="stage" aria-label="Illustrative arena"><div id="surface"></div><div id="one" class="menu" hidden></div><div id="left" class="menu" hidden></div><div id="right" class="menu" hidden></div><button id="context">Open tools</button></div>
+<div id="list" aria-label="Conventional controls"></div><div id="readout"><span id="live" role="status" aria-live="polite"></span><button id="cancel">Cancel</button><button id="target" hidden>Confirm illustrative target</button></div>
+<p id="help">Tap a visible command or drag from a menu hub and release; return to the hub or release outside to cancel. Escape cancels. All actions are mock commands, not connected to an engine.</p></main>
+<script type="module">
+const $=id=>document.getElementById(id),stage=$('stage');
+const groups={World:['Meteor','Lightning','Warmer','Cooler'],Life:['Flora','Fauna','Species','Inspect'],Camera:['Pan','Orbit','Zoom','Reset view'],Time:['Play','Pause','Faster','Slower']};
+const categories=Object.keys(groups),rad=Math.PI/180;
+const model={category:'World',mode:'play',paused:false,temp:22,view:'Inspect',speed:1,armed:null,confirmed:0,commands:[],surfaceEvents:0,profile:'portrait',mirror:false};
+const mutable=new Set(['Meteor','Lightning','Warmer','Cooler','Faster','Slower']);
+let phase='category',opened=false,anchor=null,active=new Map(),menus=new Map(),resizeQueued=false;
+function dispatch(command){
+ if(categories.includes(command)){model.category=command;phase='action';return true;}
+ if(model.mode==='observe'&&mutable.has(command))return false;
+ if(['Meteor','Lightning'].includes(command))model.armed=command;
+ else if(command==='Warmer')model.temp++;else if(command==='Cooler')model.temp--;
+ else if(command==='Play')model.paused=false;else if(command==='Pause')model.paused=true;
+ else if(command==='Faster')model.speed=Math.min(4,model.speed+1);else if(command==='Slower')model.speed=Math.max(1,model.speed-1);else model.view=command;
+ model.commands.push(command);return true;
+}
+function readout(){ $('live').textContent=(model.mode==='observe'?'Observe':'Play')+' · '+model.category+' · '+model.temp+'° · '+(model.paused?'Paused':'Running')+' · '+(model.armed?'Armed: '+model.armed:model.view);$('target').hidden=!model.armed;$('target').disabled=model.mode==='observe'; }
+function cancelAll(){for(const m of menus.values()){m.hub.classList.remove('active');m.items.forEach(b=>b.classList.remove('hot'));}active.clear();}
+function choose(command,menu){const ok=dispatch(command);if(ok&&model.profile==='portrait'){if(menu.kind==='action'){opened=false;phase='category';}else{opened=true;}} render();}
+function profile(){const v=$('profile').value;return v==='auto'?(innerWidth>innerHeight?'landscape':'portrait'):v;}
+function menuGeometry(kind,side){
+ const w=stage.clientWidth,h=stage.clientHeight;
+ if(side==='one'){const r=Math.max(68,Math.min(94,(Math.min(w,h)-64)/2));const margin=r+30;const raw=anchor??{x:w/2,y:h/2};const clamp=(v,min,max)=>Math.min(Math.max(v,min),max);return {x:clamp(raw.x,margin,Math.max(margin,w-margin)),y:clamp(raw.y,margin,Math.max(margin,h-margin)),r,start:-135,sweep:360};}
+ return {x:side==='left'?32:w-32,y:h-32,r:Math.min(118,h-65,(w-64)/2),start:side==='left'?-90:180,sweep:90};
+}
+function hit(m,x,y){const q=stage.getBoundingClientRect(),dx=x-q.left-m.g.x,dy=y-q.top-m.g.y,d=Math.hypot(dx,dy);if(d<30||d>m.g.r+34)return -1;let a=(Math.atan2(dy,dx)/rad-m.g.start+360)%360;if(a>=m.g.sweep)return -1;return Math.min(m.labels.length-1,Math.floor(a/(m.g.sweep/m.labels.length)));}
+function mkMenu(id,kind,labels){
+ const el=$(id),g=menuGeometry(kind,id),m={id,kind,g,labels,items:[],hub:null};el.hidden=false;el.replaceChildren();
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('aria-hidden','true');svg.setAttribute('viewBox','0 0 '+stage.clientWidth+' '+stage.clientHeight);el.append(svg);
+ const pt=(r,a)=>[g.x+r*Math.cos(a*rad),g.y+r*Math.sin(a*rad)].join(' ');
+ const step=g.sweep/labels.length;
+ labels.forEach((name,i)=>{
+  const a=g.start+i*step,b=a+step,r=g.r+24,q=30;const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d','M'+pt(q,a)+' L'+pt(r,a)+' A'+r+' '+r+' 0 0 1 '+pt(r,b)+' L'+pt(q,b)+' A'+q+' '+q+' 0 0 0 '+pt(q,a)+' Z');svg.append(path);
+  const button=document.createElement('button');button.className='item';button.textContent=name;button.dataset.command=name;button.style.left=g.x+g.r*Math.cos((a+b)/2*rad)+'px';button.style.top=g.y+g.r*Math.sin((a+b)/2*rad)+'px';button.disabled=kind==='action'&&model.mode==='observe'&&mutable.has(name);button.onclick=e=>{e.stopPropagation();if(!active.size)choose(name,m);};el.append(button);m.items.push(button);
+ });
+ const hub=document.createElement('button');hub.className='hub';hub.textContent=kind==='category'?'Tools':model.category;hub.setAttribute('aria-label',kind+' gesture hub');hub.style.left=g.x+'px';hub.style.top=g.y+'px';el.append(hub);m.hub=hub;menus.set(id,m);
+ hub.addEventListener('pointerdown',e=>{if(active.has(e.pointerId)||[...active.values()].some(v=>v.menu===m))return;e.preventDefault();e.stopPropagation();active.set(e.pointerId,{menu:m,index:-1,labels:[...m.labels]});hub.classList.add('active');try{hub.setPointerCapture(e.pointerId)}catch{}});
+ hub.addEventListener('pointermove',e=>{const v=active.get(e.pointerId);if(v?.menu!==m)return;e.preventDefault();e.stopPropagation();v.index=hit(m,e.clientX,e.clientY);m.items.forEach((b,i)=>b.classList.toggle('hot',i===v.index));});
+ function end(e,commit){const v=active.get(e.pointerId);if(v?.menu!==m)return;e.preventDefault();e.stopPropagation();const i=commit?hit(m,e.clientX,e.clientY):-1;active.delete(e.pointerId);hub.classList.remove('active');m.items.forEach(b=>b.classList.remove('hot'));if(i>=0&&!m.items[i].disabled){const cmd=v.labels[i];cancelAll();choose(cmd,m);}}
+ hub.addEventListener('pointerup',e=>end(e,true));hub.addEventListener('pointercancel',e=>end(e,false));hub.addEventListener('lostpointercapture',e=>end(e,false));
+ hub.addEventListener('click',e=>{e.stopPropagation();if(e.detail===0){if(model.profile==='portrait'){phase=phase==='category'?'action':'category';render();}}});
+}
+function render(){
+ cancelAll();menus.clear();model.profile=profile();for(const id of ['one','left','right']){$(id).hidden=true;$(id).replaceChildren();}
+ $('context').hidden=model.profile!=='portrait'||opened;
+ if(model.profile==='portrait'&&opened)mkMenu('one',phase,phase==='category'?categories:groups[model.category]);
+ if(model.profile==='landscape'){mkMenu(model.mirror?'right':'left','category',categories);mkMenu(model.mirror?'left':'right','action',groups[model.category]);}
+ const list=$('list');list.replaceChildren();list.hidden=false;for(const name of [...categories,...groups[model.category]]){const b=document.createElement('button');b.textContent=name;b.dataset.command=name;b.disabled=model.mode==='observe'&&mutable.has(name);b.onclick=()=>{dispatch(name);render();};list.append(b);}readout();
+}
+$('context').onclick=()=>{opened=true;phase='category';anchor=null;render();};
+$('surface').addEventListener('pointerdown',e=>{model.surfaceEvents++;if(model.profile==='portrait'){const r=stage.getBoundingClientRect();anchor={x:e.clientX-r.left,y:e.clientY-r.top};}});
+$('profile').onchange=()=>{opened=false;phase='category';render();};$('mirror').onclick=()=>{model.mirror=!model.mirror;$('mirror').setAttribute('aria-pressed',String(model.mirror));render();};
+$('mode').onclick=()=>{model.mode=model.mode==='play'?'observe':'play';model.armed=null;$('mode').textContent=model.mode==='play'?'Play mode':'Observe mode';$('mode').setAttribute('aria-pressed',String(model.mode==='observe'));render();};
+function cancel(){model.armed=null;opened=false;phase='category';render();} $('cancel').onclick=cancel;document.addEventListener('keydown',e=>{if(e.key==='Escape')cancel();});
+$('target').onclick=()=>{if(model.mode==='play'&&model.armed){model.confirmed++;model.commands.push('Confirm '+model.armed);model.armed=null;render();}};
+addEventListener('resize',()=>{cancelAll();if(!resizeQueued){resizeQueued=true;requestAnimationFrame(()=>{resizeQueued=false;opened=false;phase='category';render();});}});
+window.__TOUCH_LAB__={state:()=>structuredClone(model),geometry:id=>structuredClone(menus.get(id)?.g??null),active:()=>active.size};render();
+</script></body></html>
