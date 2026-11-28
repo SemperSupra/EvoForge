@@ -53,7 +53,7 @@ try{
   const wait=(fn,arg=null)=>p.waitForFunction(fn,arg,{timeout:120000});
   const patch=x=>p.evaluate(x=>window.__ARENA_RPC__.setKnobs(x),x);
   const pause=x=>p.evaluate(x=>window.__ARENA_RPC__.setPaused(x),x);
-  const initial=await snap();assert.equal(initial.version,'0.1.0-rdte.7');assert.equal(await p.evaluate(()=>window.__adapter.fallback),false);
+  const initial=await snap();assert.equal(initial.version,'0.1.0-rdte.8');assert.equal(await p.evaluate(()=>window.__adapter.fallback),false);
   assert.equal(initial.telemetry.aftermath.impactFloraDebited,0);
   if(trial==='dry'){
    await patch({ambientTemp:45,waterLevel:-1.2,tidalAmp:0,airWind:.85,floraRegrow:0});
