@@ -19,12 +19,12 @@ const catalog=JSON.parse(await readFile(join(root,'experiences.json'),'utf8'));
 if(catalog.schemaVersion!==1||catalog.experiences.map(x=>x.id).join(',')!=='mosaic,alife')throw Error('Catalog mismatch');
 const html=await readFile(join(root,'experiences/alife/index.html'),'utf8');
 // Candidate-specific exact identity, not an arbitrary accepted version range.
-const expectedArena='0.1.0-rdte.8';
+const expectedArena='0.1.0-rdte.9';
 const declarations=[...html.matchAll(/const experience = \{ id: 'alife', version: '([^']+)'/g)];
 if(declarations.length!==1||declarations[0][1]!==expectedArena)throw Error('Unexpected arena version: '+(declarations[0]?.[1]??'missing'));
 const sw=await readFile(join(root,'experiences/alife/sw.js'),'utf8');
 const caches=[...sw.matchAll(/const CACHE = PREFIX \+ '([^']+)'/g)];
 if(caches.length!==1||caches[0][1]!==expectedArena)throw Error('Arena cache version mismatch');
 const release=JSON.parse(await readFile(join(root,'release.json'),'utf8'));
-if(release.arenaVersion!==expectedArena||release.channel!=='release-candidate'||release.qualification!=='pending')throw Error('Arena candidate provenance mismatch');
+if(release.arenaVersion!==expectedArena||release.channel!=='experimental-preview'||release.qualification!=='pending')throw Error('Arena candidate provenance mismatch');
 console.log('PASS: '+seen.size+' allowlisted static artifacts; no upstream, tests, DLE or source maps');

@@ -34,7 +34,7 @@ const efPaths={
  volume:'<path d="M3 9h4l5-4v14l-5-4H3ZM16 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
  mute:'<path d="M3 9h4l5-4v14l-5-4H3Zm13 0 5 6m0-6-5 6"/>'
 };
-const efKey="evoforge.appearance.v1";
+const efKey="evoforge.preview.appearance.v1";
 const efCss=`
 :root[data-ef-theme=light]{color-scheme:light;--ef-surface:#f6f8fa;--ef-ink:#18222d;--ef-border:#a8b1bc;--ef-active:#d4e8f5;--ef-accent:#075d9a}
 :root[data-ef-theme=dark]{color-scheme:dark;--ef-surface:#202832;--ef-ink:#f0f4f8;--ef-border:#677888;--ef-active:#284b63;--ef-accent:#9edbff}

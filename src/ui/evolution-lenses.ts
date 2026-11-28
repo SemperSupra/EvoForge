@@ -50,7 +50,7 @@ export function populationProjection(m:Metrics,angleMetric:Metric="brightness",r
 }
 const svgNS="http://www.w3.org/2000/svg";
 function svg(tag:string,attrs:Record<string,string|number>){const n=document.createElementNS(svgNS,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));return n;}
-const panelKey="evoforge:mosaic-lens-layout-v1";
+const panelKey="evoforge:preview:mosaic-lens-layout-v1";
 export function readLensLayout():Partial<LensState>{
  try{const x=JSON.parse(localStorage.getItem(panelKey)||'{}');const size=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)?Math.max(220,Math.min(640,v)):320;
  return {leftWidth:size(x.leftWidth),rightWidth:size(x.rightWidth),combined:x.combined===true,pipelineMode:x.pipelineMode==='live'?'live':'walkthrough',...(typeof x.stageMs==="number"&&Number.isFinite(x.stageMs)?{stageMs:Math.max(250,Math.min(10000,x.stageMs))}:{}),...(typeof x.ringsOpen==='boolean'?{ringsOpen:x.ringsOpen}:{}),...(typeof x.radarOpen==='boolean'?{radarOpen:x.radarOpen}:{})};}catch{return {};}
