@@ -1,0 +1,68 @@
+name: R104 Arena portrait optics and lifecycle legibility
+on:
+  pull_request:
+    branches: [rdte/arena-visual-endurance-r101]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test -- --exclude scripts/wait-for-server.test.mjs
+      - run: node --test scripts/wait-for-server.test.mjs
+      - run: npm run build
+      - run: npm run verify:dist
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [framing, aftermath, visual]
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install chromium
+      - run: npm run build
+      - run: node experiments/arena-r104/favicon.mjs
+        if: matrix.lane == 'framing'
+      - run: node experiments/arena-r104/native.mjs
+        if: matrix.lane == 'framing'
+      - run: node experiments/arena-foundation-r76/native.mjs
+        if: matrix.lane == 'framing'
+      - run: node experiments/arena-aftermath-r78/native.mjs
+        if: matrix.lane == 'aftermath'
+      - run: node experiments/arena-r101/native.mjs visual
+        if: matrix.lane == 'visual'
+      - run: node experiments/arena-strike-r77/native.mjs
+        if: matrix.lane == 'visual'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r104-${{ matrix.lane }}
+          path: |
+            favicon-evidence/
+            arena-r104-evidence/
+            arena-r101-visual/
+            foundation-evidence/
+            strike-recovery-evidence/
+            aftermath-evidence/
+          retention-days: 30
