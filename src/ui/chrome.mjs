@@ -59,7 +59,7 @@ body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sa
 .ef-settings-dialog .ef-symbol{display:inline-flex;color:var(--ef-ink)}
 .ef-settings-dialog button{font:inherit;background:var(--ef-active);color:var(--ef-ink);border:1px solid var(--ef-border);border-radius:7px;min-height:44px;padding:6px 14px}
 .ef-settings-dialog details{margin:8px 0}.ef-settings-dialog summary{cursor:pointer;min-height:36px}
-.ef-tooltip{position:fixed;z-index:9999;padding:6px 9px;border-radius:6px;border:1px solid var(--ef-border);background:var(--ef-surface);color:var(--ef-ink);font:12px/1.35 system-ui,sans-serif;max-width:calc(100vw - 16px);pointer-events:auto;box-shadow:0 4px 12px #0003}
+.ef-tooltip{position:fixed;z-index:9999;padding:6px 9px;border-radius:6px;border:1px solid var(--ef-border);background:var(--ef-surface);color:var(--ef-ink);font:12px/1.35 system-ui,sans-serif;max-width:calc(100vw - 16px);pointer-events:none;box-shadow:0 4px 12px #0003}
 .ef-tooltip[hidden]{display:none}
 .experience-nav.ef-chrome-host{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .launcher-header.ef-chrome-host{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -133,9 +133,9 @@ export function installChrome(host,arena=false){
  const tip=document.createElement('div');tip.className='ef-tooltip';tip.hidden=true;tip.setAttribute('aria-hidden','true');document.body.append(tip);
  let activeTip=null,tipTimer=0;
  function hideTip(){clearTimeout(tipTimer);tip.hidden=true;activeTip=null;}
- function scheduleHide(){clearTimeout(tipTimer);tipTimer=window.setTimeout(()=>{if(activeTip&&(activeTip.matches(':hover')||document.activeElement===activeTip)||tip.matches(':hover'))return;hideTip();},160);}
+ function scheduleHide(){clearTimeout(tipTimer);tipTimer=window.setTimeout(()=>{if(activeTip&&(activeTip.matches(':hover')||document.activeElement===activeTip))return;hideTip();},160);}
  function showTip(target){const b=target instanceof Element?target.closest('.ef-icon'):null;if(!b||b.disabled||!b.dataset.efLabel||dialog.open)return;clearTimeout(tipTimer);activeTip=b;tip.textContent=b.dataset.efLabel;tip.hidden=false;const r=b.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;tip.style.left=Math.max(8,Math.min(innerWidth-w-8,r.left+(r.width-w)/2))+'px';tip.style.top=(r.bottom+h+8<innerHeight?r.bottom+5:Math.max(4,r.top-h-5))+'px';}
- document.addEventListener('focusin',e=>showTip(e.target));document.addEventListener('focusout',scheduleHide);document.addEventListener('pointerover',e=>{if(e.pointerType==='mouse'||e.pointerType==='pen'){if(tip.contains(e.target))clearTimeout(tipTimer);else showTip(e.target);}});document.addEventListener('pointerout',scheduleHide);document.addEventListener('pointerdown',hideTip,true);document.addEventListener('keydown',e=>{if(e.key==='Escape')hideTip();});window.addEventListener('resize',hideTip);document.addEventListener('scroll',hideTip,true);
+ document.addEventListener('focusin',e=>showTip(e.target));document.addEventListener('focusout',scheduleHide);document.addEventListener('pointerover',e=>{if(e.pointerType==='mouse'||e.pointerType==='pen'){showTip(e.target);}});document.addEventListener('pointerout',scheduleHide);document.addEventListener('pointerdown',hideTip,true);document.addEventListener('keydown',e=>{if(e.key==='Escape')hideTip();});window.addEventListener('resize',hideTip);document.addEventListener('scroll',hideTip,true);
  
  if(arena){
   const ids={'btn-pause':['pause','Pause'],'panel-life':['leftPanel','Life panel'],'panel-world':['rightPanel','World panel'],'hud-toggle':['panels','Hide panels'],'cam-orbit':['orbit','Orbit'],'cam-pan':['pan','Pan'],'cam-left':['left','Rotate camera left'],'cam-right':['right','Rotate camera right'],'cam-up':['up','Tilt camera up'],'cam-down':['down','Tilt camera down'],'cam-in':['zoomIn','Zoom in'],'cam-out':['zoomOut','Zoom out'],'cam-top':['top','Top view'],'cam-under':['down','Underside (mythic illustration)'],'cam-home':['reset','Reset view'],'tool-navigate':['cursor','Navigate'],'btn-export-json':['save','Export snapshot'],'btn-audio':['mute','Audio off']};
