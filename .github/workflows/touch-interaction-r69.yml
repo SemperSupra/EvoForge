@@ -1,0 +1,32 @@
+name: touch-interaction-r69 qualification
+on:
+  push:
+    branches: [rdte/touch-interaction-r69]
+permissions:
+  contents: read
+jobs:
+  touch:
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - run: npm run build
+      - run: node experiments/touch-interaction-r69/qualify.mjs ${{ matrix.browser }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r69-touch-${{ matrix.browser }}
+          path: touch-evidence/
+          retention-days: 30
