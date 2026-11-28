@@ -3,7 +3,7 @@ export const EXPERIENCES = [
     "id": "mosaic",
     "title": "Mosaic Atelier",
     "description": "Evolve mosaics through artistic motifs, construction techniques, materials, heraldic composition and favorite ancestry.",
-    "status": "CPU replay candidates · legacy recipes retained · R1 not yet release-qualified",
+    "status": "Browser-based CPU rendering · versioned recipes",
     "actions": [
       {
         "label": "Craft Lab 3.0",

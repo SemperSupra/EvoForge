@@ -2,6 +2,7 @@ import { describe,it,expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { Script } from "node:vm";
 import { EXPERIENCES, resolveExperience } from "../src/experiences";
+import { DEMOS, filterDemos } from "../src/ui/launcher";
 const read = (path:string) => readFileSync(new URL("../"+path,import.meta.url),"utf8");
 describe("multi-experience contract",()=>{
   it("defaults to launcher, preserves Mosaic and golden routes",()=>{
@@ -14,6 +15,13 @@ describe("multi-experience contract",()=>{
   });
   it("keeps machine-readable catalog synchronized",()=>{
     expect(JSON.parse(read("public/experiences.json")).experiences).toEqual(EXPERIENCES);
+  });
+  it("exposes each existing launch action once and filters demos without starting runtimes",()=>{
+    expect(DEMOS.flatMap(d=>d.actions.map(a=>a.href)).sort()).toEqual(EXPERIENCES.flatMap(e=>e.actions.map(a=>a.href)).sort());
+    expect(filterDemos("life","").map(d=>d.id)).toEqual(["arena"]);
+    expect(filterDemos("art","heraldry").map(d=>d.id)).toEqual(["motif"]);
+    expect(filterDemos("all","unmatched-keyword")).toEqual([]);
+    expect(filterDemos("archive","legacy").map(d=>d.id)).toEqual(["legacy"]);
   });
   it("parses shipped JavaScript and constrains GPU bindings",()=>{
     const arena=read("public/experiences/alife/index.html");
