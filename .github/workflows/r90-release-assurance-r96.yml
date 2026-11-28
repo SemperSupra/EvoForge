@@ -31,12 +31,12 @@ jobs:
           for i in 1 2; do
             mkdir "$work/build-$i"
             git archive HEAD | tar -x -C "$work/build-$i"
-            docker run --rm -e CI=1 -v "$work/build-$i:/workspace" evoforge-r96-tooling bash -lc 'set -euo pipefail; npm ci --ignore-scripts --no-audit; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist' 2>&1 | tee "evidence/build-$i.log"
+            docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -e CI=1 -v "$work/build-$i:/workspace" evoforge-r96-tooling bash -lc 'set -euo pipefail; npm ci --ignore-scripts --no-audit; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist' 2>&1 | tee "evidence/build-$i.log"
             (cd "$work/build-$i/dist" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > "evidence/dist-$i.sha256"
           done
           cmp evidence/dist-1.sha256 evidence/dist-2.sha256
           sha256sum evidence/dist-1.sha256 | tee evidence/manifest-observed.sha256
-          docker run --rm -e CI=1 -v "$work/build-1:/workspace" evoforge-r96-tooling bash -lc 'set -euo pipefail; npx playwright install chromium; npm run dev -- --host 127.0.0.1 --port 5173 & pid=$!; trap "kill $pid 2>/dev/null || true" EXIT; node scripts/wait-for-server.mjs http://127.0.0.1:5173/ 60000; npm run golden:test' 2>&1 | tee evidence/golden.log
+          docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -e CI=1 -v "$work/build-1:/workspace" evoforge-r96-tooling bash -lc 'set -euo pipefail; npx playwright install chromium; npm run dev -- --host 127.0.0.1 --port 5173 & pid=$!; trap "kill $pid 2>/dev/null || true" EXIT; node scripts/wait-for-server.mjs http://127.0.0.1:5173/ 60000; npm run golden:test' 2>&1 | tee evidence/golden.log
           printf '%s\n' 'PASS: two identical same-tooling builds and exact canonical goldens; production pin/authorization separate' > evidence/result.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
