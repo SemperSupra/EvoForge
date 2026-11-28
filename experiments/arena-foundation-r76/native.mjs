@@ -36,6 +36,7 @@ try{
   assert.ok(alpha);
   await p.screenshot({path:out+'/under-'+width+'x'+height+'.png'});
   await p.locator('#cam-orbit').click();await move('left');
+  assert.equal(await p.locator('.ef-tooltip').evaluate(e=>getComputedStyle(e).pointerEvents),'none','noninteractive tooltip must never intercept a camera command');
   assert.equal((await snap()).tick,initial.tick);
   await move('home');
   const home=await snap();assert.ok(home.knobs.state.camPitch>0);assert.equal(home.tick,initial.tick);assert.deepEqual(home.interventions,initial.interventions);
