@@ -42,6 +42,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npx playwright install chromium
       - run: npm run build
+      - run: node experiments/arena-r104/favicon.mjs
+        if: matrix.lane == 'framing'
       - run: node experiments/arena-r104/native.mjs
         if: matrix.lane == 'framing'
       - run: node experiments/arena-foundation-r76/native.mjs
@@ -57,6 +59,7 @@ jobs:
         with:
           name: r104-${{ matrix.lane }}
           path: |
+            favicon-evidence/
             arena-r104-evidence/
             arena-r101-visual/
             foundation-evidence/
