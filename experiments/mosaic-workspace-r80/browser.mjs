@@ -23,8 +23,8 @@ try{
   const widened=await left.boundingBox();
   await sep.focus();await sep.press('ArrowLeft');await p.waitForTimeout(250);assert.ok((await left.boundingBox()).width<widened.width);
   await sep.press('End');await p.waitForTimeout(250);await assertLayout();
-  const remembered=(await left.boundingBox()).width;await left.locator('summary').click();assert.equal(await left.getAttribute('open'),null);
-  await left.locator('summary').click();assert.ok(Math.abs((await left.boundingBox()).width-remembered)<4);
+  const remembered=(await left.boundingBox()).width;await left.locator(':scope > summary[data-lens-focus="left-summary"]').click();assert.equal(await left.getAttribute('open'),null);
+  await left.locator(':scope > summary[data-lens-focus="left-summary"]').click();assert.ok(Math.abs((await left.boundingBox()).width-remembered)<4);
   const metrics=()=>map.evaluate(svg=>{const markers=[...svg.querySelectorAll('g[data-candidate-id]')];let overlaps=0;for(let i=0;i<markers.length;i++)for(let j=i+1;j<markers.length;j++){const a=markers[i].getBoundingClientRect(),b=markers[j].getBoundingClientRect();if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1)overlaps++;}return {count:markers.length,unique:new Set(markers.map(e=>e.getAttribute('data-candidate-id'))).size,closePairs:Number(svg.dataset.closePairs),overlaps,width:svg.getBoundingClientRect().width};});
   const separate=await metrics();assert.equal(separate.count,16);assert.equal(separate.unique,16);
   await p.screenshot({path:out+'/'+route+'-separate.png'});
@@ -67,10 +67,10 @@ try{
   assert.equal(await left.getAttribute('open'),null);assert.equal(await right.getAttribute('open'),null);
   await dock.getByRole('button',{name:'Reality Rings',exact:true}).click();assert.ok(await left.isVisible());assert.equal(await right.getAttribute('open'),null);
   await p.screenshot({path:out+'/touch-'+width+'x'+height+'-left.png'});
-  await left.locator('summary').click();
+  await left.locator(':scope > summary[data-lens-focus="left-summary"]').click();
   await dock.getByRole('button',{name:'Population radar',exact:true}).click();assert.ok(await right.isVisible());assert.equal(await left.getAttribute('open'),null);
   await p.screenshot({path:out+'/touch-'+width+'x'+height+'-right.png'});
-  await right.locator('summary').click();assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  await right.locator(':scope > summary[data-lens-focus="right-summary"]').click();assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   rows.push({width,height,compact:true,pass:true});await ctx.close();
  }
 }finally{await writeFile(out+'/results.json',JSON.stringify({source:process.env.GITHUB_SHA,browser:name,scope:'emulated browser viewports; overlap counts use bounding boxes and are not human preference evidence',rows},null,2));await browser?.close();await close();}
