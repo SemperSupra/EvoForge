@@ -1,0 +1,29 @@
+name: R81 matched-width Mosaic overlay bakeoff
+on:
+  pull_request:
+    branches: [rdte/mosaic-lens-workspace-r80]
+permissions:
+  contents: read
+jobs:
+  overlay-bakeoff:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: node experiments/mosaic-overlay-r81/bakeoff.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r81-matched-width-overlay
+          path: overlay-bakeoff-evidence/
+          retention-days: 30
