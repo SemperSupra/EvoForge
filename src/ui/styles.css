@@ -193,3 +193,8 @@ button, select { font: inherit; }
 .generation-history-panel h2,.generation-history-panel p{flex:1 1 100%;margin:0}.generation-history-panel h2{font-size:16px}.generation-history-panel p{font-size:13px;line-height:1.5}
 .generation-history-controls{display:flex;flex-wrap:wrap;gap:6px}.generation-history-panel select{max-width:100%;min-width:0}.generation-history-panel button{min-height:32px}
 @media(max-width:640px),(pointer:coarse){.generation-history-panel{margin:4px 6px;padding:8px}.generation-history-panel button,.generation-history-panel select{min-height:44px;max-width:100%}}
+
+.history-replay-grid{flex:1 1 100%;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr));gap:8px}
+.history-replay-grid figure{margin:0;min-width:0;border:1px solid #8885;border-radius:5px;overflow:hidden}
+.history-replay-grid canvas{display:block;width:100%;height:auto;aspect-ratio:16/9}
+.history-replay-grid figcaption{font:12px/1.4 system-ui,sans-serif;padding:3px 6px;overflow-wrap:anywhere}
