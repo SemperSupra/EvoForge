@@ -116,6 +116,7 @@
     @media(min-width:601px) and (max-width:1199px){body.mobile-panel-left #hud-right,body.mobile-panel-right #hud-left{display:none}body.mobile-panel-left #hud-left,body.mobile-panel-right #hud-right{width:min(65vw,420px);max-height:46dvh;font-size:13px}body.mobile-panel-left #hud-left button,body.mobile-panel-right #hud-right button{min-height:44px;font-size:14px}}
     @media(pointer:coarse){#camera-controls button,#hud-toggle,#experience-toolbar button{min-height:44px;min-width:44px}}
     @media(min-width:1400px){#hud-left,#hud-right{width:clamp(240px,19vw,320px)}}
+    #panel-controls{position:fixed;z-index:22;bottom:8px;left:8px;display:flex;gap:5px;max-width:calc(100vw - 16px)}#panel-controls button{position:static;min-height:36px;font-size:13px;flex:0 0 auto;padding:7px 10px}#panel-controls button[aria-pressed=true],button[aria-pressed=true]{border-color:#9ce5ff;background:#243e4d}body.mobile-panel-left #hud-right,body.mobile-panel-right #hud-left{display:none}#hud-left,#hud-right{font-size:12px}.section-title,.control label,.faction-stat,.faction-name{font-size:12px}.faction-card:focus-visible{outline:2px solid #9ce5ff}#inspection-status{display:block;font-size:12px;margin:6px 0}#strike-panel .section-title{font-size:12px} @media(max-width:1199px),(pointer:coarse){#panel-controls button,#hud-left button,#hud-right button,.faction-card,#hud-left input[type=range],#hud-right input[type=range],#hud-left select{min-height:44px}#camera-controls{bottom:60px;max-width:calc(100vw - 16px);max-height:26dvh;overflow:auto}#hud-left,#hud-right{max-height:42dvh;bottom:auto}body.mobile-panel-left #hud-left,body.mobile-panel-right #hud-right{width:min(calc(100vw - 16px),430px);left:8px;right:auto}#hud-left,#hud-right{backdrop-filter:none}} @media(max-width:640px){#experience-toolbar{height:var(--toolbar-height);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible;gap:3px}#experience-toolbar a,#experience-toolbar button{min-width:0;font-size:12px}#experience-mode{font-size:11px;text-align:center}#camera-controls{bottom:60px}#panel-controls{bottom:5px}} @media(max-height:500px) and (pointer:coarse){:root{--toolbar-height:48px}#experience-toolbar{height:48px;display:flex;flex-wrap:nowrap;font-size:11px}#experience-toolbar a,#experience-toolbar button{min-height:36px}#hud-left,#hud-right{max-height:calc(100dvh - 120px);width:min(42vw,350px)!important}#camera-controls{left:auto;right:8px;transform:none;width:min(48vw,340px);max-height:38dvh}#panel-controls{bottom:4px}}
     #strike-overlay{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:8}#strike-panel{border:1px solid var(--border);border-radius:6px;padding:6px;margin:6px 0}#strike-panel input[type=number]{width:4.6em;max-width:100%}#strike-panel button{min-height:30px}@media(pointer:coarse){#strike-panel button{min-height:44px}}
   </style>
 </head>
@@ -130,7 +131,7 @@
   </nav>
   <section id="mobile-start" hidden aria-labelledby="mobile-start-title" style="position:fixed;z-index:45;inset:0;background:#131c27;padding:24px;overflow:auto;color:white;font-size:16px"><h2 id="mobile-start-title" style="font-size:24px;display:block;margin-bottom:16px">ALife — mobile safe start</h2><p style="line-height:1.6;margin-bottom:20px">The simulation uses WebGPU. Start a reduced-load session only when ready. If your browser reloads or closes, return here instead of restarting automatically.</p><button id="mobile-start-button" style="min-height:48px;font-size:16px;padding:12px;width:100%;margin-bottom:16px">Start reduced-load simulation</button><p id="mobile-start-status" role="status" style="margin-bottom:20px"></p><a href="../../" style="color:#9ce5ff;display:inline-flex;align-items:center;min-height:44px">Return to all experiences</a></section>
   <section id="arena-message" role="status" hidden><p id="arena-error"></p><a href="../../">Return to EvoForge</a></section>
-  <button id="hud-toggle">Toggle HUD (H)</button>
+  <div id="panel-controls" role="group" aria-label="Arena panels"><button id="panel-life">Life</button><button id="panel-world">World</button><button id="hud-toggle">Hide panels</button></div>
   <div id="camera-controls" role="group" aria-label="Arena camera">
     <button id="cam-orbit" aria-pressed="true" title="Drag to rotate the view">Orbit</button>
     <button id="cam-pan" aria-pressed="false" title="Drag to move the view across the world">Pan</button>
@@ -175,49 +176,37 @@
       <span>Carcass: <b id="e-carcass" style="color:#f0b429">--</b></span>
     </div>
 
-    <div class="section-title">6 Morphologies (Click to Tune)</div>
+    <div class="section-title">Creature populations · select to highlight and tune</div>
     <div class="roster-grid">
-      <div class="faction-card selected" id="card-0"><div class="faction-name"><span><span class="dot" style="background:var(--sp0)"></span>Worms</span><span id="gen-0">G1</span></div><div class="faction-stat">Alive: <b id="cnt-0">110</b> | Amphibious</div></div>
-      <div class="faction-card" id="card-1"><div class="faction-name"><span><span class="dot" style="background:var(--sp1)"></span>Urchins</span><span id="gen-1">G1</span></div><div class="faction-stat">Alive: <b id="cnt-1">32</b> | Heavy Sinker</div></div>
-      <div class="faction-card" id="card-2"><div class="faction-name"><span><span class="dot" style="background:var(--sp2)"></span>Centipedes</span><span id="gen-2">G1</span></div><div class="faction-stat">Alive: <b id="cnt-2">28</b> | Climber</div></div>
-      <div class="faction-card" id="card-3"><div class="faction-name"><span><span class="dot" style="background:var(--sp3)"></span>Amoebas</span><span id="gen-3">G1</span></div><div class="faction-stat">Alive: <b id="cnt-3">26</b> | Aquatic</div></div>
-      <div class="faction-card" id="card-4"><div class="faction-name"><span><span class="dot" style="background:var(--sp4)"></span>Anglers</span><span id="gen-4">G1</span></div><div class="faction-stat">Alive: <b id="cnt-4">22</b> | Benthic Lure</div></div>
-      <div class="faction-card" id="card-5"><div class="faction-name"><span><span class="dot" style="background:var(--sp5)"></span>Jellies</span><span id="gen-5">G1</span></div><div class="faction-stat">Alive: <b id="cnt-5">20</b> | Aero/Hydro</div></div>
+      <div class="faction-card" id="card-0" role="button" tabindex="0" aria-pressed="false" aria-label="Worms"><div class="faction-name"><span><span class="dot" style="background:var(--sp0)"></span>Worms</span><span id="gen-0">G1</span></div><div class="faction-stat">Alive: <b id="cnt-0">110</b> | Amphibious</div></div>
+      <div class="faction-card" id="card-1" role="button" tabindex="0" aria-pressed="false" aria-label="Urchins"><div class="faction-name"><span><span class="dot" style="background:var(--sp1)"></span>Urchins</span><span id="gen-1">G1</span></div><div class="faction-stat">Alive: <b id="cnt-1">32</b> | Heavy Sinker</div></div>
+      <div class="faction-card" id="card-2" role="button" tabindex="0" aria-pressed="false" aria-label="Centipedes"><div class="faction-name"><span><span class="dot" style="background:var(--sp2)"></span>Centipedes</span><span id="gen-2">G1</span></div><div class="faction-stat">Alive: <b id="cnt-2">28</b> | Climber</div></div>
+      <div class="faction-card" id="card-3" role="button" tabindex="0" aria-pressed="false" aria-label="Amoebas"><div class="faction-name"><span><span class="dot" style="background:var(--sp3)"></span>Amoebas</span><span id="gen-3">G1</span></div><div class="faction-stat">Alive: <b id="cnt-3">26</b> | Aquatic</div></div>
+      <div class="faction-card" id="card-4" role="button" tabindex="0" aria-pressed="false" aria-label="Anglers"><div class="faction-name"><span><span class="dot" style="background:var(--sp4)"></span>Anglers</span><span id="gen-4">G1</span></div><div class="faction-stat">Alive: <b id="cnt-4">22</b> | Benthic Lure</div></div>
+      <div class="faction-card" id="card-5" role="button" tabindex="0" aria-pressed="false" aria-label="Jellies"><div class="faction-name"><span><span class="dot" style="background:var(--sp5)"></span>Jellies</span><span id="gen-5">G1</span></div><div class="faction-stat">Alive: <b id="cnt-5">20</b> | Aero/Hydro</div></div>
     </div>
 
+    <div class="section-title">Inspect ecosystem</div>
+    <div class="btn-row" role="group" aria-label="Ecosystem highlighting"><button id="inspect-all" aria-pressed="true">All</button><button id="inspect-fauna" aria-pressed="false">Fauna</button><button id="inspect-flora" aria-pressed="false">Flora</button><button id="inspect-carcass" aria-pressed="false">Carcass</button></div>
+    <output id="inspection-status">All life · no highlight</output>
     <div class="section-title" id="species-knob-title">Morphology Knobs: Swarm Worms</div>
-    <div class="control"><label><span>Basal Metabolic Burn</span><span id="lbl-sp-burn">0.35</span></label><input type="range" id="sl-sp-burn" min="0.05" max="1.50" step="0.05" value="0.35" /></div>
-    <div class="control"><label><span>Max Gait / Swim Speed</span><span id="lbl-sp-speed">0.55</span></label><input type="range" id="sl-sp-speed" min="0.10" max="1.20" step="0.05" value="0.55" /></div>
-    <div class="control"><label><span>2-Hop Bending Posture Stiffness</span><span id="lbl-bend">0.25</span></label><input type="range" id="sl-bend" min="0.00" max="0.65" step="0.05" value="0.25" /></div>
-    <div class="control"><label><span>Mitosis Threshold</span><span id="lbl-sp-split">1.80</span></label><input type="range" id="sl-sp-split" min="1.20" max="3.00" step="0.10" value="1.80" /></div>
+    <div class="control"><label for="sl-sp-burn"><span>Basal Metabolic Burn</span><span id="lbl-sp-burn">0.35</span></label><input type="range" aria-label="Basal Metabolic Burn" aria-describedby="lbl-sp-burn" id="sl-sp-burn" min="0.05" max="1.50" step="0.05" value="0.35" /></div>
+    <div class="control"><label for="sl-sp-speed"><span>Max Gait / Swim Speed</span><span id="lbl-sp-speed">0.55</span></label><input type="range" aria-label="Max Gait / Swim Speed" aria-describedby="lbl-sp-speed" id="sl-sp-speed" min="0.10" max="1.20" step="0.05" value="0.55" /></div>
+    <div class="control"><label for="sl-bend"><span>2-Hop Bending Posture Stiffness</span><span id="lbl-bend">0.25</span></label><input type="range" aria-label="2-Hop Bending Posture Stiffness" aria-describedby="lbl-bend" id="sl-bend" min="0.00" max="0.65" step="0.05" value="0.25" /></div>
+    <div class="control"><label for="sl-sp-split"><span>Mitosis Threshold</span><span id="lbl-sp-split">1.80</span></label><input type="range" aria-label="Mitosis Threshold" aria-describedby="lbl-sp-split" id="sl-sp-split" min="1.20" max="3.00" step="0.10" value="1.80" /></div>
 
-    <div class="section-title"><span>Autotelic Director & Surprises</span><span class="badge agent" id="director-badge">ADVISORY</span></div>
+    <div class="section-title"><span>Ecosystem director</span><span class="badge agent" id="director-badge">ADVISORY</span></div>
     <div class="director-box">
       <div style="color:#d2a8ff; margin-bottom:3px;" id="director-advice">Monitoring multiphase niches & thermal gradients...</div>
       <div class="btn-row">
         <button id="btn-apply-rec">Apply</button>
         <button id="btn-auto-director">Auto: OFF</button>
         <button id="btn-auto-chaos">Surprises: OFF</button>
+      </div>
+      <div class="section-title">Soundscape</div>
         <button id="btn-audio" aria-pressed="false">Audio: OFF</button>
-      </div>
-      <div id="strike-panel" aria-label="Environmental interventions">
-        <div class="section-title">Environmental interventions · experimental</div>
-        <div class="btn-row"><button id="strike-meteor" aria-pressed="true">Meteor</button><button id="strike-lightning" aria-pressed="false">Lightning</button><button id="strike-cancel">Cancel meteor</button></div>
-        <label><input type="checkbox" id="strike-mineral" checked> Mineral-bearing impact</label>
-        <div class="btn-row"><label>X <input id="strike-x" type="number" value="3" step=".1"></label><label>Z <input id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Strike target</button></div>
-        <div id="strike-status" role="status">Select a tool and tap terrain, or enter coordinates.</div>
-      </div>
       <div id="audio-status">Ecology soundscape: off</div>
       <label>Sound level <select id="audio-level" aria-label="Sound level"><option value="0.10">Quiet</option><option value="0.20" selected>Normal</option><option value="0.32">Higher</option></select></label>
-      <div id="audio-status">Ecology soundscape: off</div>
-      <label>Sound level <select id="audio-level" aria-label="Sound level"><option value="0.10">Quiet</option><option value="0.20" selected>Normal</option><option value="0.32">Higher</option></select></label>
-      <div class="btn-row">
-        <button class="surprise" id="surp-bloom">Bloom</button>
-        <button class="surprise" id="surp-drought">Drought</button>
-        <button class="surprise" id="surp-meteor">Meteor targeting</button>
-        <button class="surprise" id="surp-heatwave">Heatwave</button>
-        <button class="surprise" id="surp-lowg">Low-G Tide</button>
-      </div>
       <div class="event-log" id="event-log">v7: 7 Parametric Arena Families + Land/Water/Air + Temp/Gravity + Autotomy.</div>
     </div>
   </div>
@@ -236,26 +225,41 @@
       <button id="fam-6">7.Ringworld</button>
     </div>
 
-    <div class="section-title">Land, Water, Air, Temperature & Gravity</div>
-    <div class="control"><label><span>Water Level (Sea Table)</span><span id="lbl-water">-0.15</span></label><input type="range" id="sl-water" min="-1.20" max="1.60" step="0.05" value="-0.15" /></div>
-    <div class="control"><label><span>Tidal Amplitude</span><span id="lbl-tide">0.25</span></label><input type="range" id="sl-tide" min="0.00" max="0.90" step="0.05" value="0.25" /></div>
-    <div class="control"><label><span>Water Viscosity & Current</span><span id="lbl-visc">0.22</span></label><input type="range" id="sl-visc" min="0.02" max="0.60" step="0.02" value="0.22" /></div>
-    <div class="control"><label><span>Air Wind & Thermal Updrafts</span><span id="lbl-wind">0.30</span></label><input type="range" id="sl-wind" min="0.00" max="1.00" step="0.05" value="0.30" /></div>
-    <div class="control"><label><span>Ambient Temperature (°C)</span><span id="lbl-temp">22.0</span></label><input type="range" id="sl-temp" min="0.0" max="45.0" step="1.0" value="22.0" /></div>
-    <div class="control"><label><span>Gravity Scale (G)</span><span id="lbl-grav">1.00</span></label><input type="range" id="sl-grav" min="0.20" max="2.00" step="0.05" value="1.00" /></div>
+    <div class="section-title">Environmental interventions</div>
+      <div id="strike-panel" aria-label="Environmental interventions">
+        <div class="section-title">Environmental interventions · experimental</div>
+        <div class="btn-row"><button id="strike-meteor" aria-pressed="true">Meteor</button><button id="strike-lightning" aria-pressed="false">Lightning</button><button id="strike-cancel">Cancel meteor</button></div>
+        <label><input type="checkbox" id="strike-mineral" checked> Mineral-bearing impact</label>
+        <div class="btn-row"><label>X <input id="strike-x" type="number" value="3" step=".1"></label><label>Z <input id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Strike target</button></div>
+        <div id="strike-status" role="status">Select a tool and tap terrain, or enter coordinates.</div>
+      </div>
+      <div class="btn-row">
+        <button class="surprise" id="surp-bloom">Bloom</button>
+        <button class="surprise" id="surp-drought">Drought</button>
+        <button class="surprise" id="surp-meteor">Meteor targeting</button>
+        <button class="surprise" id="surp-heatwave">Heatwave</button>
+        <button class="surprise" id="surp-lowg">Low-G Tide</button>
+      </div>
+    <div class="section-title">Land, water, air, temperature & gravity</div>
+    <div class="control"><label for="sl-water"><span>Water Level (Sea Table)</span><span id="lbl-water">-0.15</span></label><input type="range" aria-label="Water Level (Sea Table)" aria-describedby="lbl-water" id="sl-water" min="-1.20" max="1.60" step="0.05" value="-0.15" /></div>
+    <div class="control"><label for="sl-tide"><span>Tidal Amplitude</span><span id="lbl-tide">0.25</span></label><input type="range" aria-label="Tidal Amplitude" aria-describedby="lbl-tide" id="sl-tide" min="0.00" max="0.90" step="0.05" value="0.25" /></div>
+    <div class="control"><label for="sl-visc"><span>Water Viscosity & Current</span><span id="lbl-visc">0.22</span></label><input type="range" aria-label="Water Viscosity & Current" aria-describedby="lbl-visc" id="sl-visc" min="0.02" max="0.60" step="0.02" value="0.22" /></div>
+    <div class="control"><label for="sl-wind"><span>Air Wind & Thermal Updrafts</span><span id="lbl-wind">0.30</span></label><input type="range" aria-label="Air Wind & Thermal Updrafts" aria-describedby="lbl-wind" id="sl-wind" min="0.00" max="1.00" step="0.05" value="0.30" /></div>
+    <div class="control"><label for="sl-temp"><span>Ambient Temperature (°C)</span><span id="lbl-temp">22.0</span></label><input type="range" aria-label="Ambient Temperature (°C)" aria-describedby="lbl-temp" id="sl-temp" min="0.0" max="45.0" step="1.0" value="22.0" /></div>
+    <div class="control"><label for="sl-grav"><span>Gravity Scale (G)</span><span id="lbl-grav">1.00</span></label><input type="range" aria-label="Gravity Scale (G)" aria-describedby="lbl-grav" id="sl-grav" min="0.20" max="2.00" step="0.05" value="1.00" /></div>
 
     <div class="section-title">CSG Topology & Genetic Knobs</div>
-    <div class="control"><label><span>Arena Radius (R)</span><span id="lbl-radius">9.5</span></label><input type="range" id="sl-radius" min="6.5" max="20.0" step="0.5" value="9.5" /></div>
-    <div class="control"><label><span>Radial Symmetry / Pillars (N)</span><span id="lbl-pillars">5</span></label><input type="range" id="sl-pillars" min="0" max="12" step="1" value="5" /></div>
-    <div class="control"><label><span>Relief / Slope / Terrace Height</span><span id="lbl-bowl">0.35</span></label><input type="range" id="sl-bowl" min="-0.75" max="0.95" step="0.05" value="0.35" /></div>
-    <div class="control"><label><span>Flora Regrowth (Solar Input)</span><span id="lbl-regrow">0.52</span></label><input type="range" id="sl-regrow" min="0.00" max="1.50" step="0.05" value="0.52" /></div>
-    <div class="control"><label><span>Heritable Mutation Rate (σ)</span><span id="lbl-mut">0.12</span></label><input type="range" id="sl-mut" min="0.00" max="0.40" step="0.01" value="0.12" /></div>
-    <div class="control"><label><span>Dynamic Kin Bond Rate</span><span id="lbl-bond">0.55</span></label><input type="range" id="sl-bond" min="0.00" max="1.00" step="0.05" value="0.55" /></div>
+    <div class="control"><label for="sl-radius"><span>Arena Radius (R)</span><span id="lbl-radius">9.5</span></label><input type="range" aria-label="Arena Radius (R)" aria-describedby="lbl-radius" id="sl-radius" min="6.5" max="20.0" step="0.5" value="9.5" /></div>
+    <div class="control"><label for="sl-pillars"><span>Radial Symmetry / Pillars (N)</span><span id="lbl-pillars">5</span></label><input type="range" aria-label="Radial Symmetry / Pillars (N)" aria-describedby="lbl-pillars" id="sl-pillars" min="0" max="12" step="1" value="5" /></div>
+    <div class="control"><label for="sl-bowl"><span>Relief / Slope / Terrace Height</span><span id="lbl-bowl">0.35</span></label><input type="range" aria-label="Relief / Slope / Terrace Height" aria-describedby="lbl-bowl" id="sl-bowl" min="-0.75" max="0.95" step="0.05" value="0.35" /></div>
+    <div class="control"><label for="sl-regrow"><span>Flora Regrowth (Solar Input)</span><span id="lbl-regrow">0.52</span></label><input type="range" aria-label="Flora Regrowth (Solar Input)" aria-describedby="lbl-regrow" id="sl-regrow" min="0.00" max="1.50" step="0.05" value="0.52" /></div>
+    <div class="control"><label for="sl-mut"><span>Heritable Mutation Rate (σ)</span><span id="lbl-mut">0.12</span></label><input type="range" aria-label="Heritable Mutation Rate (σ)" aria-describedby="lbl-mut" id="sl-mut" min="0.00" max="0.40" step="0.01" value="0.12" /></div>
+    <div class="control"><label for="sl-bond"><span>Dynamic Kin Bond Rate</span><span id="lbl-bond">0.55</span></label><input type="range" aria-label="Dynamic Kin Bond Rate" aria-describedby="lbl-bond" id="sl-bond" min="0.00" max="1.00" step="0.05" value="0.55" /></div>
 
     <div class="btn-row">
-      <button id="mode-species" class="active">Species</button>
-      <button id="mode-guild">Guilds</button>
-      <button id="mode-temp">Temp/Water</button>
+      <button id="mode-species" class="active" aria-pressed="true">Species</button>
+      <button id="mode-guild" aria-pressed="false">Guilds</button>
+      <button id="mode-temp" aria-pressed="false">Temp/Water</button>
       <button id="btn-export-json">Snapshot</button>
       <button id="btn-respawn">Reset</button>
     </div>
@@ -294,17 +298,17 @@ function failArena(message) {
 window.addEventListener('error', e => { if (!stopped) failArena(e.message || 'Arena runtime error'); });
 window.addEventListener('unhandledrejection', e => { if (!stopped) failArena(e.reason?.message || 'Arena initialization failed'); });
 
-const mobileBudget=(window.matchMedia?.('(pointer: coarse) and (max-width: 900px)')?.matches??false) || /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1) || launchQuery.get('profile')==='mobile';
+const mobileBudget=(window.matchMedia?.('(pointer: coarse)')?.matches??false) || /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1) || launchQuery.get('profile')==='mobile';
 const arenaProfile=(()=>{
  const w=window.innerWidth||1440,small=launchQuery.get('profile')==='smoke',touch=mobileBudget;
  if(small)return {name:'smoke',counts:[6,2,2,2,2,2],radius:9.5,reserve:12,hz:60,dpr:2};
- if(touch&&w<640)return {name:'phone',counts:[12,4,4,4,4,4],radius:8,reserve:12,hz:24,dpr:1};
+ if(touch&&Math.min(w,window.innerHeight||w)<640)return {name:'phone',counts:[12,4,4,4,4,4],radius:8,reserve:12,hz:24,dpr:1};
  if(touch)return {name:'tablet',counts:[22,9,9,8,7,7],radius:12,reserve:18,hz:30,dpr:1.25};
  if(w<1400)return {name:'laptop',counts:[36,15,14,13,12,10],radius:14,reserve:24,hz:45,dpr:1.5};
  return {name:'desktop',counts:[50,23,22,19,16,14],radius:17,reserve:36,hz:60,dpr:2};
 })();
 const MAX_NODES = 7200; // retain shader ABI; bound active population and render area instead
-if(mobileBudget){document.body.classList.add('hud-hidden','mobile-panel-left');document.getElementById('hud-toggle').textContent='Panels';}
+if(mobileBudget){document.body.classList.add('hud-hidden','mobile-panel-left');document.getElementById('hud-toggle').textContent='Show panels';}
 const MAX_CREATURES = 512;
 const HASH_BUCKETS = 16384;
 const GRID_DIM = 128;
@@ -325,6 +329,8 @@ const speciesConfig = [
 
 const state = {
   selectedSpecies: 0,
+  inspectKind:9, // 0..5 species; 6 carcass; 7 flora; 8 fauna; 9 all
+  targetHz:arenaProfile.hz, renderDpr:arenaProfile.dpr, panel:mobileBudget?'none':'both',
   popCounts: arenaProfile.counts.slice(),
   arenaFamily: 0, // 0:Pillars, 1:Atolls, 2:Estuary, 3:Volcano, 4:Karst, 5:Ziggurat, 6:Ringworld
   renderMode: 0,  // 0:Species, 1:Guilds, 2:Temp/Water
@@ -1582,6 +1588,12 @@ fn baseTerrainHeight(xz: vec2<f32>) -> f32 {
 
 fn terrainHeight(xz:vec2<f32>)->f32{return baseTerrainHeight(xz)+craterOffset(xz,cam.craters);}
 
+fn inspectColor(col:vec3<f32>,sp:u32)->vec3<f32>{
+ let kind=u32(cam.targetPos.w);
+ if(kind==9u){return col;}
+ if(kind==sp||(kind==8u&&sp<6u)){return mix(col,vec3<f32>(0.95,0.82,0.38),0.38)+vec3<f32>(0.12);}
+ let gray=dot(col,vec3<f32>(0.2126,0.7152,0.0722));return mix(col,vec3<f32>(gray),0.75)*0.32;
+}
 fn speciesColor(sp: u32, lid: u32, cid: u32) -> vec3<f32> {
   if (cam.renderMode == 1u) {
     let d = genomes[cid].diet;
@@ -1645,7 +1657,7 @@ fn fsLink(in: VSOut)->@location(0) vec4<f32>{
   let shade=0.45+0.55*sqrt(max(0.0,1.0-edge*edge));
   var col=in.color*shade;
   if(cam.renderMode==0u){let lum=dot(col,vec3<f32>(0.2126,0.7152,0.0722));col=mix(vec3<f32>(lum*0.95,lum*0.90,lum*0.82),col,0.44);}
-  return vec4<f32>(col,1.0);
+  col=inspectColor(col,in.species);return vec4<f32>(col,1.0);
 }
 @vertex
 fn vsNode(@builtin(vertex_index) vIdx:u32,@builtin(instance_index) iIdx:u32)->VSOut{
@@ -1697,7 +1709,7 @@ fn fsNode(in:VSOut)->@location(0) vec4<f32>{
   if(in.species==0u){color*=0.84+0.16*cos(uv.x*15.0);}
   if(in.species==1u){color*=0.76+0.24*abs(cos(angle*6.0));}
   if(in.species==5u){color*=0.83+0.17*cos(angle*6.0);}
-  return vec4<f32>(color,1.0);
+  color=inspectColor(color,in.species);return vec4<f32>(color,1.0);
 }
 
 @vertex
@@ -1778,6 +1790,7 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4<f32> {
   if (cam.arena.lavaRadius > 0.05 && r < cam.arena.lavaRadius) {
     col = vec3<f32>(1.0, 0.28, 0.06) * (0.8 + 0.2 * sin(simT * 4.0 + r * 5.0));
   }
+  let kind=u32(cam.targetPos.w);if(kind==7u){col=mix(col*.24,vec3<f32>(0.35,0.95,0.25),clamp(flora,0.0,1.0));}else if(kind!=9u){col*=0.55;}
   return vec4<f32>(col, 1.0);
 }
 `;
@@ -1959,14 +1972,16 @@ function syncSpeciesSliders() {
 }
 syncSpeciesSliders();
 
-[0, 1, 2, 3, 4, 5].forEach(sp => {
-  document.getElementById('card-' + sp).addEventListener('click', () => {
-    state.selectedSpecies = sp;
-    [0, 1, 2, 3, 4, 5].forEach(k => document.getElementById('card-' + k).classList.remove('selected'));
-    document.getElementById('card-' + sp).classList.add('selected');
-    syncSpeciesSliders();
-  });
-});
+function inspect(kind){
+ if(!Number.isInteger(kind)||kind<0||kind>9)throw Error('Invalid inspection category');
+ state.inspectKind=kind;viewDirty=true;
+ if(kind<6){state.selectedSpecies=kind;syncSpeciesSliders();}
+ for(let k=0;k<6;k++){const b=document.getElementById('card-'+k);b.setAttribute('aria-pressed',String(kind===k));b.classList.toggle('selected',kind===k);}
+ for(const [name,k] of Object.entries({all:9,fauna:8,flora:7,carcass:6})){document.getElementById('inspect-'+name).setAttribute('aria-pressed',String(kind===k));}
+ document.getElementById('inspection-status').textContent=kind<6?SPECIES_NAMES[kind]+' highlighted':({6:'Carcass highlighted',7:'Flora biomass highlighted',8:'Living fauna highlighted',9:'All life · no highlight'})[kind];
+}
+for(let sp=0;sp<6;sp++){const b=document.getElementById('card-'+sp);b.addEventListener('click',()=>inspect(state.inspectKind===sp?9:sp));b.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();inspect(state.inspectKind===sp?9:sp);}});}
+for(const [name,k] of Object.entries({all:9,fauna:8,flora:7,carcass:6}))document.getElementById('inspect-'+name).addEventListener('click',()=>inspect(k));
 
 function syncSliders() {
   const map = [
@@ -2087,13 +2102,15 @@ document.getElementById('btn-apply-rec').addEventListener('click', () => { if (t
 document.getElementById('btn-auto-director').addEventListener('click', e => { state.autoDirector = !state.autoDirector; e.target.textContent = `Auto: ${state.autoDirector ? 'ON' : 'OFF'}`; e.target.classList.toggle('active', state.autoDirector); });
 document.getElementById('btn-auto-chaos').addEventListener('click', e => { state.autoSurprises = !state.autoSurprises; e.target.textContent = `Surprises: ${state.autoSurprises ? 'ON' : 'OFF'}`; e.target.classList.toggle('active', state.autoSurprises); });
 document.getElementById('btn-export-json').addEventListener('click', () => { navigator.clipboard?.writeText(JSON.stringify(window.__ARENA_RPC__.getState(), null, 2)); logEvent('Copied v7 snapshot JSON.'); });
-document.getElementById('hud-toggle').addEventListener('click', () => {
-  const b=document.body;
-  if(!mobileBudget){b.classList.toggle('hud-hidden');return;}
-  if(b.classList.contains('hud-hidden')){b.classList.remove('hud-hidden','mobile-panel-right');b.classList.add('mobile-panel-left');}
-  else if(b.classList.contains('mobile-panel-left')){b.classList.remove('mobile-panel-left');b.classList.add('mobile-panel-right');}
-  else{b.classList.add('hud-hidden');}
-});
+function showPanel(panel){
+ const b=document.body.classList;b.remove('hud-hidden','mobile-panel-left','mobile-panel-right');
+ if(panel==='none')b.add('hud-hidden');else if(panel==='life')b.add('mobile-panel-left');else if(panel==='world')b.add('mobile-panel-right');
+ document.getElementById('panel-life').setAttribute('aria-pressed',String(panel==='life'));document.getElementById('panel-world').setAttribute('aria-pressed',String(panel==='world'));
+ document.getElementById('hud-toggle').textContent=panel==='none'?'Show panels':'Hide panels';state.panel=panel;
+}
+document.getElementById('panel-life').addEventListener('click',()=>showPanel('life'));
+document.getElementById('panel-world').addEventListener('click',()=>showPanel('world'));
+document.getElementById('hud-toggle').addEventListener('click',()=>showPanel(state.panel==='none'?(mobileBudget?'life':'both'):'none'));
 
 window.__ARENA_RPC__ = Object.freeze({
   getState: () => structuredClone({ ...experience, tick: state.simTick, telemetry: telemetry.latest, knobs: { state, speciesConfig }, interventions:interventionModel.snapshot(strikeWorld) }),
@@ -2251,7 +2268,7 @@ async function init() {
     const stepping = !paused;
     viewDirty = false;
     if (stepping) {
-    const rawDt = Math.min(now - lastTime, 33.3);
+    const rawDt = Math.max(1,now-lastTime);
     lastTime = now;
     smoothDt = smoothDt * 0.9 + rawDt * 0.1;
     state.simTick++;
@@ -2263,7 +2280,7 @@ async function init() {
       triggerSurprise(pool[Math.floor(seededRandom() * pool.length)]);
     }
 
-    document.getElementById('perf-line').textContent = `${eco.activeNodes.toLocaleString()} Nodes | ${Math.round(1000 / smoothDt)} FPS`;
+    document.getElementById('perf-line').textContent = `${eco.activeNodes.toLocaleString()} Nodes | ${Math.round(1000 / smoothDt)} FPS · ${state.deviceProfile} / ${state.targetHz} Hz`;
     document.getElementById('env-telemetry').textContent = `T_amb: ${state.ambientTemp.toFixed(0)}°C | g: ${state.gravityScale.toFixed(2)}G`;
 
     const simBuf = new ArrayBuffer(608);
@@ -2294,7 +2311,7 @@ async function init() {
     const cf32 = new Float32Array(camBuf), cu32 = new Uint32Array(camBuf);
     cf32.set(viewProj, 0);
     cf32[16] = eye[0]; cf32[17] = eye[1]; cf32[18] = eye[2]; cf32[19] = 1.0;
-    cf32[20] = state.targetX; cf32[21] = 0.4; cf32[22] = state.targetZ; cf32[23] = 1.0;
+    cf32[20] = state.targetX; cf32[21] = 0.4; cf32[22] = state.targetZ; cf32[23] = state.inspectKind;
     cu32[24] = state.renderMode; cu32[25] = eco.activeNodes; cu32[26] = state.simTick; cu32[27] = state.seed;
     cf32[28] = state.arenaRadius; cf32[29] = state.pillarCount; cf32[30] = state.pillarRadius; cf32[31] = state.smoothMinK;
     cf32[32] = state.bowlSlope; cf32[33] = state.lavaRadius; cf32[34] = state.crusherSpeed; cf32[35] = state.surfaceGrip;
@@ -2487,6 +2504,7 @@ updateCamera();
     state.renderMode = idx; viewDirty=true;
     ['mode-species', 'mode-guild', 'mode-temp'].forEach(k => document.getElementById(k).classList.remove('active'));
     document.getElementById(id).classList.add('active');
+    for(const k of ['mode-species','mode-guild','mode-temp'])document.getElementById(k).setAttribute('aria-pressed',String(k===id));
   });
 });
 
