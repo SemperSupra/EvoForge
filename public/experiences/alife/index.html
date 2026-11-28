@@ -116,6 +116,7 @@
     @media(min-width:601px) and (max-width:1199px){body.mobile-panel-left #hud-right,body.mobile-panel-right #hud-left{display:none}body.mobile-panel-left #hud-left,body.mobile-panel-right #hud-right{width:min(65vw,420px);max-height:46dvh;font-size:13px}body.mobile-panel-left #hud-left button,body.mobile-panel-right #hud-right button{min-height:44px;font-size:14px}}
     @media(pointer:coarse){#camera-controls button,#hud-toggle,#experience-toolbar button{min-height:44px;min-width:44px}}
     @media(min-width:1400px){#hud-left,#hud-right{width:clamp(240px,19vw,320px)}}
+    #budget-status{display:block;margin:4px 0}#performance-mode{min-height:36px;max-width:100%;color:var(--text);background:var(--panel)} @media(pointer:coarse){#performance-mode{min-height:44px}}
     #panel-controls{position:fixed;z-index:22;bottom:8px;left:8px;display:flex;gap:5px;max-width:calc(100vw - 16px)}#panel-controls button{position:static;min-height:36px;font-size:13px;flex:0 0 auto;padding:7px 10px}#panel-controls button[aria-pressed=true],button[aria-pressed=true]{border-color:#9ce5ff;background:#243e4d}body.mobile-panel-left #hud-right,body.mobile-panel-right #hud-left{display:none}#hud-left,#hud-right{font-size:12px}.section-title,.control label,.faction-stat,.faction-name{font-size:12px}.faction-card:focus-visible{outline:2px solid #9ce5ff}#inspection-status{display:block;font-size:12px;margin:6px 0}#strike-panel .section-title{font-size:12px} @media(max-width:1199px),(pointer:coarse){#panel-controls button,#hud-left button,#hud-right button,.faction-card,#hud-left input[type=range],#hud-right input[type=range],#hud-left select{min-height:44px}#camera-controls{bottom:60px;max-width:calc(100vw - 16px);max-height:26dvh;overflow:auto}#hud-left,#hud-right{max-height:42dvh;bottom:auto}body.mobile-panel-left #hud-left,body.mobile-panel-right #hud-right{width:min(calc(100vw - 16px),430px);left:8px;right:auto}#hud-left,#hud-right{backdrop-filter:none}} @media(max-width:640px){#experience-toolbar{height:var(--toolbar-height);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible;gap:3px}#experience-toolbar a,#experience-toolbar button{min-width:0;font-size:12px}#experience-mode{font-size:11px;text-align:center}#camera-controls{bottom:60px}#panel-controls{bottom:5px}} @media(max-height:500px) and (pointer:coarse){:root{--toolbar-height:48px}#experience-toolbar{height:48px;display:flex;flex-wrap:nowrap;font-size:11px}#experience-toolbar a,#experience-toolbar button{min-height:36px}#hud-left,#hud-right{max-height:calc(100dvh - 120px);width:min(42vw,350px)!important}#camera-controls{left:auto;right:8px;transform:none;width:min(48vw,340px);max-height:38dvh}#panel-controls{bottom:4px}}
     #strike-overlay{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:8}#strike-panel{border:1px solid var(--border);border-radius:6px;padding:6px;margin:6px 0}#strike-panel input[type=number]{width:4.6em;max-width:100%}#strike-panel button{min-height:30px}@media(pointer:coarse){#strike-panel button{min-height:44px}}
   </style>
@@ -189,10 +190,14 @@
     <div class="section-title">Inspect ecosystem</div>
     <div class="btn-row" role="group" aria-label="Ecosystem highlighting"><button id="inspect-all" aria-pressed="true">All</button><button id="inspect-fauna" aria-pressed="false">Fauna</button><button id="inspect-flora" aria-pressed="false">Flora</button><button id="inspect-carcass" aria-pressed="false">Carcass</button></div>
     <output id="inspection-status">All life · no highlight</output>
+    <div class="btn-row">
+      <button id="mode-species" class="active" aria-pressed="true">Species</button>
+      <button id="mode-guild" aria-pressed="false">Guilds</button>
+      <button id="mode-temp" aria-pressed="false">Temp/Water</button>
+    </div>
     <div class="section-title" id="species-knob-title">Morphology Knobs: Swarm Worms</div>
     <div class="control"><label for="sl-sp-burn"><span>Basal Metabolic Burn</span><span id="lbl-sp-burn">0.35</span></label><input type="range" aria-label="Basal Metabolic Burn" aria-describedby="lbl-sp-burn" id="sl-sp-burn" min="0.05" max="1.50" step="0.05" value="0.35" /></div>
     <div class="control"><label for="sl-sp-speed"><span>Max Gait / Swim Speed</span><span id="lbl-sp-speed">0.55</span></label><input type="range" aria-label="Max Gait / Swim Speed" aria-describedby="lbl-sp-speed" id="sl-sp-speed" min="0.10" max="1.20" step="0.05" value="0.55" /></div>
-    <div class="control"><label for="sl-bend"><span>2-Hop Bending Posture Stiffness</span><span id="lbl-bend">0.25</span></label><input type="range" aria-label="2-Hop Bending Posture Stiffness" aria-describedby="lbl-bend" id="sl-bend" min="0.00" max="0.65" step="0.05" value="0.25" /></div>
     <div class="control"><label for="sl-sp-split"><span>Mitosis Threshold</span><span id="lbl-sp-split">1.80</span></label><input type="range" aria-label="Mitosis Threshold" aria-describedby="lbl-sp-split" id="sl-sp-split" min="1.20" max="3.00" step="0.10" value="1.80" /></div>
 
     <div class="section-title"><span>Ecosystem director</span><span class="badge agent" id="director-badge">ADVISORY</span></div>
@@ -230,7 +235,7 @@
         <div class="section-title">Environmental interventions · experimental</div>
         <div class="btn-row"><button id="strike-meteor" aria-pressed="true">Meteor</button><button id="strike-lightning" aria-pressed="false">Lightning</button><button id="strike-cancel">Cancel meteor</button></div>
         <label><input type="checkbox" id="strike-mineral" checked> Mineral-bearing impact</label>
-        <div class="btn-row"><label>X <input id="strike-x" type="number" value="3" step=".1"></label><label>Z <input id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Strike target</button></div>
+        <div class="btn-row"><label for="strike-x">X <input aria-label="Target X" id="strike-x" type="number" value="3" step=".1"></label><label for="strike-z">Z <input aria-label="Target Z" id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Strike target</button></div>
         <div id="strike-status" role="status">Select a tool and tap terrain, or enter coordinates.</div>
       </div>
       <div class="btn-row">
@@ -248,18 +253,20 @@
     <div class="control"><label for="sl-temp"><span>Ambient Temperature (°C)</span><span id="lbl-temp">22.0</span></label><input type="range" aria-label="Ambient Temperature (°C)" aria-describedby="lbl-temp" id="sl-temp" min="0.0" max="45.0" step="1.0" value="22.0" /></div>
     <div class="control"><label for="sl-grav"><span>Gravity Scale (G)</span><span id="lbl-grav">1.00</span></label><input type="range" aria-label="Gravity Scale (G)" aria-describedby="lbl-grav" id="sl-grav" min="0.20" max="2.00" step="0.05" value="1.00" /></div>
 
-    <div class="section-title">CSG Topology & Genetic Knobs</div>
+    <div class="section-title">Terrain geometry</div>
     <div class="control"><label for="sl-radius"><span>Arena Radius (R)</span><span id="lbl-radius">9.5</span></label><input type="range" aria-label="Arena Radius (R)" aria-describedby="lbl-radius" id="sl-radius" min="6.5" max="20.0" step="0.5" value="9.5" /></div>
     <div class="control"><label for="sl-pillars"><span>Radial Symmetry / Pillars (N)</span><span id="lbl-pillars">5</span></label><input type="range" aria-label="Radial Symmetry / Pillars (N)" aria-describedby="lbl-pillars" id="sl-pillars" min="0" max="12" step="1" value="5" /></div>
     <div class="control"><label for="sl-bowl"><span>Relief / Slope / Terrace Height</span><span id="lbl-bowl">0.35</span></label><input type="range" aria-label="Relief / Slope / Terrace Height" aria-describedby="lbl-bowl" id="sl-bowl" min="-0.75" max="0.95" step="0.05" value="0.35" /></div>
+    <div class="section-title">Ecology and evolution · global</div>
+    <div class="control"><label for="sl-bend"><span>2-Hop Bending Posture Stiffness</span><span id="lbl-bend">0.25</span></label><input type="range" aria-label="2-Hop Bending Posture Stiffness" aria-describedby="lbl-bend" id="sl-bend" min="0.00" max="0.65" step="0.05" value="0.25" /></div>
     <div class="control"><label for="sl-regrow"><span>Flora Regrowth (Solar Input)</span><span id="lbl-regrow">0.52</span></label><input type="range" aria-label="Flora Regrowth (Solar Input)" aria-describedby="lbl-regrow" id="sl-regrow" min="0.00" max="1.50" step="0.05" value="0.52" /></div>
     <div class="control"><label for="sl-mut"><span>Heritable Mutation Rate (σ)</span><span id="lbl-mut">0.12</span></label><input type="range" aria-label="Heritable Mutation Rate (σ)" aria-describedby="lbl-mut" id="sl-mut" min="0.00" max="0.40" step="0.01" value="0.12" /></div>
     <div class="control"><label for="sl-bond"><span>Dynamic Kin Bond Rate</span><span id="lbl-bond">0.55</span></label><input type="range" aria-label="Dynamic Kin Bond Rate" aria-describedby="lbl-bond" id="sl-bond" min="0.00" max="1.00" step="0.05" value="0.55" /></div>
 
+    <div class="section-title">Device performance</div>
+    <label for="performance-mode">Rendering budget</label><select id="performance-mode" aria-label="Rendering budget"><option value="auto">Automatic</option><option value="reduced">Reduced load</option></select><output id="budget-status">Automatic device profile</output>
+    <div class="section-title">Session and evidence</div>
     <div class="btn-row">
-      <button id="mode-species" class="active" aria-pressed="true">Species</button>
-      <button id="mode-guild" aria-pressed="false">Guilds</button>
-      <button id="mode-temp" aria-pressed="false">Temp/Water</button>
       <button id="btn-export-json">Snapshot</button>
       <button id="btn-respawn">Reset</button>
     </div>
@@ -330,7 +337,7 @@ const speciesConfig = [
 const state = {
   selectedSpecies: 0,
   inspectKind:9, // 0..5 species; 6 carcass; 7 flora; 8 fauna; 9 all
-  targetHz:arenaProfile.hz, renderDpr:arenaProfile.dpr, panel:mobileBudget?'none':'both',
+  targetHz:arenaProfile.hz, renderDpr:arenaProfile.dpr, performanceMode:'auto', panel:mobileBudget?'none':'both',
   popCounts: arenaProfile.counts.slice(),
   arenaFamily: 0, // 0:Pillars, 1:Atolls, 2:Estuary, 3:Volcano, 4:Karst, 5:Ziggurat, 6:Ringworld
   renderMode: 0,  // 0:Species, 1:Guilds, 2:Temp/Water
@@ -597,7 +604,7 @@ function intersectSurface(eye,ray){
 const strikeCanvas=strikeEl('strike-overlay'),strikeCtx=strikeCanvas.getContext('2d'),reducedStrike=(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches??false);
 function paintInterventions(matrix,width,height){
  if(strikeCanvas.width!==width||strikeCanvas.height!==height){strikeCanvas.width=width;strikeCanvas.height=height;}
- const ctx=strikeCtx,dpr=Math.min(devicePixelRatio,arenaProfile.dpr);
+ const ctx=strikeCtx,dpr=Math.min(devicePixelRatio,state.renderDpr);
  ctx.clearRect(0,0,width,height);
  function proj(x,y,z){const w=matrix[3]*x+matrix[7]*y+matrix[11]*z+matrix[15];if(w<=.01)return null;return [(matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12])/w*width/2+width/2,height/2-(matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13])/w*height/2]}
  function line(points,color,thick,closed=false){if(points.some(p=>!p)||!points.length)return;ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);if(closed)ctx.closePath();ctx.strokeStyle=color;ctx.lineWidth=thick*dpr;ctx.lineCap='round';ctx.stroke()}
@@ -2130,7 +2137,7 @@ window.addEventListener('pagehide', e => { if (e.persisted) setPaused(true); els
 async function init() {
   const canvas = document.getElementById('canvas');
   const badge = document.getElementById('backend-badge');
-  function resize() { const max = gpuDevice?.limits.maxTextureDimension2D || 4096; const dpr=Math.min(devicePixelRatio,arenaProfile.dpr); canvas.width=Math.max(1,Math.min(max,Math.floor(window.innerWidth*dpr))); canvas.height=Math.max(1,Math.min(max,Math.floor(window.innerHeight*dpr))); }
+  function resize() { const max = gpuDevice?.limits.maxTextureDimension2D || 4096; const dpr=Math.min(devicePixelRatio,state.renderDpr); canvas.width=Math.max(1,Math.min(max,Math.floor(window.innerWidth*dpr))); canvas.height=Math.max(1,Math.min(max,Math.floor(window.innerHeight*dpr))); }
   window.addEventListener('resize', resize); resize();
 
   if (!navigator.gpu) throw new Error('WebGPU is unavailable in this browser or context. Mosaic remains available.');
@@ -2252,7 +2259,11 @@ async function init() {
   document.getElementById('btn-respawn').addEventListener('click', uploadEcosystem);
 
   let depthTex = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
-  window.addEventListener('resize', () => { if(stopped)return; viewDirty=true; depthTex.destroy(); depthTex = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT }); });
+  function resizeDepth(){if(stopped)return;viewDirty=true;depthTex.destroy();depthTex=device.createTexture({size:[canvas.width,canvas.height],format:'depth24plus',usage:GPUTextureUsage.RENDER_ATTACHMENT});}
+  window.addEventListener('resize',resizeDepth);
+  let budgetPending=false,slowSamples=0;
+  function applyBudget(hz,dpr){state.targetHz=hz;state.renderDpr=dpr;budgetPending=true;viewDirty=true;document.getElementById('budget-status').textContent=state.deviceProfile+' · '+hz+' Hz target · '+dpr.toFixed(2)+' DPR cap';}
+  document.getElementById('performance-mode').addEventListener('change',e=>{state.performanceMode=e.target.value;slowSamples=0;if(state.performanceMode==='reduced')applyBudget(Math.min(24,arenaProfile.hz),Math.min(.75,arenaProfile.dpr));else applyBudget(arenaProfile.hz,arenaProfile.dpr);});
 
   let lastTime = performance.now(), smoothDt = 16.6, readingStats = false;
 
@@ -2263,7 +2274,8 @@ async function init() {
   document.getElementById('btn-pause').disabled = false;
   function frame(now) {
     if (stopped) return;
-    if (document.hidden || (arenaProfile.name!=='smoke' && !paused && now-lastTime<1000/arenaProfile.hz-1)) { requestAnimationFrame(frame); return; }
+    if(budgetPending){budgetPending=false;resize();resizeDepth();}
+    if (document.hidden || (arenaProfile.name!=='smoke' && !paused && now-lastTime<1000/state.targetHz-1)) { requestAnimationFrame(frame); return; }
     if (paused && !viewDirty) { lastTime=now; requestAnimationFrame(frame); return; }
     const stepping = !paused;
     viewDirty = false;
@@ -2357,7 +2369,7 @@ async function init() {
     }
     rpass.end();
 
-    device.queue.submit([encoder.finish()]);
+    const workStarted=performance.now();device.queue.submit([encoder.finish()]);
     paintInterventions(viewProj,canvas.width,canvas.height);
     state.viewRevision++;
 
@@ -2414,7 +2426,15 @@ async function init() {
       }).catch(error => { readingStats = false; if(!stopped) failArena('Telemetry readback failed: '+error.message); });
     }
 
-    device.queue.onSubmittedWorkDone().then(() => { if(!stopped) requestAnimationFrame(frame); }).catch(error => failArena(error.message));
+    device.queue.onSubmittedWorkDone().then(() => {
+      if(stopped)return;
+      if(stepping&&!document.hidden&&arenaProfile.name!=='smoke'&&state.performanceMode==='auto'){
+        const cost=performance.now()-workStarted;
+        slowSamples=cost>1000/state.targetHz*.9?slowSamples+1:Math.max(0,slowSamples-2);
+        if(slowSamples>=90){slowSamples=0;applyBudget(Math.max(15,state.targetHz-5),Math.max(.75,state.renderDpr-.25));}
+      }
+      requestAnimationFrame(frame);
+    }).catch(error => failArena(error.message));
   }
   requestAnimationFrame(frame);
 }
