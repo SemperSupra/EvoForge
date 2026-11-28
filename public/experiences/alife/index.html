@@ -677,6 +677,7 @@ function strikeVisual(id,i=0){
  x^=x>>>16;x=Math.imul(x,0x7feb352d);x^=x>>>15;return (x>>>0)/4294967296;
 }
 let sceneOnly=false;
+let lastSubmittedCamera=null;
 let strikeVisualFrame={tick:0,viewRevision:0,visible:false,pendingId:null,phase:null,meteorBodies:0,dustParticles:0,lightningStrokes:0,impactIds:[]};
 function paintInterventions(matrix,width,height){
  if(strikeCanvas.width!==width||strikeCanvas.height!==height){strikeCanvas.width=width;strikeCanvas.height=height;}
@@ -2686,6 +2687,9 @@ async function init() {
 
     const workStarted=performance.now();device.queue.submit([encoder.finish()]);
     paintInterventions(viewProj,canvas.width,canvas.height);
+    // Match screen rays to the exact camera uniform submitted for this backing
+    // surface, rather than a newly edited pose or an orientation not yet drawn.
+    lastSubmittedCamera={eye:eye.slice(),yaw:state.camYaw,pitch:state.camPitch,aspect:lens.aspect,width:canvas.width,height:canvas.height,cssWidth:canvas.clientWidth||window.innerWidth||canvas.width,cssHeight:canvas.clientHeight||window.innerHeight||canvas.height,revision:state.viewRevision+1};
     state.viewRevision++;
 
     if (stepping && !readingStats && state.simTick % 15 === 0) {
@@ -2797,12 +2801,15 @@ function panView(dx,dy) {
   updateCamera();
 }
 function worldPointer(e) {
-   if(state.camPitch<0){strikeHover=null;return false;}
-  const rect=canvasEl.getBoundingClientRect(), nx=2*(e.clientX-rect.left)/rect.width-1,ny=1-2*(e.clientY-rect.top)/rect.height;
-  const lens=arenaViewLens(canvasEl.width/canvasEl.height),sy=Math.sin(state.camYaw),cy=Math.cos(state.camYaw),sp=Math.sin(state.camPitch),cp=Math.cos(state.camPitch),f=lens.verticalHalfTan;
+   const view=lastSubmittedCamera;
+   if(state.camPitch<0||!view||view.pitch<0||view.width!==canvasEl.width||view.height!==canvasEl.height){strikeHover=null;return false;}
+  const rect=canvasEl.getBoundingClientRect();
+  if(Math.abs(rect.width-view.cssWidth)>1||Math.abs(rect.height-view.cssHeight)>1){strikeHover=null;return false;}
+  const nx=2*(e.clientX-rect.left)/rect.width-1,ny=1-2*(e.clientY-rect.top)/rect.height;
+  const lens=arenaViewLens(view.aspect),sy=Math.sin(view.yaw),cy=Math.cos(view.yaw),sp=Math.sin(view.pitch),cp=Math.cos(view.pitch),f=lens.verticalHalfTan;
   const right=[sy,0,-cy],up=[-cy*sp,cp,-sy*sp],forward=[-cy*cp,-sp,-sy*cp];
   const ray=forward.map((v,i)=>v+right[i]*nx*f*lens.aspect+up[i]*ny*f);
-  strikeHover=intersectSurface(cameraEye(),ray);viewDirty=true;return !!strikeHover;
+  strikeHover=intersectSurface(view.eye,ray);viewDirty=true;return !!strikeHover;
 }
 for(const id of ['orbit','pan','interact'])document.getElementById('cam-'+id).onclick=()=>cameraMode(id);
 document.getElementById('cam-interact').disabled=mode!=='play';
