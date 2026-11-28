@@ -169,13 +169,13 @@
   <div id="panel-controls" role="group" aria-label="Arena panels"><button id="panel-life" aria-controls="hud-left" aria-expanded="true">‹ Life</button><button id="panel-world" aria-controls="hud-right" aria-expanded="true">World ›</button><button id="hud-toggle" aria-label="Hide both panels">Hide panels</button></div>
   <div id="viewport-tool-stack">
   <div id="camera-controls" role="group" aria-label="Arena camera">
-    <span id="navigation-help" class="visually-hidden">Drag to pan, right or Control drag to rotate, wheel or pinch to zoom. Arrow keys pan; Shift arrows rotate or tilt. Escape disarms world tools.</span>
+    <span id="navigation-help" class="visually-hidden">Drag to pan, right or Control drag to rotate, wheel or pinch to zoom. Arrow keys pan; Shift arrows rotate or tilt. Escape disarms world tools. Underside reveals an illustrative world turtle; surface picking is unavailable beneath the arena.</span>
     <button id="cam-orbit" aria-pressed="false" title="Drag to rotate the view">Orbit</button>
     <button id="cam-pan" aria-pressed="true" title="Drag to move the view across the world">Pan</button>
     <button id="cam-left" aria-label="Rotate camera left">←</button><button id="cam-right" aria-label="Rotate camera right">→</button>
     <button id="cam-up" aria-label="Tilt camera up">↑</button><button id="cam-down" aria-label="Tilt camera down">↓</button>
     <button id="cam-in" aria-label="Zoom in">+</button><button id="cam-out" aria-label="Zoom out">−</button>
-    <button id="cam-top">Top</button><button id="cam-home">Reset view</button>
+    <button id="cam-top">Top</button><button id="cam-under" title="Orbit beneath the arena; mythic illustration only">Underside</button><button id="cam-home">Reset view</button>
     <output id="camera-status">Pan</output>
   </div>
 
@@ -590,7 +590,7 @@ function strikeStatus(){
 }
 function showWorldTools(open){if(mode!=='play')return;strikeEl('strike-panel').hidden=!open;strikeEl('cam-interact').setAttribute('aria-expanded',String(open));viewDirty=true;}
 function disarmTool(){state.worldTool=null;strikeHover=null;canvasEl.style.cursor='grab';for(const t of ['meteor','lightning'])strikeEl('strike-'+t).setAttribute('aria-pressed','false');strikeEl('tool-navigate').setAttribute('aria-pressed','true');strikeEl('tool-status').textContent='Navigation · no armed tool';viewDirty=true;}
-function chooseStrike(tool){assertPlay();if(!Object.hasOwn(strikeProfiles,tool))throw Error('Unknown strike');strikeTool=tool;state.worldTool=tool;showWorldTools(true);canvasEl.style.cursor='crosshair';for(const t of ['meteor','lightning'])strikeEl('strike-'+t).setAttribute('aria-pressed',String(t===tool));strikeEl('tool-navigate').setAttribute('aria-pressed','false');strikeEl('tool-status').textContent=(tool==='meteor'?'Meteor':'Lightning')+' armed · tap terrain once';viewDirty=true;strikeStatus();}
+function chooseStrike(tool){assertPlay();if(state.camPitch<0){strikeMessage="Return to the surface view to arm a world tool.";strikeStatus();return;}if(!Object.hasOwn(strikeProfiles,tool))throw Error('Unknown strike');strikeTool=tool;state.worldTool=tool;showWorldTools(true);canvasEl.style.cursor='crosshair';for(const t of ['meteor','lightning'])strikeEl('strike-'+t).setAttribute('aria-pressed',String(t===tool));strikeEl('tool-navigate').setAttribute('aria-pressed','false');strikeEl('tool-status').textContent=(tool==='meteor'?'Meteor':'Lightning')+' armed · tap terrain once';viewDirty=true;strikeStatus();}
 function admitStrike(tool,x,z,nutrients=true){
  assertPlay();if(stopped||experience.phase!=='running'||paused)throw Error('Resume a running arena first');
  const p=strikeProfiles[tool];if(!p||!Number.isFinite(x)||!Number.isFinite(z))throw Error('Invalid target');
@@ -649,6 +649,7 @@ function paintInterventions(matrix,width,height){
  if(strikeCanvas.width!==width||strikeCanvas.height!==height){strikeCanvas.width=width;strikeCanvas.height=height;}
  const ctx=strikeCtx,dpr=Math.min(devicePixelRatio,state.renderDpr);
  ctx.clearRect(0,0,width,height);
+ if(state.camPitch<0)return; // Surface overlays must not leak through the substrate.
  function proj(x,y,z){const w=matrix[3]*x+matrix[7]*y+matrix[11]*z+matrix[15];if(w<=.01)return null;return [(matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12])/w*width/2+width/2,height/2-(matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13])/w*height/2]}
  function line(points,color,thick,closed=false){if(points.some(p=>!p)||!points.length)return;ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);if(closed)ctx.closePath();ctx.strokeStyle=color;ctx.lineWidth=thick*dpr;ctx.lineCap='round';ctx.stroke()}
  function ring(x,z,r,color,thick=2){line(Array.from({length:65},(_,i)=>{const a=i/64*Math.PI*2,xx=x+Math.cos(a)*r,zz=z+Math.sin(a)*r;return proj(xx,surface(xx,zz)+.06,zz)}),color,thick,true)}
@@ -1763,6 +1764,68 @@ fn fsNode(in:VSOut)->@location(0) vec4<f32>{
   color=inspectColor(color,in.species);return vec4<f32>(color,1.0);
 }
 
+
+ // R76: original decorative geometry only. No compute state, collision or world topology changes.
+ fn foundationY()->f32{
+   let r=cam.arena.radius+0.2;
+   return select(-3.5,min(-3.5,min(0.0,cam.arena.bowlSlope)*r*r*0.07-2.0),cam.multi.arenaFamily==0u);
+ }
+ fn foundationVertex(p:vec3<f32>,uv:vec2<f32>,col:vec3<f32>,part:u32)->VSOut{
+   var o:VSOut;o.clipPos=cam.viewProj*vec4<f32>(p,1.0);o.localUV=uv;o.worldPos=p;
+   o.color=col;o.species=0u;o.part=part;return o;
+ }
+ fn foundationCorner(i:u32)->u32{
+   let corners=array<u32,6>(0u,1u,2u,2u,1u,3u);return corners[i%6u];
+ }
+ @vertex fn vsFoundation(@builtin(vertex_index) i:u32)->VSOut{
+   let q=foundationCorner(i);let a=(f32(i/6u)+f32(q%2u))*6.2831853/128.0;
+   let inner=select(0.0,cam.arena.radius*.26,cam.multi.arenaFamily==6u);
+   let r=select(inner,cam.arena.radius+.2,q>=2u);
+   let xz=vec2<f32>(cos(a),sin(a))*r;
+   return foundationVertex(vec3<f32>(xz.x,foundationY(),xz.y),xz,vec3<f32>(.29,.22,.16),0u);
+ }
+ @vertex fn vsFoundationRim(@builtin(vertex_index) i:u32,@builtin(instance_index) ring:u32)->VSOut{
+   let q=foundationCorner(i);let a=(f32(i/6u)+f32(q%2u))*6.2831853/128.0;
+   let r=select(cam.arena.radius+.2,cam.arena.radius*.26,ring==1u);
+   let xz=vec2<f32>(cos(a),sin(a))*r;
+   let y=select(foundationY(),terrainHeight(xz),q>=2u);
+   return foundationVertex(vec3<f32>(xz.x,y,xz.y),vec2<f32>(a,y),vec3<f32>(.38,.27,.19),1u);
+ }
+ @fragment fn fsFoundation(in:VSOut)->@location(0) vec4<f32>{
+   let strata=0.82+0.18*sin(in.worldPos.y*5.0+in.worldPos.x*.35+in.worldPos.z*.42);
+   let grain=0.93+0.07*cos(in.worldPos.x*7.0)*sin(in.worldPos.z*5.0);
+   return vec4<f32>(in.color*strata*grain,1.0);
+ }
+ // Eight original low-poly ellipsoids: shell, plastron, head, four feet and tail.
+ @vertex fn vsWorldTurtle(@builtin(vertex_index) i:u32,@builtin(instance_index) part:u32)->VSOut{
+   let centers=array<vec3<f32>,8>(vec3<f32>(0.0,-.20,0.0),vec3<f32>(0.0,-.35,0.0),
+    vec3<f32>(.64,-.29,0.0),vec3<f32>(.30,-.36,.43),vec3<f32>(.30,-.36,-.43),
+    vec3<f32>(-.33,-.36,.43),vec3<f32>(-.33,-.36,-.43),vec3<f32>(-.70,-.30,0.0));
+   let axes=array<vec3<f32>,8>(vec3<f32>(.63,.20,.50),vec3<f32>(.49,.09,.39),
+    vec3<f32>(.18,.13,.13),vec3<f32>(.22,.095,.18),vec3<f32>(.22,.095,.18),
+    vec3<f32>(.20,.09,.17),vec3<f32>(.20,.09,.17),vec3<f32>(.15,.055,.06));
+   let q=foundationCorner(i);let cell=i/6u;
+   let phi=(f32(cell%16u)+f32(q%2u))*6.2831853/16.0;
+   let theta=(f32(cell/16u)+f32(q/2u))*3.14159265/8.0;
+   let n=vec3<f32>(cos(phi)*sin(theta),cos(theta),sin(phi)*sin(theta));
+   let p=vec3<f32>(0.0,foundationY(),0.0)+(centers[part]+n*axes[part])*cam.arena.radius;
+   let normal=normalize(n/axes[part]);
+   let lighting=.38+.62*max(0.0,dot(normal,normalize(vec3<f32>(.4,-.8,.35))));
+   var color=vec3<f32>(.30,.47,.24);
+   if(part==0u){color=vec3<f32>(.45,.35,.17);}
+   if(part==1u){color=vec3<f32>(.70,.55,.30);}
+   return foundationVertex(p,vec2<f32>(phi,theta),color*lighting,part);
+ }
+ @fragment fn fsWorldTurtle(in:VSOut)->@location(0) vec4<f32>{
+   var col=in.color;
+   if(in.part<=1u){
+     let u=abs(sin(in.localUV.x*5.0+.32*cos(in.localUV.y*6.0)));
+     let v=abs(sin(in.localUV.y*6.0));
+     col*=mix(.60,1.0,smoothstep(.03,.18,min(u,v)));
+   }
+   return vec4<f32>(col,1.0);
+ }
+
 @vertex
 fn vsTerrain(@builtin(vertex_index) vIdx: u32) -> VSOut {
   let gridN = 64u;
@@ -2285,6 +2348,8 @@ async function init() {
   const linkPipe = device.createRenderPipeline({ layout: rLayout, vertex: { module: renderModule, entryPoint: 'vsLink' }, fragment: { module: renderModule, entryPoint: 'fsLink', targets: [{ format }] }, primitive: { topology: 'triangle-list' }, depthStencil });
   const nodePipe = device.createRenderPipeline({ layout: rLayout, vertex: { module: renderModule, entryPoint: 'vsNode' }, fragment: { module: renderModule, entryPoint: 'fsNode', targets: [{ format }] }, primitive: { topology: 'triangle-list' }, depthStencil });
 
+  const foundationPipeline=(entryPoint,fragment)=>device.createRenderPipeline({layout:rLayout,vertex:{module:renderModule,entryPoint},fragment:{module:renderModule,entryPoint:fragment,targets:[{format}]},primitive:{topology:'triangle-list'},depthStencil});
+  const foundationPipe=foundationPipeline('vsFoundation','fsFoundation'),rimPipe=foundationPipeline('vsFoundationRim','fsFoundation'),turtlePipe=foundationPipeline('vsWorldTurtle','fsWorldTurtle');
   let renderBundle = null;
   function rebuildRenderBundle() {
     if (typeof device.createRenderBundleEncoder !== 'function') return;
@@ -2379,7 +2444,7 @@ async function init() {
     } else lastTime=now;
 
     const eye = cameraEye();
-    const viewProj = multiplyMat4(perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 120.0), lookAt(eye, [state.camCenterX, 0.4, state.camCenterZ], [0, 1, 0]));
+    const viewProj = multiplyMat4(perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 120.0), lookAt(eye, [state.camCenterX, cameraTargetY(), state.camCenterZ], [0, 1, 0]));
     const camBuf = new ArrayBuffer(432);
     const cf32 = new Float32Array(camBuf), cu32 = new Uint32Array(camBuf);
     cf32.set(viewProj, 0);
@@ -2421,8 +2486,15 @@ async function init() {
       colorAttachments: [{ view: context.getCurrentTexture().createView(), clearValue: { r: 0.028, g: 0.035, b: 0.047, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }],
       depthStencilAttachment: { view: depthTex.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' }
     });
-    if (renderBundle) rpass.executeBundles([renderBundle]);
-    else {
+    // Depth-write opaque substrate/rim and turtle. Suppress surface-only primitives and overlays from below.
+    if(state.camPitch<.14){
+      rpass.setBindGroup(0,renderBG);
+      rpass.setPipeline(foundationPipe);rpass.draw(128*6);
+      rpass.setPipeline(rimPipe);rpass.draw(128*6,state.arenaFamily===6?2:1);
+      rpass.setPipeline(turtlePipe);rpass.draw(16*8*6,8);
+    }
+    if(state.camPitch>=0 && renderBundle) rpass.executeBundles([renderBundle]);
+    else if(state.camPitch>=0) {
       rpass.setBindGroup(0, renderBG);
       rpass.setPipeline(terrainPipe); rpass.draw(64 * 64 * 6, 1, 0, 0);
       rpass.setPipeline(linkPipe);    rpass.draw(eco.activeNodes * 6, 1, 0, 0);
@@ -2502,19 +2574,22 @@ async function init() {
 
 const canvasEl = document.getElementById('canvas');
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+function foundationBaseY(){const r=state.arenaRadius+.2;return state.arenaFamily===0?Math.min(-3.5,Math.min(0,state.bowlSlope)*r*r*.07-2):-3.5;}
+function cameraTargetY(){const t=clamp(-state.camPitch/.72,0,1);return .4+(foundationBaseY()-state.arenaRadius*.12-.4)*t;}
 function cameraEye() {
   return [state.camCenterX+Math.cos(state.camYaw)*Math.cos(state.camPitch)*state.camDist,
-    0.4+Math.sin(state.camPitch)*state.camDist,
+    cameraTargetY()+Math.sin(state.camPitch)*state.camDist,
     state.camCenterZ+Math.sin(state.camYaw)*Math.cos(state.camPitch)*state.camDist];
 }
 function updateCamera() {
-  state.camPitch=clamp(state.camPitch,0.14,1.54); // 2.5D arena: no underside or singular pole.
-  state.camDist=clamp(state.camDist,3.5,Math.max(42,state.arenaRadius*3.4));
+  state.camPitch=clamp(state.camPitch,-1.50,1.54); // Avoid singular poles; permit deliberate underside orbit.
+   if(state.camPitch<0&&state.worldTool)disarmTool();
+  state.camDist=clamp(state.camDist,state.camPitch<0?Math.max(3.5,state.arenaRadius*.95):3.5,Math.max(42,state.arenaRadius*3.4));
   state.camCenterX=clamp(state.camCenterX,-state.arenaRadius,state.arenaRadius);
   state.camCenterZ=clamp(state.camCenterZ,-state.arenaRadius,state.arenaRadius);
   state.camYaw=((state.camYaw%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
   viewDirty=true;
-  document.getElementById('camera-status').textContent=state.camMode+' · '+Math.round(state.camDist)+' units';
+  document.getElementById('camera-status').textContent=(state.camPitch<0?'Mythic underside · ':state.camMode+' · ')+Math.round(state.camDist)+' units';
 }
 function cameraMode(m) {
   if(m==='interact'){showWorldTools(strikeEl('strike-panel').hidden);return;}
@@ -2529,6 +2604,7 @@ function panView(dx,dy) {
   updateCamera();
 }
 function worldPointer(e) {
+   if(state.camPitch<0){strikeHover=null;return false;}
   const rect=canvasEl.getBoundingClientRect(), nx=2*(e.clientX-rect.left)/rect.width-1,ny=1-2*(e.clientY-rect.top)/rect.height;
   const sy=Math.sin(state.camYaw),cy=Math.cos(state.camYaw),sp=Math.sin(state.camPitch),cp=Math.cos(state.camPitch),f=Math.tan(Math.PI/8);
   const right=[sy,0,-cy],up=[-cy*sp,cp,-sy*sp],forward=[-cy*cp,-sp,-sy*cp];
@@ -2544,6 +2620,7 @@ for(const [id,fn] of Object.entries({
   down:()=>{if(state.camMode==='pan')panView(0,36);else state.camPitch-=0.12;},
   in:()=>state.camDist*=0.82,out:()=>state.camDist/=0.82,
   top:()=>state.camPitch=1.50,
+   under:()=>{state.camPitch=-.80;state.camCenterX=0;state.camCenterZ=0;state.camDist=Math.max(state.camDist,state.arenaRadius*2.6);},
   home:()=>{state.camYaw=0.65;state.camPitch=0.72;state.camDist=arenaProfile.name==='smoke'?21:state.arenaRadius*2.4;state.camCenterX=0;state.camCenterZ=0;}
 }))document.getElementById('cam-'+id).onclick=()=>{fn();updateCamera();};
 const pointers=new Map();let moved=false,gesture=null;
@@ -2739,7 +2816,7 @@ function installChrome(host,arena=false){
  document.addEventListener('focusin',e=>showTip(e.target));document.addEventListener('focusout',scheduleHide);document.addEventListener('pointerover',e=>{if(e.pointerType==='mouse'||e.pointerType==='pen'){if(tip.contains(e.target))clearTimeout(tipTimer);else showTip(e.target);}});document.addEventListener('pointerout',scheduleHide);document.addEventListener('pointerdown',hideTip,true);document.addEventListener('keydown',e=>{if(e.key==='Escape')hideTip();});window.addEventListener('resize',hideTip);document.addEventListener('scroll',hideTip,true);
  
  if(arena){
-  const ids={'btn-pause':['pause','Pause'],'panel-life':['leftPanel','Life panel'],'panel-world':['rightPanel','World panel'],'hud-toggle':['panels','Hide panels'],'cam-orbit':['orbit','Orbit'],'cam-pan':['pan','Pan'],'cam-left':['left','Rotate camera left'],'cam-right':['right','Rotate camera right'],'cam-up':['up','Tilt camera up'],'cam-down':['down','Tilt camera down'],'cam-in':['zoomIn','Zoom in'],'cam-out':['zoomOut','Zoom out'],'cam-top':['top','Top view'],'cam-home':['reset','Reset view'],'tool-navigate':['cursor','Navigate'],'btn-export-json':['save','Export snapshot'],'btn-audio':['mute','Audio off']};
+  const ids={'btn-pause':['pause','Pause'],'panel-life':['leftPanel','Life panel'],'panel-world':['rightPanel','World panel'],'hud-toggle':['panels','Hide panels'],'cam-orbit':['orbit','Orbit'],'cam-pan':['pan','Pan'],'cam-left':['left','Rotate camera left'],'cam-right':['right','Rotate camera right'],'cam-up':['up','Tilt camera up'],'cam-down':['down','Tilt camera down'],'cam-in':['zoomIn','Zoom in'],'cam-out':['zoomOut','Zoom out'],'cam-top':['top','Top view'],'cam-under':['down','Underside (mythic illustration)'],'cam-home':['reset','Reset view'],'tool-navigate':['cursor','Navigate'],'btn-export-json':['save','Export snapshot'],'btn-audio':['mute','Audio off']};
   for(const [id,[icon,label]] of Object.entries(ids)){const el=document.getElementById(id);if(!el)continue;const refresh=()=>{const value=el.textContent.trim();if(id==='btn-pause'){efIcon(el,value==='Resume'?'play':'pause',value);}else if(id==='hud-toggle'){efIcon(el,'panels',value);}else if(id==='btn-audio'){efIcon(el,el.getAttribute('aria-pressed')==='true'?'volume':'mute',value);}else efIcon(el,icon,label);};refresh();if(['btn-pause','hud-toggle','btn-audio'].includes(id))new MutationObserver(refresh).observe(el,{childList:true,characterData:true,subtree:true,attributes:id==='btn-audio',attributeFilter:id==='btn-audio'?['aria-pressed']:undefined});}
   for(const a of host.querySelectorAll('a')){const label=a.textContent.trim();if(label==='All experiences')efIcon(a,'home',label);if(label==='Observe')efIcon(a,'eye',label);if(label==='Play')efIcon(a,'play',label);}
   const measure=()=>root.style.setProperty('--toolbar-height',Math.ceil(host.getBoundingClientRect().height)+'px');if(typeof ResizeObserver!=='undefined')new ResizeObserver(measure).observe(host);measure();
