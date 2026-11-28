@@ -143,7 +143,6 @@
     <span id="navigation-help" class="visually-hidden">Drag to pan, right or Control drag to rotate, wheel or pinch to zoom. Arrow keys pan; Shift arrows rotate or tilt. Escape disarms world tools.</span>
     <button id="cam-orbit" aria-pressed="false" title="Drag to rotate the view">Orbit</button>
     <button id="cam-pan" aria-pressed="true" title="Drag to move the view across the world">Pan</button>
-    <button id="cam-interact" aria-pressed="false" title="Open direct world tools">Edit</button>
     <button id="cam-left" aria-label="Rotate camera left">←</button><button id="cam-right" aria-label="Rotate camera right">→</button>
     <button id="cam-up" aria-label="Tilt camera up">↑</button><button id="cam-down" aria-label="Tilt camera down">↓</button>
     <button id="cam-in" aria-label="Zoom in">+</button><button id="cam-out" aria-label="Zoom out">−</button>
@@ -152,14 +151,14 @@
   </div>
 
   <div id="world-tool-dock" role="group" aria-label="Direct arena interaction">
-    <button id="tool-toggle" aria-expanded="false" aria-controls="strike-panel">World tools</button>
+    <button id="cam-interact" aria-expanded="false" aria-controls="strike-panel">World tools</button>
     <button id="tool-navigate" aria-pressed="true">Navigate</button>
     <span id="tool-status" role="status">Navigation · no armed tool</span>
       <div id="strike-panel" aria-label="Direct world tools" hidden>
         <div class="section-title">Direct world tools</div>
         <div class="btn-row"><button id="strike-meteor" aria-pressed="false">Meteor</button><button id="strike-lightning" aria-pressed="false">Lightning</button><button id="strike-cancel">Cancel meteor</button></div>
         <label><input type="checkbox" id="strike-mineral" checked> Mineral-bearing impact</label>
-        <div class="btn-row"><label for="strike-x">X <input aria-label="Target X" id="strike-x" type="number" value="3" step=".1"></label><label for="strike-z">Z <input aria-label="Target Z" id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Strike target</button></div>
+        <div class="btn-row"><label for="strike-x">X <input aria-label="Target X" id="strike-x" type="number" value="3" step=".1"></label><label for="strike-z">Z <input aria-label="Target Z" id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Apply coordinates</button></div>
         <div id="strike-status" role="status">Select Meteor or Lightning, then tap terrain. Drag to navigate.</div>
       </div>
   </div>
@@ -559,7 +558,7 @@ function strikeStatus(){
  strikeEl('strike-status').textContent=phase+' · '+strikeWorld.craters.length+'/8 craters'+(strikeMessage?' · '+strikeMessage:'');
  strikeEl('strike-cancel').disabled=mode!=='play'||p?.phase!=='countdown';
 }
-function showWorldTools(open){if(mode!=='play')return;strikeEl('strike-panel').hidden=!open;strikeEl('tool-toggle').setAttribute('aria-expanded',String(open));strikeEl('cam-interact').setAttribute('aria-pressed',String(open));if(!open)disarmTool();}
+function showWorldTools(open){if(mode!=='play')return;strikeEl('strike-panel').hidden=!open;strikeEl('cam-interact').setAttribute('aria-expanded',String(open));viewDirty=true;}
 function disarmTool(){state.worldTool=null;strikeHover=null;canvasEl.style.cursor='grab';for(const t of ['meteor','lightning'])strikeEl('strike-'+t).setAttribute('aria-pressed','false');strikeEl('tool-navigate').setAttribute('aria-pressed','true');strikeEl('tool-status').textContent='Navigation · no armed tool';viewDirty=true;}
 function chooseStrike(tool){assertPlay();if(!Object.hasOwn(strikeProfiles,tool))throw Error('Unknown strike');strikeTool=tool;state.worldTool=tool;showWorldTools(true);canvasEl.style.cursor='crosshair';for(const t of ['meteor','lightning'])strikeEl('strike-'+t).setAttribute('aria-pressed',String(t===tool));strikeEl('tool-navigate').setAttribute('aria-pressed','false');strikeEl('tool-status').textContent=(tool==='meteor'?'Meteor':'Lightning')+' armed · tap terrain once';viewDirty=true;strikeStatus();}
 function admitStrike(tool,x,z,nutrients=true){
@@ -638,10 +637,9 @@ strikeEl('strike-meteor').onclick=()=>chooseStrike('meteor');
 strikeEl('strike-lightning').onclick=()=>chooseStrike('lightning');
 strikeEl('strike-cancel').onclick=()=>cancelStrike();
 strikeEl('strike-place').onclick=()=>{if(!state.worldTool){strikeMessage='Select a world tool first.';strikeStatus();return;}if(attemptStrike(state.worldTool,Number(strikeEl('strike-x').value),Number(strikeEl('strike-z').value),strikeEl('strike-mineral').checked))disarmTool();};
-strikeEl('tool-toggle').onclick=()=>showWorldTools(strikeEl('strike-panel').hidden);
 strikeEl('tool-navigate').onclick=()=>disarmTool();
 document.addEventListener?.('keydown',e=>{if(e.key==='Escape'&&mode==='play'){disarmTool();if(strikeWorld.pending?.phase==='countdown')cancelStrike();}});
-if(mode==='observe')for(const id of ['tool-toggle','strike-meteor','strike-lightning','strike-place','strike-mineral','strike-x','strike-z','strike-cancel'])strikeEl(id).disabled=true;
+if(mode==='observe')for(const id of ['cam-interact','strike-meteor','strike-lightning','strike-place','strike-mineral','strike-x','strike-z','strike-cancel'])strikeEl(id).disabled=true;
 strikeStatus();
 
 const WGSL_CRATERS = /* wgsl */`
