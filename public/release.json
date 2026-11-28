@@ -12,5 +12,6 @@
     "alife-observe",
     "alife-play"
   ],
-  "notes": "R33 feedback preview (not promoted). Experimental ALife requires functional WebGPU. Candidate status is not stable-release or platform certification."
+  "notes": "Isolated experimental ecological aftermath candidate, not promoted. Experimental ALife requires functional WebGPU; not stable release or platform certification.",
+  "arenaVersion": "0.1.0-rdte.7"
 }
