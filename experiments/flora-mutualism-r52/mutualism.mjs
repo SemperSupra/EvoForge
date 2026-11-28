@@ -23,9 +23,9 @@ export function run(seed,withAnimals=true,ticks=240,resourcePolicy=null){
    if(d>.75){const n=Math.min(d,speed);move(a,a.x+(p.x-a.x)*n/d,a.z+(p.z-a.z)*n/d);}
    if(dist(a,p)<=.75&&a.rest===0){visit(w,a,p);a.energy=Math.min(2,a.energy);a.last=p.id;a.target=null;a.rest=3;}
   }
-  step(w,1,resourcePolicy?resourcePolicy(w):null);
+  const policy=resourcePolicy?resourcePolicy(w):null;step(w,1,policy);
   // Finite plant lifetime and resource stress free ecological capacity.
-  const old=w.plants.length;w.plants=w.plants.filter(p=>p.energy>.03&&p.age<190+Math.round(p.g.droughtTolerance*80));metrics.plantDeaths+=old-w.plants.length;
+  const old=w.plants.length;w.plants=w.plants.filter(p=>{const alive=p.energy>.03&&p.age<(policy?.lifespan?policy.lifespan(p):190+Math.round(p.g.droughtTolerance*80));if(!alive)policy?.recycle?.(p);return alive;});metrics.plantDeaths+=old-w.plants.length;
   for(const e of w.receipts){if(e.type==='cross-pollination')metrics.pollinations++;if(e.type==='fruit-eaten')metrics.fruitEaten++;if(e.type==='seed-deposited'&&e.via==='gut')metrics.gutSeeds++;if(e.type==='germinated'&&e.via==='gut')metrics.gutGerminations++;if(e.type==='germinated'&&e.via==='wind')metrics.windGerminations++;events.push(e);}
   if(w.tick%8===0||w.tick===ticks)capture();
  }
