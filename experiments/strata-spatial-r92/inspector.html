@@ -22,7 +22,7 @@ function draw(){
  const legend=[];
  function bar(parent,value,color,title){const s=document.createElement('span');s.style.width=(Math.max(0,Math.min(1,value))*100)+'%';s.style.background=color;s.title=title;parent.append(s);}
  for(let i=0;i<reversed.length;i++){
-  const c=reversed[i],b=document.createElement('button'),label=document.createElement('span'),bars=document.createElement('span');b.className='layer';b.dataset.layer=c.id;b.setAttribute('aria-pressed',String(i===selected));label.textContent=c.id.replaceAll('-',' ');b.append(label);bars.className='bar';
+  const c=reversed[i],b=document.createElement('button'),label=document.createElement('span'),bars=document.createElement('span');b.className='layer';b.dataset.layer=c.id;b.setAttribute('aria-pressed',String(i===selected));label.textContent=c.id.replaceAll('-',' ');b.setAttribute('aria-label',label.textContent);b.append(label);bars.className='bar';bars.setAttribute('aria-hidden','true');
   if(mode==='phase'){bar(bars,c.solidFraction,palette.solid,'Solid');bar(bars,c.waterFraction,palette.water,'Liquid');bar(bars,c.gasFraction,palette.gas,'Gas space');}
   else if(mode==='oxygen'){bar(bars,(c.oxygenWater??0)/scales.oxygen/2,palette.oxygenWater,'Dissolved oxygen');bar(bars,(c.oxygenGas??0)/scales.oxygen/2,palette.oxygenGas,'Gas oxygen');}
   else{const key=mode==='heat'?'temperature':mode==='nutrients'?'nutrient':'light';bar(bars,(c[key]??0)/scales[mode],palette[mode],mode);}
