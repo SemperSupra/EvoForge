@@ -1,0 +1,82 @@
+import assert from 'node:assert/strict';
+import {chromium,firefox,webkit} from '@playwright/test';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {serve} from '../human-ux-r58/server.mjs';
+const name=process.argv[2]||'chromium',engine={chromium,firefox,webkit}[name];assert.ok(engine);
+const out='timeline-evidence';await mkdir(out,{recursive:true});
+const {base,close}=await serve();let browser;const rows=[];
+const routes=['mosaic-legacy','mosaic','mosaic-craft','mosaic-motifs','mosaic-emblems'];
+try{
+ browser=await engine.launch();
+ for(const route of routes){
+  const ctx=await browser.newContext({viewport:{width:1600,height:1000},serviceWorkers:'block'}),p=await ctx.newPage(),errors=[];
+  p.on('pageerror',e=>errors.push(e.message));
+  await p.goto(base+'?experience='+route);
+  await p.waitForFunction(()=>document.querySelectorAll('.grid .card[data-render-state=ready]').length===16,null,{timeout:120000});
+  const transport=p.locator('.stage-transport'),grid=p.locator('.mosaic-viewer'),generation=await grid.getAttribute('data-generation');
+  const command=label=>transport.getByRole('button',{name:label,exact:true});
+  const review=p.getByRole('slider',{name:'Review speed'}),originalReview=await review.inputValue();
+  await transport.getByRole('slider',{name:'Stage interval'}).fill('400');
+  assert.equal(await review.inputValue(),originalReview);
+  const membership=async()=>p.evaluate(()=>{
+    const read=s=>[...document.querySelectorAll(s)].map(e=>[e.getAttribute('data-candidate-id'),Number(e.getAttribute('data-ring'))]).sort((a,b)=>a[0].localeCompare(b[0]));
+    return {rings:read('#mosaic-lens-left svg g[data-ring]'),radar:read('#mosaic-lens-right .population-plot g[data-ring],#mosaic-lens-right .radar-pending-items button[data-ring]')};
+  });
+  const check=async()=>{const m=await membership();assert.equal(m.rings.length,16);assert.deepEqual(m.rings,m.radar);assert.equal(new Set(m.rings.map(x=>x[0])).size,16);return m.rings;};
+  const before=await check();assert.ok(before.every(x=>x[1]===2));
+  await command('Rewind stage timeline').click();
+  assert.equal(await transport.getAttribute('data-history'),'true');
+  const initial=await check();assert.ok(initial.every(x=>x[1]===0));
+  assert.equal(await p.locator('#mosaic-lens-right .population-plot g[data-ring]').count(),0);
+  assert.equal(await p.locator('#mosaic-lens-right .radar-pending-items button').count(),16);
+  assert.ok(await grid.getByRole('button',{name:'Pick',exact:true}).first().isDisabled());
+  assert.ok(await p.getByRole('button',{name:'Next',exact:true}).isDisabled());
+  await p.screenshot({path:out+'/'+route+'-initial.png'});
+  await command('Next stage frame').click();
+  const first=await check();assert.ok(first.some(x=>x[1]===1));assert.ok(first.some(x=>x[1]===0));
+  await p.screenshot({path:out+'/'+route+'-rendered.png'});
+  await command('Previous stage frame').click();assert.deepEqual(await check(),initial);
+  await command('Next stage frame').click();assert.deepEqual(await check(),first);
+  await command('Play stages forward').click();
+  await p.waitForFunction(()=>document.querySelectorAll('#mosaic-lens-left svg g[data-ring="2"]').length===16,null,{timeout:30000});
+  await p.waitForFunction(()=>document.querySelector('.stage-transport').dataset.direction==='0',null,{timeout:10000});
+  assert.deepEqual(await check(),before);
+  const last=Number(await transport.getAttribute('data-frame'));assert.ok(last>=3);
+  await p.screenshot({path:out+'/'+route+'-eligible.png'});
+  await command('Play stages backward').click();
+  await p.waitForFunction(n=>Number(document.querySelector('.stage-transport').dataset.frame)<n,last);
+  await command('Pause stage replay').click();
+  const held=await transport.getAttribute('data-frame');await p.waitForTimeout(1000);assert.equal(await transport.getAttribute('data-frame'),held);
+  await transport.getByRole('slider',{name:'Stage history position'}).fill('0');assert.deepEqual(await check(),initial);
+  assert.equal(await grid.getAttribute('data-generation'),generation);
+  await command('Return to live stages').click();
+  assert.equal(await transport.getAttribute('data-history'),'false');
+  assert.deepEqual(await check(),before);
+  assert.ok(await grid.getByRole('button',{name:'Pick',exact:true}).first().isEnabled());
+  await grid.getByRole('button',{name:'Pick',exact:true}).first().click();
+  const picked=await check();assert.equal(picked.filter(x=>x[1]===3).length,1);
+  await command('Previous stage frame').click();assert.deepEqual(await check(),before);
+  assert.equal(await grid.getByRole('button',{name:'Unpick',exact:true}).count(),1);
+  assert.ok(await grid.getByRole('button',{name:'Unpick',exact:true}).isDisabled());
+  await command('Return to live stages').click();assert.deepEqual(await check(),picked);
+  assert.equal(await grid.getAttribute('data-generation'),generation);
+  // Confirm visual pipeline interval persists without changing review-speed configuration.
+  assert.equal(await transport.getByRole('slider',{name:'Stage interval'}).inputValue(),'400');
+  await p.getByRole('button',{name:'Next',exact:true}).click();
+  await p.waitForFunction(g=>document.querySelector('.mosaic-viewer').dataset.generation!==g,generation,{timeout:15000});
+  assert.equal(await transport.getAttribute('data-history'),'false');
+  assert.equal(await transport.getAttribute('data-frames'),'0');
+  assert.equal(await transport.getByRole('slider',{name:'Stage interval'}).inputValue(),'400');
+  assert.deepEqual(errors,[]);
+  rows.push({route,generation,frames:last+1,independentDwellMs:400,parity:true,readOnly:true,passed:true});
+  console.log('TIMELINE '+JSON.stringify(rows.at(-1)));
+  await writeFile(out+'/results.json',JSON.stringify(rows,null,2));await ctx.close();
+ }
+ // Touch and small-screen transport remains inside viewport; no real-hardware claim.
+ const ctx=await browser.newContext({viewport:{width:390,height:844},isMobile:name!=='firefox',hasTouch:true,serviceWorkers:'block'}),p=await ctx.newPage();
+ await p.goto(base+'?experience=mosaic-craft');await p.waitForFunction(()=>document.querySelectorAll('.grid .card[data-render-state=ready]').length===16,null,{timeout:120000});
+ assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ await p.locator('.stage-transport').getByRole('button',{name:'Rewind stage timeline',exact:true}).click();
+ await p.screenshot({path:out+'/phone-timeline.png'});
+ await ctx.close();
+}finally{await browser?.close();await close();}
