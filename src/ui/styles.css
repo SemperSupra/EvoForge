@@ -166,3 +166,24 @@ button, select { font: inherit; }
  .mosaic-workspace .lens-pane .population-plot{display:block}
  .mosaic-workspace .lens-pane .radar-roster{display:flex}.mosaic-workspace .lens-pane .radar-cards,.mosaic-workspace .lens-pane .radar-plot-toggle{display:none}
 }
+
+/* Linked stage transport: independent of generation Play and review speed. */
+.stage-transport{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:5px 12px;box-sizing:border-box;border-block-end:1px solid #8883;min-width:0}
+.stage-transport-heading{font-size:12px;font-weight:600;min-width:0}
+.stage-transport-buttons{display:flex;gap:4px;flex-wrap:wrap}
+.stage-transport-buttons button{min-width:32px;min-height:32px;border:1px solid #8887;background:transparent;border-radius:5px;color:inherit;font:inherit;font-size:16px;cursor:pointer}
+.stage-transport-buttons button:disabled{opacity:.4;cursor:default}
+.stage-transport-buttons button:last-child{font-size:12px;padding-inline:8px}
+.stage-transport>input[type=range]{flex:1 1 96px;min-width:0;max-width:220px;accent-color:#0e7490}
+.stage-interval{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;min-width:0}
+.stage-interval input{width:112px;min-width:0;accent-color:#0e7490}
+.stage-interval output{min-width:45px;font-variant-numeric:tabular-nums}
+.stage-transport[data-history=true]{background:#0e74900e}
+.radar-pending{display:grid;gap:5px;font-size:12px;margin-top:8px;border-block:1px solid #8883;padding:6px 0}
+.radar-pending-items{display:flex;flex-wrap:wrap;gap:4px}
+.radar-pending-items button{font-size:12px;min-width:28px;min-height:28px;border:1px dashed #888a;background:transparent;color:inherit;border-radius:5px}
+.radar-stage-key{display:flex;gap:5px 10px;flex-wrap:wrap;margin:6px 0;font-size:12px}
+.radar-stage-key span{display:inline-flex;gap:5px;align-items:center}
+.radar-stage-key span::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--stage-color);border:1px solid currentColor}
+@media(max-width:999px){.stage-transport{padding:5px 6px;gap:4px 7px}.stage-transport-heading{flex:1 1 100%}.stage-transport-buttons{flex:1 1 100%}.stage-transport>input[type=range]{max-width:100%}.stage-interval{flex:1 1 100%}.stage-interval input{flex:1 1 90px}.stage-transport-buttons button{min-width:38px;min-height:38px}}
+@media(pointer:coarse){.stage-transport-buttons button,.radar-pending-items button{min-height:44px;min-width:44px}}

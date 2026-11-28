@@ -1,8 +1,8 @@
 import { decorateMosaicChrome } from "./chrome.mjs";
 import type { Candidate, CandidateStatus, GenerationState, Pace, Playback, GASettingsSnapshot } from "../core/types";
 import { paceProfile } from "../core/pace";
-import { renderEvolutionLenses, renderCandidateRadar, readLensLayout, type LensState } from "./evolution-lenses";
-import { presentedStage, presentationComplete, stageDwell, type PresentationStage, type PresentationRecord } from "./lens-presentation";
+import { renderEvolutionLenses, renderCandidateRadar, readLensLayout, saveLensLayout, type LensState } from "./evolution-lenses";
+import { advanceDisplayedStage, nextStageTime, StageJournal, clampDwell, presentationComplete, type PresentationStage, type PresentationRecord } from "./lens-presentation";
 import { WorkerPool } from "../workers/pool";
 import type { RenderJob, MainMessage } from "../workers/protocol";
 import { XorShift32, mixU32 } from "../core/prng";
@@ -80,6 +80,10 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   if(compactLens.matches){lensState.ringsOpen=false;lensState.radarOpen=false;}
   let presentationKey="",presentationElapsed=0,presentationLast:number|null=null,presentationTimer:number|null=null,presentationStarted=false;
   let presentationRecords=new Map<string,PresentationRecord>(),presentationStages=new Map<string,PresentationStage>();
+  type StageFrame={stages:Map<string,PresentationStage>;candidates:Candidate[];previews:typeof thumbMap;filters:LensState["filters"];elapsed:number};
+  const journal=new StageJournal<StageFrame>();
+  let historyDirection:-1|0|1=0,historyTimer:number|null=null;
+  const stageInterval=()=>clampDwell(lensState.stageMs??1100);
   const lensScroll=new Map<string,number>();
   let libraryOpen = false;
   let libraryItems: FavoriteRecord[] = [];
@@ -100,7 +104,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
 
   // Preserve the live control during pointer gestures, native pickers and keyboard edits.
   const actionable=(t:EventTarget|null)=>t instanceof Element?t.closest<HTMLElement>("button,select,input,summary,canvas,[role=button],[role=separator]"):null;
-  function holdInteraction(){if(interactionRelease!==null){clearTimeout(interactionRelease);interactionRelease=null;}interactionHeld=true;cancelReadyTimer();stopPresentationTimer();presentationLast=null;}
+  function holdInteraction(){if(interactionRelease!==null){clearTimeout(interactionRelease);interactionRelease=null;}interactionHeld=true;cancelReadyTimer();stopPresentationTimer();stopHistoryTimer();presentationLast=null;}
   function releaseInteraction(){if(interactionRelease!==null)clearTimeout(interactionRelease);interactionRelease=window.setTimeout(()=>{interactionRelease=null;interactionHeld=false;editingControl=null;render();},180);}
   el.addEventListener("pointerdown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;}},true);
   window.addEventListener("pointerup",()=>{if(interactionHeld&&!editingControl)releaseInteraction();},true);
@@ -113,7 +117,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   el.addEventListener("change",()=>commitInteraction(),true);
   el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
   compactLens.addEventListener("change",()=>{if(el.isConnected)render();});
-  document.addEventListener("visibilitychange",()=>{if(!el.isConnected)return;presentationLast=null;stopPresentationTimer();cancelReadyTimer();render();});
+  document.addEventListener("visibilitychange",()=>{if(!el.isConnected)return;presentationLast=null;stopPresentationTimer();stopHistoryTimer();cancelReadyTimer();render();});
   // First session seed is derived from favorites (if any). App() can't be async, so bootstrap.
   void startNewSession();
 
@@ -287,7 +291,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   function stopPresentationTimer(){if(presentationTimer!==null){clearTimeout(presentationTimer);presentationTimer=null;}}
   function syncPresentation():boolean{
     const key=gen.generationId+":"+gen.renderIntentId+":"+(lensState.pipelineMode??"walkthrough");
-    if(presentationKey!==key){presentationKey=key;presentationElapsed=0;presentationLast=null;presentationStarted=false;presentationRecords.clear();presentationStages.clear();stopPresentationTimer();}
+    if(presentationKey!==key){presentationKey=key;presentationElapsed=0;presentationLast=null;presentationStarted=false;presentationRecords.clear();presentationStages.clear();stopPresentationTimer();stopHistoryTimer();historyDirection=0;journal.clear();}
     if(lensState.pipelineMode==="live"){presentationLast=null;return false;}
     if(playback==="playing")presentationStarted=true;
     const now=performance.now(),running=presentationStarted&&currentGate()==="open"&&!document.hidden;
@@ -298,11 +302,76 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       const ready=thumbMap.get(c.id)?.status==="ready";
       if(ready&&!presentationRecords.has(c.id))presentationRecords.set(c.id,{readyAt:presentationElapsed});
       const old=presentationStages.get(c.id)??0;
-      const stage=presentedStage(ready,presentationRecords.get(c.id),presentationElapsed,index,stageDwell(reviewSeconds));
-      const next=ready?Math.max(old,stage) as PresentationStage:0;
+      const next=advanceDisplayedStage(ready,presentationRecords.get(c.id),presentationElapsed,index,stageInterval(),old);
       presentationStages.set(c.id,next);changed||=next!==old;
     }
+    if(activePresentation()&&gen.candidates.length){
+      // Store only immutable references to the real receipt objects, not copied pixel buffers.
+      const signature=JSON.stringify([gen.candidates.map(c=>[c.id,c.status,presentationStages.get(c.id),thumbMap.get(c.id)?.status==="err"]),lensState.filters]);
+      journal.append(signature,{stages:new Map(presentationStages),candidates:gen.candidates.map(c=>({...c})),previews:new Map(thumbMap),filters:lensState.filters.map(f=>({...f})),elapsed:presentationElapsed});
+    }
     return changed;
+  }
+  function stopHistoryTimer(){if(historyTimer!==null){clearTimeout(historyTimer);historyTimer=null;}}
+  function prepareHistory(){
+    if(lensState.pipelineMode==="live"){lensState.pipelineMode="walkthrough";saveLensLayout(lensState);}
+    playback="paused";cancelReadyTimer();stopPresentationTimer();presentationLast=null;
+    syncPresentation();presentationStarted=true;syncPresentation();
+    if(!journal.reviewing&&journal.length)journal.seek(journal.index);
+  }
+  function nextRecordedOrAvailable():boolean{
+    if(!journal.atEnd){journal.step(1);return true;}
+    const times=gen.candidates.map((c,index)=>nextStageTime(thumbMap.get(c.id)?.status==="ready",presentationRecords.get(c.id),index,stageInterval(),presentationStages.get(c.id)??0)).filter((v):v is number=>v!==null);
+    if(!times.length)return false;
+    presentationElapsed=Math.max(presentationElapsed,Math.min(...times));presentationLast=null;
+    const changed=syncPresentation();journal.seek(journal.length-1);return changed;
+  }
+  function armHistoryTimer(){
+    if(historyTimer!==null||!historyDirection||!journal.reviewing||interactionHeld||document.hidden||focusCandidateId!==null||libraryOpen)return;
+    historyTimer=window.setTimeout(()=>{
+      historyTimer=null;if(!el.isConnected)return;
+      if(historyDirection===-1){if(journal.index>0)journal.step(-1);if(journal.index===0)historyDirection=0;}
+      else if(historyDirection===1&&!nextRecordedOrAvailable())historyDirection=0;
+      render();
+    },stageInterval());
+  }
+  function timelineAction(command:"first"|"prev"|"next"|"reverse"|"forward"|"pause"|"live",seek?:number){
+    stopHistoryTimer();historyDirection=0;
+    if(command==="live"){journal.live();render();return;}
+    if(!gen.candidates.length)return;
+    prepareHistory();
+    if(seek!==undefined)journal.seek(seek);
+    else if(command==="first")journal.seek(0);
+    else if(command==="prev")journal.step(-1);
+    else if(command==="next")nextRecordedOrAvailable();
+    else if(command==="reverse"){if(journal.index>0)historyDirection=-1;}
+    else if(command==="forward"){historyDirection=1;}
+    render();
+  }
+  function renderTimeline(){
+    const section=document.createElement("section");section.className="stage-transport";
+    section.setAttribute("aria-label","Reality Rings and radar timeline");
+    section.dataset.history=String(journal.reviewing);section.dataset.frame=String(journal.index);section.dataset.frames=String(journal.length);section.dataset.direction=String(historyDirection);
+    const heading=document.createElement("div");heading.className="stage-transport-heading";heading.textContent=journal.reviewing?"Timeline · frame "+(journal.index+1)+" / "+journal.length+" · evolution paused":"Stage timeline · "+(journal.length?journal.length+" recorded states":"ready to record");
+    const buttons=document.createElement("div");buttons.className="stage-transport-buttons";
+    const add=(glyph:string,label:string,command:Parameters<typeof timelineAction>[0],disabled=false)=>{const b=document.createElement("button");b.type="button";b.textContent=glyph;b.title=label;b.setAttribute("aria-label",label);b.dataset.lensFocus="timeline-"+command;b.disabled=disabled;b.onclick=()=>timelineAction(command);buttons.append(b);return b;};
+    const empty=!gen.candidates.length;
+    add("⏮","Rewind stage timeline","first",empty);
+    add("◀","Play stages backward","reverse",empty||journal.length<2||journal.index===0);
+    add("‹","Previous stage frame","prev",empty||journal.length<2||journal.index===0);
+    add("Ⅱ","Pause stage replay","pause",empty||!historyDirection);
+    add("›","Next stage frame","next",empty);
+    add("▶","Play stages forward","forward",empty);
+    add("Live","Return to live stages","live",!journal.reviewing);
+    const scrub=document.createElement("input");scrub.type="range";scrub.min="0";scrub.max=String(Math.max(0,journal.length-1));scrub.step="1";scrub.value=String(journal.index);scrub.disabled=journal.length<2;scrub.setAttribute("aria-label","Stage history position");scrub.setAttribute("aria-valuetext","Frame "+(journal.index+1)+" of "+journal.length);scrub.dataset.lensFocus="timeline-scrub";
+    scrub.oninput=()=>{scrub.setAttribute("aria-valuetext","Frame "+(Number(scrub.value)+1)+" of "+journal.length);heading.textContent="Timeline · frame "+(Number(scrub.value)+1)+" / "+journal.length;};
+    scrub.onchange=()=>{const pos=Number(scrub.value);commitInteraction();timelineAction("pause",pos);};
+    const rate=document.createElement("label");rate.className="stage-interval";const label=document.createElement("span");label.textContent="Stage interval";const range=document.createElement("input");range.type="range";range.min="250";range.max="10000";range.step="50";range.value=String(stageInterval());range.setAttribute("aria-label","Stage interval");range.dataset.lensFocus="timeline-interval";
+    const output=document.createElement("output");const show=()=>{output.textContent=(stageInterval()/1000).toFixed(2)+" s";range.setAttribute("aria-valuetext",output.textContent+" per stage");};show();
+    range.oninput=()=>{lensState.stageMs=clampDwell(Number(range.value));show();stopHistoryTimer();};
+    range.onchange=()=>{saveLensLayout(lensState);commitInteraction();render();};rate.append(label,range,output);
+    section.append(heading,buttons,scrub,rate);
+    return section;
   }
   function armPresentationTimer(){
     if(presentationTimer!==null||!activePresentation()||currentGate()!=="open"||document.hidden)return;
@@ -384,7 +453,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function currentGate(): AdvanceGate {
-    if (focusCandidateId !== null || libraryOpen || interactionHeld || document.hidden) return "focus_open";
+    if (journal.reviewing || focusCandidateId !== null || libraryOpen || interactionHeld || document.hidden) return "focus_open";
     if (playback === "paused") return "paused";
     if (refineHold) return "hold_refine";
     return "open";
@@ -405,6 +474,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function advanceOneGeneration() {
+    if(journal.reviewing)return;
     cancelReadyTimer();
     focusCandidateId = null;
     focusRender = null;
@@ -432,6 +502,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function setPlayback(p: Playback) {
+    if(p==="playing"){journal.live();historyDirection=0;stopHistoryTimer();presentationLast=null;}
     playback = p;
     cancelReadyTimer();
     if (p === "playing" && pace === "manual") { setPace("medium"); return; }
@@ -461,6 +532,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   async function favoriteCandidate(c: Candidate) {
+    if(journal.reviewing)return;
     const prof = paceProfile(pace);
     const recipe = makeRecipe({
       engineId: engineRef.engineId,
@@ -478,6 +550,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function toggleCandidateStatus(id: string, next: CandidateStatus) {
+    if(journal.reviewing)return;
     gen = { ...gen, candidates: gen.candidates.map(c => c.id === id ? { ...c, status: next } : c) };
     cancelReadyTimer();
     render();
@@ -682,6 +755,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     if(interactionHeld)return;
     syncPresentation();
     if(currentGate()!=="open")stopPresentationTimer();
+    if(!journal.reviewing||interactionHeld||focusCandidateId!==null||libraryOpen||document.hidden)stopHistoryTimer();
     const lensFocus=el.contains(document.activeElement)?document.activeElement?.getAttribute("data-lens-focus"):null;
     for(const p of el.querySelectorAll<HTMLElement>(".lens-pane"))lensScroll.set(p.id,p.scrollTop);
     const priorScroll=el.querySelector<HTMLElement>(".modalBody")?.scrollTop??0;
@@ -812,10 +886,10 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     const prof = paceProfile(pace);
     const readyLatch=shouldShowReadyLatch({ playback, pace, gate: currentGate(), readyToAdvance: readyToAdvance() });
     const latch=document.createElement("div");latch.className="advance-strip";
-    const status=document.createElement("span");status.className="advance-status";status.textContent=readyLatch?"Ready · continuing in "+reviewSeconds+"s":currentGate()==="hold_refine"?"Refining generation…":playback==="playing"&&actualReady()?"Showing candidate stages…":playback==="playing"?"Rendering / exploring":"Paused";
+    const status=document.createElement("span");status.className="advance-status";status.textContent=journal.reviewing?"Recorded stages · live gallery":readyLatch?"Ready · continuing in "+reviewSeconds+"s":currentGate()==="hold_refine"?"Refining generation…":playback==="playing"&&actualReady()?"Showing candidate stages…":playback==="playing"?"Rendering / exploring":"Paused";
     const hold=document.createElement("button");hold.textContent="Hold";hold.disabled=!readyLatch;hold.onclick=()=>setPlayback("paused");
     const adv=document.createElement("button");adv.textContent="Advance now";adv.disabled=!readyLatch;adv.onclick=()=>advanceOneGeneration();
-    latch.append(status,hold,adv);el.append(latch);
+    latch.append(status,hold,adv);el.append(latch,renderTimeline());
     const notification=document.createElement("div");notification.className="gallery-notice";notification.setAttribute("role","status");notification.textContent=lastActionMsg??"";el.append(notification);
     armReadyTimerIfNeeded();
 
@@ -877,19 +951,19 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
 
       const pickBtn = document.createElement("button");
       pickBtn.textContent = "✓";pickBtn.setAttribute("aria-label",c.status==="picked"?"Unpick":"Pick");pickBtn.title=c.status==="picked"?"Unpick":"Pick";pickBtn.setAttribute("aria-pressed",String(c.status==="picked"));
-      pickBtn.disabled = c.status === "retired";
+      pickBtn.disabled = journal.reviewing || c.status === "retired";
       pickBtn.onclick = () => toggleCandidateStatus(c.id, c.status === "picked" ? "normal" : "picked");
       footer.appendChild(pickBtn);
 
       const skipBtn = document.createElement("button");
       skipBtn.textContent = "×";skipBtn.setAttribute("aria-label",c.status==="skipped"?"Unskip":"Skip");skipBtn.title=c.status==="skipped"?"Unskip":"Skip";skipBtn.setAttribute("aria-pressed",String(c.status==="skipped"));
-      skipBtn.disabled = c.status === "retired";
+      skipBtn.disabled = journal.reviewing || c.status === "retired";
       skipBtn.onclick = () => toggleCandidateStatus(c.id, c.status === "skipped" ? "normal" : "skipped");
       footer.appendChild(skipBtn);
 
       const favBtn = document.createElement("button");
       favBtn.textContent = "☆";favBtn.setAttribute("aria-label","Favorite");favBtn.title="Save to library";
-      favBtn.disabled = c.status === "retired";
+      favBtn.disabled = journal.reviewing || c.status === "retired";
       favBtn.onclick = () => favoriteCandidate(c);
       footer.appendChild(favBtn);
 
@@ -902,10 +976,11 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       grid.appendChild(card);
     }
 
-    el.append(renderEvolutionLenses(gen.candidates,thumbMap,lensState,()=>{cancelReadyTimer();render();},openFocus,grid,activePresentation()?presentationStages:undefined));
+    const recorded=journal.reviewing?journal.current:undefined;
+    el.append(renderEvolutionLenses(recorded?.candidates??gen.candidates,recorded?.previews??thumbMap,lensState,()=>{cancelReadyTimer();render();},openFocus,grid,recorded?.stages??(activePresentation()?presentationStages:undefined),recorded));
     for(const p of el.querySelectorAll<HTMLElement>(".lens-pane"))p.scrollTop=lensScroll.get(p.id)??0;
     if(lensFocus){const replacement=[...el.querySelectorAll<HTMLElement>("[data-lens-focus]")].find(e=>e.getAttribute("data-lens-focus")===lensFocus);replacement?.focus({preventScroll:true});}
-    armPresentationTimer();
+    armPresentationTimer();armHistoryTimer();
 
     if (focusCandidateId) {
       const c = gen.candidates.find(x => x.id === focusCandidateId);
@@ -951,8 +1026,8 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       const items=gen.candidates,at=items.findIndex(x=>x.id===c.id);
       const action=(label:string,fn:()=>void,disabled=false)=>{const b=document.createElement("button");b.textContent=label;b.disabled=disabled;b.onclick=fn;actions.append(b);};
       action("Previous",()=>openFocus(items[at-1].id),at===0);
-      action(c.status==="picked"?"Unpick":"Pick",()=>toggleCandidateStatus(c.id,c.status==="picked"?"normal":"picked"),c.status==="retired");
-      action(c.status==="skipped"?"Unskip":"Skip",()=>toggleCandidateStatus(c.id,c.status==="skipped"?"normal":"skipped"),c.status==="retired");
+      action(c.status==="picked"?"Unpick":"Pick",()=>toggleCandidateStatus(c.id,c.status==="picked"?"normal":"picked"),journal.reviewing||c.status==="retired");
+      action(c.status==="skipped"?"Unskip":"Skip",()=>toggleCandidateStatus(c.id,c.status==="skipped"?"normal":"skipped"),journal.reviewing||c.status==="retired");
       action("Next image",()=>openFocus(items[at+1].id),at===items.length-1);
       body.append(actions);
       modal.appendChild(body);
