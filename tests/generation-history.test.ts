@@ -18,6 +18,13 @@ describe("live generation history adapter",()=>{
   const h=new GenerationHistory("mosaic","3.0.0",store()),l=live(),id=await h.record("session-a",l),before=h.export(),original=l.candidates.map(c=>Array.from(c.genomeQ16));
   const r=await h.compare(id,"preview-a",{"g0-c1":"picked"});expect(r.changedSlots).toBeGreaterThan(0);expect(r.baseline.generationIndex).toBe(1);expect(r.alternative.branch).toBe("preview-a");expect(h.export()).toBe(before);expect(l.candidates.map(c=>Array.from(c.genomeQ16))).toEqual(original);
  });
+ it("creates a separate explicit branch with immutable parent and recorded lineage",async()=>{
+  const h=new GenerationHistory("mosaic","3.0.0",store()),l=live(),id=await h.record("session-a",l),original=h.get(id);
+  const f=await h.createFork(id,"branch-b",{"g0-c1":"picked"});expect(f.checkpoint.parent).toBe(id);expect(f.checkpoint.branch).toBe("branch-b");expect(f.checkpoint.candidates[1].status).toBe("picked");
+  expect(h.get(id)).toEqual(original);expect(h.rows()).toHaveLength(2);
+  l.generationIndex=1;const next=await h.record("branch-b",l);expect(h.get(next).parent).toBe(f.id);
+  await expect(h.createFork(id,"branch-b",{})).rejects.toThrow("branch already exists");
+ });
  it("fails safely on storage conflict; retains in-memory export",async()=>{
   const storage=store(),a=new GenerationHistory("mosaic","3.0.0",storage),b=new GenerationHistory("mosaic","3.0.0",storage);
   await Promise.all([a.settled(),b.settled()]);await a.record("session-a",live());await b.record("session-b",live());
