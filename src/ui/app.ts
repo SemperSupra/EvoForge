@@ -101,7 +101,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   el.addEventListener("focusin",e=>{const target=actionable(e.target);if(target?.matches("select,input:not([type=range])")){editingControl=target;holdInteraction();}},true);
   el.addEventListener("focusout",e=>{if(editingControl===e.target)releaseInteraction();},true);
   // A committed click/change can update synchronously, but never replace the control mid-gesture.
-  function commitInteraction(){if(!interactionHeld)return;interactionHeld=false;editingControl=null;releaseInteraction();}
+  function commitInteraction(){if(!interactionHeld)return;if(interactionRelease!==null){clearTimeout(interactionRelease);interactionRelease=null;}interactionHeld=false;editingControl=null;}
   el.addEventListener("click",e=>{const target=actionable(e.target);if(target?.matches("button,summary,canvas,[role=button]"))commitInteraction();},true);
   el.addEventListener("change",()=>commitInteraction(),true);
   el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
@@ -253,12 +253,23 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       if (!focusRender || focusRender.candidateId !== msg.candidateId) return;
       if (msg.type === "result") focusRender = { candidateId: msg.candidateId, w: msg.width, h: msg.height, rgba: msg.rgba, status: "ready" };
       else focusRender = { ...focusRender, status: "err" };
+      if(updateFocusSurface())return;
     }
     if (refineHold && gen.candidates.length && gen.candidates.every(c => {
       const s = thumbMap.get(c.id)?.status;
       return s === "ready" || s === "err";
     })) refineHold = false;
     render();
+  }
+
+  function updateFocusSurface():boolean {
+    const frame=el.querySelector<HTMLElement>(".focus-frame"),canvas=frame?.querySelector("canvas");
+    if(!frame||!canvas||!focusCandidateId||!focusRender||focusRender.candidateId!==focusCandidateId)return false;
+    const ctx=canvas.getContext("2d");if(!ctx)return false;
+    const fallback=thumbMap.get(focusCandidateId),src=focusRender.status==="ready"?focusRender:fallback?.status==="ready"?fallback:null;
+    if(src){const tmp=document.createElement("canvas");tmp.width=src.w;tmp.height=src.h;tmp.getContext("2d")?.putImageData(new ImageData(new Uint8ClampedArray(src.rgba),src.w,src.h),0,0);ctx.drawImage(tmp,0,0,canvas.width,canvas.height);}
+    else{ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle="white";ctx.fillText("render error",10,20);}
+    const panel=renderCandidateRadar(src??undefined),old=frame.querySelector(".focus-radar");panel.classList.toggle("open",radarCandidateId===focusCandidateId);panel.setAttribute("aria-hidden",String(radarCandidateId!==focusCandidateId));old?.replaceWith(panel);return true;
   }
 
   function pickedCount(): number { return gen.candidates.filter(c => c.status === "picked").length; }
@@ -272,7 +283,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     lastActionTimer = window.setTimeout(() => {
       lastActionTimer = null;
       lastActionMsg = null;
-      render();
+      if(!focusCandidateId&&!libraryOpen)render();
     }, 1500);
   }
 
