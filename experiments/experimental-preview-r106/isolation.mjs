@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import {chromium} from '@playwright/test';
+import {mkdir,cp,writeFile,readFile,mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve,extname,sep} from 'node:path';
+import {createServer} from 'node:http';
+import {execFileSync} from 'node:child_process';
+const source=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
+assert.equal(source,process.env.EXPECTED_SOURCE);
+const evidence='preview-isolation-evidence';await mkdir(evidence,{recursive:true});
+const root=await mkdtemp(join(tmpdir(),'evoforge-preview-'));
+await cp('dist',join(root,'preview'),{recursive:true});
+await writeFile(join(root,'index.html'),'<!doctype html><title>Production isolation fixture</title><link rel="icon" href="data:,"><p>Production fixture</p>');
+const errors=[],httpErrors=[],rows=[],mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.webmanifest':'application/manifest+json','.svg':'image/svg+xml'};
+const server=createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost');let path=decodeURIComponent(u.pathname.slice(1));if(!path||path.endsWith('/'))path+='index.html';const target=resolve(root,path);assert.ok(target.startsWith(root+sep));const bytes=await readFile(target);res.writeHead(200,{'content-type':mime[extname(target)]||'application/octet-stream'});res.end(bytes);}catch{if(!res.headersSent)res.writeHead(404);res.end();httpErrors.push(req.url);}});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));
+const base='http://127.0.0.1:'+server.address().port+'/',preview=base+'preview/';let browser;
+try{
+ browser=await chromium.launch();const ctx=await browser.newContext({viewport:{width:1280,height:900},serviceWorkers:'allow'}),p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));
+ await p.goto(base);
+ const sentinel={theme:'light',labels:'shown'},productionKey='evoforge.appearance.v1',lensKey='evoforge:mosaic-lens-layout-v1',productionCache='evoforge-alife-0.1.0-rdte.5';
+ await p.evaluate(async({sentinel,productionKey,lensKey,productionCache})=>{
+  localStorage.setItem(productionKey,JSON.stringify(sentinel));localStorage.setItem(lensKey,'{"leftWidth":333}');
+  await new Promise((ok,fail)=>{const r=indexedDB.open('evoforge-db',1);r.onupgradeneeded=()=>r.result.createObjectStore('sentinel');r.onerror=()=>fail(r.error);r.onsuccess=()=>{const db=r.result,t=db.transaction('sentinel','readwrite');t.objectStore('sentinel').put('keep-production','marker');t.oncomplete=()=>{db.close();ok();};t.onerror=()=>fail(t.error);};});
+  await(await caches.open(productionCache)).put(location.origin+'/production-marker',new Response('keep-cache'));
+  await(await caches.open('evoforge-preview-alife-0.1.0-rdte.8')).put(location.origin+'/preview-old-marker',new Response('old preview'));
+ },{sentinel,productionKey,lensKey,productionCache});
+ await p.goto(preview);await p.locator('#preview-notice').waitFor();assert.equal(await p.locator('#preview-notice a').getAttribute('href'),'../');
+ const hrefs=await p.locator('a[href]').evaluateAll(es=>es.map(e=>e.href));assert.ok(hrefs.some(h=>h.includes('/preview/')));
+ assert.ok(hrefs.some(h=>h===preview+'experiences/alife/index.html?mode=observe'));
+ await p.goto(preview+'?experience=mosaic-craft');await p.waitForFunction(()=>document.querySelectorAll('.grid .card[data-render-state=ready]').length===16,null,{timeout:120000});
+ await p.waitForFunction(async()=>typeof indexedDB.databases==='function'&&(await indexedDB.databases()).some(d=>d.name==='evoforge-preview-db'),null,{timeout:30000});
+ const settings=p.locator('#ef-settings-trigger');await settings.click();
+ await p.locator('#ef-settings-dialog input[name=ef-theme][value=dark]').check();await p.getByRole('button',{name:'Done',exact:true}).click();
+ assert.equal(await p.evaluate(()=>JSON.parse(localStorage.getItem('evoforge.preview.appearance.v1')).theme),'dark');
+ assert.deepEqual(await p.evaluate(key=>JSON.parse(localStorage.getItem(key)),productionKey),sentinel);
+ assert.equal(await p.evaluate(key=>localStorage.getItem(key),lensKey),'{"leftWidth":333}');
+ const dbNames=await p.evaluate(async()=> (await indexedDB.databases()).map(d=>d.name).sort());assert.ok(dbNames.includes('evoforge-db')&&dbNames.includes('evoforge-preview-db'));
+ await p.screenshot({path:evidence+'/preview-mosaic.png'});
+ const shell=preview+'experiences/alife/index.html',manifest=preview+'experiences/alife/manifest.webmanifest',fresh='evoforge-preview-alife-0.1.0-rdte.9';
+ await p.goto(shell+'?mode=observe&profile=mobile');
+ await p.waitForFunction(()=>navigator.serviceWorker.controller!==null,null,{timeout:30000});
+ await p.waitForFunction(async({fresh,productionCache})=>{const keys=await caches.keys();return keys.includes(fresh)&&keys.includes(productionCache)&&!keys.includes('evoforge-preview-alife-0.1.0-rdte.8');},{fresh,productionCache});
+ const scope=await p.evaluate(async()=> (await navigator.serviceWorker.getRegistration()).scope);assert.equal(scope,preview+'experiences/alife/');
+ const preserved=await p.evaluate(async({productionCache,productionKey,lensKey})=>{
+  const cache=await(await caches.open(productionCache)).match(location.origin+'/production-marker');
+  const marker=await new Promise((ok,fail)=>{const r=indexedDB.open('evoforge-db',1);r.onerror=()=>fail(r.error);r.onsuccess=()=>{const db=r.result,q=db.transaction('sentinel').objectStore('sentinel').get('marker');q.onsuccess=()=>{db.close();ok(q.result);};q.onerror=()=>fail(q.error);};});
+  return {cache:await cache.text(),marker,theme:JSON.parse(localStorage.getItem(productionKey)),lens:localStorage.getItem(lensKey)};
+ },{productionCache,productionKey,lensKey});
+ assert.deepEqual(preserved,{cache:'keep-cache',marker:'keep-production',theme:sentinel,lens:'{"leftWidth":333}'});
+ const online=await p.evaluate(async({shell,manifest})=>[await(await fetch(shell)).text(),await(await fetch(manifest)).text()],{shell,manifest});
+ assert.ok(online[0].includes('Preview · Observe'));assert.equal(JSON.parse(online[1]).short_name,'ALife Preview');
+ await ctx.setOffline(true);
+ const offline=await p.evaluate(async({shell,manifest})=>[await(await fetch(shell+'?mode=play')).text(),await(await fetch(manifest)).text()],{shell,manifest});
+ assert.deepEqual(offline,online);await ctx.setOffline(false);
+ assert.deepEqual(errors,[]);assert.deepEqual(httpErrors,[]);
+ rows.push({source,previewPath:'/preview/',databaseNames:dbNames,productionPreserved:true,previewCacheMigrated:true,serviceWorkerScope:scope,offlineShell:true,pass:true});await ctx.close();
+}finally{await writeFile(evidence+'/results.json',JSON.stringify({source,rows,errors,httpErrors,scope:'nested preview, same-origin production storage sentinel fixture, no physical hardware claim'},null,2));await browser?.close();await new Promise(r=>server.close(r));await rm(root,{recursive:true,force:true});}

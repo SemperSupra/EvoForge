@@ -17,7 +17,7 @@ let dbp: Promise<IDBPDatabase<DBSchema>> | null = null;
 
 export function getDB() {
   if (!dbp) {
-    dbp = openDB<DBSchema>("evoforge-db", 1, {
+    dbp = openDB<DBSchema>("evoforge-preview-db", 1, {
       upgrade(db) {
         const fav = db.createObjectStore("favorites", { keyPath: "id" });
         fav.createIndex("by-createdAt", "createdAt");

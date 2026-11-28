@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "version": "0.2.0-rc.1",
-  "channel": "release-candidate",
+  "channel": "experimental-preview",
   "qualification": "pending",
   "scope": [
     "mosaic-craft",
@@ -12,6 +12,7 @@
     "alife-observe",
     "alife-play"
   ],
-  "notes": "Isolated Arena visual and display-budget candidate; not promoted. Experimental WebGPU required; no stable release or platform certification.",
-  "arenaVersion": "0.1.0-rdte.8"
+  "notes": "Owner-authorized experimental preview only. Includes R102 and R104. Separate local storage and offline cache names. No production approval, physical-device certification or performance guarantee.",
+  "arenaVersion": "0.1.0-rdte.9",
+  "preview": "R106"
 }

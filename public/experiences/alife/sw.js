@@ -1,6 +1,6 @@
 // Only this experience's immutable app shell is cached. Do not intercept other experiences.
-const PREFIX = 'evoforge-alife-';
-const CACHE = PREFIX + '0.1.0-rdte.8';
+const PREFIX = 'evoforge-preview-alife-';
+const CACHE = PREFIX + '0.1.0-rdte.9';
 const shell = new URL('./index.html', self.registration.scope);
 const manifest = new URL('./manifest.webmanifest', self.registration.scope);
 const allowed = new Set([shell.href, manifest.href]);

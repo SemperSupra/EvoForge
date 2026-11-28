@@ -1,6 +1,6 @@
 {
-  "name": "EvoForge ALife Creature Arena",
-  "short_name": "ALife Arena",
+  "name": "EvoForge ALife — Experimental preview",
+  "short_name": "ALife Preview",
   "start_url": "./index.html?mode=observe",
   "display": "standalone",
   "background_color": "#07090c",
