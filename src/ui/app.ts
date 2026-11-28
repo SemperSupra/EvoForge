@@ -106,6 +106,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   el.addEventListener("click",e=>{const target=actionable(e.target);if(target?.matches("button,summary,canvas,[role=button]"))commitInteraction();},true);
   el.addEventListener("change",()=>commitInteraction(),true);
   el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
+  let designExpanded=!(window.matchMedia?.('(max-width: 640px), (max-height: 500px)')?.matches??false);
   // First session seed is derived from favorites (if any). App() can't be async, so bootstrap.
   void startNewSession();
 
@@ -643,7 +644,6 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     }
   }
 
-  let designExpanded=!(window.matchMedia?.('(max-width: 640px), (max-height: 500px)')?.matches??false);
   function render() {
     if(interactionHeld)return;
     const priorScroll=el.querySelector<HTMLElement>(".modalBody")?.scrollTop??0;
