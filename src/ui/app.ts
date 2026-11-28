@@ -106,6 +106,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   el.addEventListener("click",e=>{const target=actionable(e.target);if(target?.matches("button,summary,canvas,[role=button]"))commitInteraction();},true);
   el.addEventListener("change",()=>commitInteraction(),true);
   el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
+  let designExpanded=!(window.matchMedia?.('(max-width: 640px), (max-height: 500px)')?.matches??false);
   // First session seed is derived from favorites (if any). App() can't be async, so bootstrap.
   void startNewSession();
 
@@ -659,49 +660,51 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     const controls = document.createElement("div");
     controls.className = "controls";
     if(atelier){
+      const designControls=document.createElement('div');designControls.className='design-controls';designControls.id='mosaic-design-controls';designControls.hidden=!designExpanded;
+      const configToggle=document.createElement('button');configToggle.type='button';configToggle.className='design-toggle';configToggle.textContent=designExpanded?'Hide design options':'Design options';configToggle.setAttribute('aria-expanded',String(designExpanded));configToggle.setAttribute('aria-controls',designControls.id);configToggle.onclick=()=>{designExpanded=!designExpanded;designControls.hidden=!designExpanded;configToggle.textContent=designExpanded?'Hide design options':'Design options';configToggle.setAttribute('aria-expanded',String(designExpanded));};controls.appendChild(configToggle);controls.appendChild(designControls);
       const seed=document.createElement("input"); seed.type="number";seed.min="0";seed.max="4294967295";seed.step="1";seed.value=String(sessionSeed);seed.setAttribute("aria-label","Session seed");seed.title="Explicit replay seed";seed.style.width="110px";
       seed.onchange=()=>{const n=Number(seed.value);if(!Number.isInteger(n)||n<0||n>0xffffffff){seed.value=String(sessionSeed);return;}sessionSeed=n;void startNewSession();};
-      controls.appendChild(seed);
+      designControls.appendChild(seed);
       function indexedControl(key:string,caption:string,names:readonly string[]){
         const select=document.createElement("select");select.setAttribute("aria-label",caption);const opt=document.createElement("option");opt.value="evolved";opt.textContent="Evolve "+caption.toLowerCase();select.appendChild(opt);
         names.forEach((name,i)=>{const o=document.createElement("option");o.value=String(i);o.textContent=name;select.appendChild(o);});
-        select.value=String(engineConfig[key]);select.onchange=()=>{engineConfig={...engineConfig,[key]:select.value==="evolved"?"evolved":Number(select.value)};refreshDesign();};controls.appendChild(select);
+        select.value=String(engineConfig[key]);select.onchange=()=>{engineConfig={...engineConfig,[key]:select.value==="evolved"?"evolved":Number(select.value)};refreshDesign();};designControls.appendChild(select);
       }
       if(motif){
         const subject=document.createElement("select");subject.setAttribute("aria-label","Fixed motif identity");
         const groups=new Map<string,HTMLOptGroupElement>();
         for(const [id,name,domain] of CATALOG){let group=groups.get(domain);if(!group){group=document.createElement("optgroup");group.label=domain;subject.appendChild(group);groups.set(domain,group);}const opt=document.createElement("option");opt.value=id;opt.textContent=name;group.appendChild(opt);}
-        subject.value=String(engineConfig.motifId);subject.onchange=()=>{engineConfig={...engineConfig,motifId:subject.value};void startNewSession();render();};controls.appendChild(subject);
+        subject.value=String(engineConfig.motifId);subject.onchange=()=>{engineConfig={...engineConfig,motifId:subject.value};void startNewSession();render();};designControls.appendChild(subject);
         indexedControl("techniqueId","Construction technique",MOTIF_TECHNIQUES);
         indexedControl("materialId","Material",MOTIF_MATERIALS);
         if(engineConfig.motifId!=="heraldry"){
           const pal=document.createElement("select");pal.setAttribute("aria-label","Motif palette");
           for(const v of ["evolved",...MOTIF_PALETTES]){const o=document.createElement("option");o.value=v;o.textContent=v==="evolved"?"Evolving palettes":v;pal.appendChild(o);}
-          pal.value=String(engineConfig.paletteId);pal.onchange=()=>{engineConfig={...engineConfig,paletteId:pal.value};refreshDesign();};controls.appendChild(pal);
+          pal.value=String(engineConfig.paletteId);pal.onchange=()=>{engineConfig={...engineConfig,paletteId:pal.value};refreshDesign();};designControls.appendChild(pal);
         }else{
           const h=validateHeraldry(engineConfig.heraldry as Record<string,unknown>|undefined);
           for(const [key,values] of Object.entries(HERALDRY_OPTIONS)){
             const select=document.createElement("select");select.setAttribute("aria-label","Heraldry "+key);
             for(const value of values){const o=document.createElement("option");o.value=value;o.textContent=key+": "+value;select.appendChild(o);}
-            select.value=h[key];select.onchange=()=>{engineConfig={...engineConfig,heraldry:validateHeraldry({...h,[key]:select.value})};void startNewSession();render();};controls.appendChild(select);
+            select.value=h[key];select.onchange=()=>{engineConfig={...engineConfig,heraldry:validateHeraldry({...h,[key]:select.value})};void startNewSession();render();};designControls.appendChild(select);
           }
           const motto=document.createElement("input");motto.type="text";motto.maxLength=14;motto.pattern="[A-Z ]{0,14}";motto.value=h.motto;motto.placeholder="Motto (A-Z, 14 chars)";motto.setAttribute("aria-label","Heraldry motto");
-          motto.onchange=()=>{const value=motto.value.toUpperCase();if(!/^[A-Z ]{0,14}$/.test(value)){motto.value=h.motto;return;}engineConfig={...engineConfig,heraldry:validateHeraldry({...h,motto:value})};void startNewSession();render();};controls.appendChild(motto);
+          motto.onchange=()=>{const value=motto.value.toUpperCase();if(!/^[A-Z ]{0,14}$/.test(value)){motto.value=h.motto;return;}engineConfig={...engineConfig,heraldry:validateHeraldry({...h,motto:value})};void startNewSession();render();};designControls.appendChild(motto);
         }
-        const hint=document.createElement("span");hint.className="small";hint.textContent="Subject and heraldic identity locked · artistic interpretation";controls.appendChild(hint);
+        const hint=document.createElement("span");hint.className="small";hint.textContent="Subject and heraldic identity locked · artistic interpretation";designControls.appendChild(hint);
       }else if(emblem){
         const symbol=document.createElement("select");symbol.setAttribute("aria-label","Fixed emblem identity");
         const groups=new Map<string,HTMLOptGroupElement>();
         for(const [id,name,kind] of SYMBOLS){let group=groups.get(kind);if(!group){group=document.createElement("optgroup");group.label=kind==="national"?"National flags":kind;symbol.appendChild(group);groups.set(kind,group);}const opt=document.createElement("option");opt.value=id;opt.textContent=name;group.appendChild(opt);}
         symbol.value=String(engineConfig.symbolId);
         symbol.onchange=()=>{engineConfig={...engineConfig,symbolId:symbol.value};void startNewSession();render();};
-        controls.appendChild(symbol);
+        designControls.appendChild(symbol);
         for(const [key,caption,names] of [["techniqueId","Construction technique",EMBLEM_TECHNIQUES],["materialId","Material",EMBLEM_MATERIALS]] as const){
           const select=document.createElement("select");select.setAttribute("aria-label",caption);const evolve=document.createElement("option");evolve.value="evolved";evolve.textContent="Evolve "+caption.toLowerCase();select.appendChild(evolve);
           names.forEach((name,i)=>{const opt=document.createElement("option");opt.value=String(i);opt.textContent=name;select.appendChild(opt);});
-          select.value=String(engineConfig[key]);select.onchange=()=>{engineConfig={...engineConfig,[key]:select.value==="evolved"?"evolved":Number(select.value)};refreshDesign();};controls.appendChild(select);
+          select.value=String(engineConfig[key]);select.onchange=()=>{engineConfig={...engineConfig,[key]:select.value==="evolved"?"evolved":Number(select.value)};refreshDesign();};designControls.appendChild(select);
         }
-        const hint=document.createElement("span");hint.className="small";hint.textContent="Identity locked · artistic interpretations, not official insignia";controls.appendChild(hint);
+        const hint=document.createElement("span");hint.className="small";hint.textContent="Identity locked · artistic interpretations, not official insignia";designControls.appendChild(hint);
       }else{
       const family=document.createElement("select");family.setAttribute("aria-label","Mosaic design family");
       for(const [i,name] of [["evolved","All design families"],...familyNames.map((name,i)=>[String(i),name])]){
@@ -709,14 +712,14 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       }
       family.value=String(engineConfig.familyId);
       family.onchange=()=>{engineConfig={...engineConfig,familyId:family.value==="evolved"?"evolved":Number(family.value)};refreshDesign();};
-      controls.appendChild(family);
+      designControls.appendChild(family);
       const palette=document.createElement("select");palette.setAttribute("aria-label","Mosaic material palette");
       for(const key of ["evolved",...paletteNames]){
         const opt=document.createElement("option");opt.value=key;opt.textContent=key==="evolved"?"Evolving palettes":key.charAt(0).toUpperCase()+key.slice(1);palette.appendChild(opt);
       }
       palette.value=String(engineConfig.paletteId);
       palette.onchange=()=>{engineConfig={...engineConfig,paletteId:palette.value};refreshDesign();};
-      controls.appendChild(palette);
+      designControls.appendChild(palette);
       if(craft){indexedControl("techniqueId","Construction technique",CRAFT_TECHNIQUES);indexedControl("materialId","Material",CRAFT_MATERIALS);}
       }
     }
