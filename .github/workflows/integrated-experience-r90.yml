@@ -1,0 +1,99 @@
+name: R90 integrated Mosaic and Arena qualification
+on:
+  pull_request:
+    branches: [rdte/mosaic-timeline-r82]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test -- --exclude scripts/wait-for-server.test.mjs
+      - run: node --test scripts/wait-for-server.test.mjs
+      - run: npm run build
+      - run: npm run verify:dist
+  mosaic:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            browser: firefox
+          - os: ubuntu-24.04
+            browser: webkit
+          - os: windows-latest
+            browser: chromium
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+        if: runner.os == 'Linux'
+      - run: npx playwright install ${{ matrix.browser }}
+        if: runner.os == 'Windows'
+      - run: npm run build
+      - run: node experiments/mosaic-timeline-r82/browser.mjs ${{ matrix.browser }}
+      - run: node experiments/mosaic-workspace-r80/browser.mjs ${{ matrix.browser }}
+      - run: node experiments/human-ux-r58/mosaic.mjs ${{ matrix.browser }}
+      - run: node experiments/icon-theme-r73/browser.mjs ${{ matrix.browser }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r90-mosaic-${{ matrix.browser }}
+          path: |
+            timeline-evidence/
+            lens-workspace-evidence/
+            ux-evidence/
+            chrome-evidence/
+          retention-days: 30
+  arena:
+    strategy:
+      fail-fast: false
+      matrix:
+        lane:
+          - arena-foundation-r76
+          - arena-strike-r77
+          - arena-aftermath-r78
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install chromium
+      - run: npm run build
+      - run: node experiments/${{ matrix.lane }}/native.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r90-${{ matrix.lane }}
+          path: |
+            foundation-evidence/
+            strike-recovery-evidence/
+            aftermath-evidence/
+          retention-days: 30
