@@ -1,0 +1,30 @@
+name: R105 controlled Arena render workload bakeoff
+on:
+  pull_request:
+    branches: [rdte/arena-bottleneck-r103]
+permissions:
+  contents: read
+jobs:
+  bakeoff:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: test "$(git hash-object public/experiences/alife/index.html)" = "40c8357da97212aa2a6a03b7994537f5b7d15eb6"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install chromium
+      - run: npm run build
+      - run: node experiments/arena-r105/bakeoff.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r105-render-bakeoff
+          path: arena-r105-evidence/
+          retention-days: 30
