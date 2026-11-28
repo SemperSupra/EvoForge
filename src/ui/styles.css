@@ -121,6 +121,10 @@ button, select { font: inherit; }
 /* Modal chrome follows the system color scheme, avoiding dark-on-dark labels in light mode. */
 .modal{background:Canvas;color:CanvasText;color-scheme:light dark}.modalHead{background:Canvas;color:CanvasText}.modalBody{color:CanvasText}
 
+/* Keep frequent commands visible; scientific design parameters remain explicitly labeled and discoverable. */
+.design-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0;max-width:100%}.design-controls[hidden]{display:none!important}.design-toggle{white-space:nowrap;min-height:36px}.design-controls>*{max-width:100%;min-width:0;box-sizing:border-box}
+@media(max-width:640px),(max-height:500px){.header>.controls>.design-controls{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.design-controls>select,.design-controls>input{width:100%!important;min-height:44px}.design-controls>.small{grid-column:1/-1}.header>.controls>.design-toggle{min-height:44px}.header>.controls{gap:5px}.gallery-notice:empty{height:0;min-height:0;padding:0}.evolution-lenses{padding-block:4px}.advance-strip{min-height:44px}}
+
 
 /* R80: workspace splitters, inspired by group/panel/separator semantics; no framework dependency. */
 .evolution-lenses.mosaic-workspace{--lens-left:320px;--lens-right:320px;--splitter-size:12px;display:grid;grid-template-columns:var(--lens-left) var(--splitter-size) minmax(0,1fr) var(--splitter-size) var(--lens-right);gap:0;padding:8px;align-items:start;box-sizing:border-box;max-width:100%;min-width:0;position:relative}
