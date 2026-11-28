@@ -9,7 +9,7 @@ export async function testGpuHost(html,Params,clone){
   const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(x=>x[1]);
   const frames=[],buffers=[],writes=[],groups=[],pipes=[],submissions=[],retired=[],events={};let lost;
   const ctx={configure(){},getCurrentTexture(){return{createView(){return{}}}}};
-  const elements=Object.fromEntries(ids.map(id=>[id,{id,style:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},setAttribute(){},getContext(k){return k==='webgpu'?ctx:{clearRect(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},closePath(){},arc(){},fill(){},fillText(){}}}}]));
+  const elements=Object.fromEntries(ids.map(id=>[id,{id,style:{setProperty(){}},dataset:{},classList:{add(){},remove(){},toggle(){}},addEventListener(){},setAttribute(){},getContext(k){return k==='webgpu'?ctx:{clearRect(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},closePath(){},arc(){},fill(){},fillText(){},fillRect(){},createRadialGradient(){return {addColorStop(){}}}}}}]));
   const doc={getElementById(id){if(!elements[id])throw Error('missing DOM id '+id);return elements[id]},querySelectorAll(){return Object.values(elements)},body:{classList:{toggle(){}}}};
   const win={innerWidth:960,innerHeight:640,addEventListener(k,fn){events[k]=fn}};
   const noop=()=>{}, makeRender=()=>({setBindGroup:noop,setPipeline:noop,draw:noop,executeBundles:noop,end:noop,finish(){return{}}});
