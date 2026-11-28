@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import {chromium} from '@playwright/test';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {serve} from '../human-ux-r58/server.mjs';
+const out='strike-recovery-evidence';await mkdir(out,{recursive:true});
+const {base,close}=await serve();let browser;const rows=[];
+try{
+ browser=await chromium.launch({channel:'chromium',headless:true,args:['--enable-unsafe-webgpu']});
+ for(const [width,height,touch] of [[1280,800,false],[390,844,true]]){
+  const context=await browser.newContext({viewport:{width,height},hasTouch:touch,deviceScaleFactor:1,serviceWorkers:'block'}),p=await context.newPage(),errors=[];
+  p.on('pageerror',e=>errors.push(e.message));
+  await context.addInitScript(()=>{
+   window.__strikeLabels=[];
+   const fill=CanvasRenderingContext2D.prototype.fillText;
+   CanvasRenderingContext2D.prototype.fillText=function(text,...args){if(this.canvas.id==='strike-overlay'&&window.__strikeLabels.length<4096)window.__strikeLabels.push(String(text));return fill.call(this,text,...args)};
+   const request=navigator.gpu.requestAdapter.bind(navigator.gpu);
+   navigator.gpu.requestAdapter=async(...args)=>{const a=await request(...args);if(a)window.__adapter={vendor:a.info.vendor,fallback:a.info.isFallbackAdapter??a.isFallbackAdapter};return a};
+  });
+  await p.goto(base+'experiences/alife/index.html?mode=play&seed=42&profile=smoke');
+  if(touch)await p.locator('#mobile-start-button').click();
+  await p.waitForFunction(()=>window.__ARENA_RPC__?.getState().telemetry.tick>=15,null,{timeout:90000});
+  const snap=()=>p.evaluate(()=>window.__ARENA_RPC__.getState());
+  assert.equal(await p.evaluate(()=>window.__adapter.fallback),false);
+  const click=id=>p.locator('#'+id).click();
+  const setPaused=value=>p.evaluate(value=>window.__ARENA_RPC__.setPaused(value),value);
+  const band=id=>p.locator('#'+id).getAttribute('data-band');
+  assert.equal(await band('sl-temp'),'Near baseline');assert.equal(await band('sl-mut'),'Near baseline');assert.equal(await band('sl-radius'),'Geometry');
+  await p.evaluate(()=>window.__ARENA_RPC__.setKnobs({ambientTemp:0,mutationRate:.4,species:{0:{burn:1.3}}}));
+  assert.equal(await band('sl-temp'),'Extreme deviation');assert.equal(await band('sl-mut'),'Extreme deviation');assert.equal(await band('sl-sp-burn'),'Extreme deviation');
+  assert.match(await p.locator('#sl-temp').getAttribute('aria-valuetext'),/Cold.*preset 22/);
+  assert.notEqual(await p.locator('#sl-temp').evaluate(e=>getComputedStyle(e).accentColor),await p.locator('#sl-mut').evaluate(e=>getComputedStyle(e).accentColor));
+  await p.evaluate(()=>window.__ARENA_RPC__.setKnobs({ambientTemp:22,mutationRate:.12,species:{0:{burn:.35}}}));
+  assert.equal(await band('sl-temp'),'Near baseline');
+  await click('cam-interact');await click('strike-meteor');
+  assert.equal((await snap()).knobs.state.worldTool,'meteor');
+  await click('cam-under');assert.equal((await snap()).knobs.state.worldTool,null);
+  assert.equal(await p.locator('#strike-place').isDisabled(),true);assert.equal(await p.locator('#strike-lightning').isDisabled(),true);
+  await click('cam-home');assert.equal(await p.locator('#strike-place').isEnabled(),true);
+  const arm=async(x,z)=>{await click('strike-meteor');await p.locator('#strike-x').fill(String(x));await p.locator('#strike-z').fill(String(z));await click('strike-place');const pending=(await snap()).interventions.pending;assert.ok(pending);return pending.id};
+  const waitImpact=id=>p.waitForFunction(id=>window.__ARENA_RPC__.getState().interventions.receipts.some(e=>e.id===id&&e.type==='meteor-impact'),id,{timeout:120000});
+  const first=await arm(-3.5,0);await click('cam-under');assert.equal(await p.locator('#strike-meteor').isDisabled(),true);
+  const underneath=(await snap()).interventions;
+  assert.ok(underneath.pending?.id===first||underneath.receipts.some(e=>e.id===first&&e.type==='meteor-impact'));
+  await click('cam-home');await waitImpact(first);
+  assert.equal(await p.locator('#strike-meteor').isEnabled(),true);
+  const second=await arm(3.5,0);
+  await p.waitForFunction(id=>{const s=window.__ARENA_RPC__.getState().interventions;return s.pending?.id===id&&s.pending.phase==='descent'||s.receipts.some(e=>e.id===id&&e.type==='meteor-impact')},second,{timeout:120000});
+  await setPaused(true);await p.screenshot({path:out+'/meteor-'+width+'.png'});await setPaused(false);await waitImpact(second);
+  await setPaused(true);await p.screenshot({path:out+'/dust-'+width+'.png'});await setPaused(false);
+  const third=await arm(0,5.8);await waitImpact(third);
+  const final=(await snap()).interventions;
+  assert.equal(final.craters.length,3);assert.equal(new Set([first,second,third]).size,3);
+  await click('strike-lightning');await p.locator('#strike-x').fill('0');await p.locator('#strike-z').fill('-3');await click('strike-place');
+  const after=(await snap()).interventions;assert.ok(after.receipts.some(e=>e.type==='lightning-impact'));
+  await setPaused(true);await p.screenshot({path:out+'/lightning-'+width+'.png'});
+  assert.ok(!(await p.evaluate(()=>window.__strikeLabels)).some(x=>x==='LIGHTNING'));
+  assert.deepEqual(errors,[]);rows.push({width,height,touch,adapter:await p.evaluate(()=>window.__adapter),craters:final.craters.length,ids:[first,second,third],pass:true});
+  await context.close();
+ }
+}finally{await writeFile(out+'/results.json',JSON.stringify({source:process.env.GITHUB_SHA,scope:'smoke population/native GPU; emulated touch; screenshots require visual inspection',rows},null,2));await browser?.close();await close()}
