@@ -191,3 +191,22 @@ button, select { font: inherit; }
 .radar-stage-key span::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--stage-color);border:1px solid currentColor}
 @media(max-width:999px){.stage-transport{padding:5px 6px;gap:4px 7px}.stage-transport-heading{flex:1 1 100%}.stage-transport-buttons{flex:1 1 100%}.stage-transport>input[type=range]{max-width:100%}.stage-interval{flex:1 1 100%}.stage-interval input{flex:1 1 90px}.stage-transport-buttons button{min-width:38px;min-height:38px}}
 @media(pointer:coarse){.stage-transport-buttons button,.radar-pending-items button{min-height:44px;min-width:44px}}
+
+/* R100: clusters preserve metrics; compact timeline leaves more space for art. */
+.radar-cluster-inspector{display:grid;gap:5px;min-width:0;margin:5px 0}
+.radar-cluster-inspector>button{width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.radar-cluster-members{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,112px),1fr));gap:5px;min-width:0}
+.radar-cluster-members .lens-candidate{min-width:0;overflow-wrap:anywhere}
+.radar-all-candidates{padding:6px 0}.radar-all-candidates summary{cursor:pointer;min-height:32px}
+.population-plot g[data-cluster-id]{cursor:pointer}.population-plot g[data-cluster-id]:focus-visible>circle{stroke:Highlight;stroke-width:3}
+.stage-options-toggle{display:none}
+@media(max-width:640px),(max-height:500px){
+ .stage-transport{gap:3px 6px;padding:4px 6px}
+ .stage-transport-heading{flex:1 1 auto;font-size:12px}
+ .stage-options-toggle{display:inline-flex;align-items:center;justify-content:center;min-height:36px;font-size:12px;padding:3px 7px}
+ .stage-transport-buttons{flex:1 1 100%;gap:3px;justify-content:space-between}
+ .stage-transport[data-options=false] .stage-interval{display:none}
+ .stage-transport[data-options=false][data-history=false]>input[type=range]{display:none}
+ .stage-transport[data-options=false][data-history=true]>input[type=range]{flex:1 1 100%}
+}
+@media(pointer:coarse){.stage-options-toggle,.radar-cluster-inspector>button,.radar-all-candidates summary{min-height:44px}}
