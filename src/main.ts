@@ -1,6 +1,7 @@
 import "./ui/styles.css";
 import { resolveExperience } from "./experiences";
 import { mountLauncher } from "./ui/launcher";
+import { installChrome } from "./ui/chrome.mjs";
 
 async function main() {
   const root = document.getElementById("app");
@@ -19,13 +20,14 @@ async function main() {
       nav.className = "experience-nav";
       const back = document.createElement("a");
       back.href = "./"; back.textContent = "All EvoForge experiences";
-      nav.append(back); root.append(nav);
+      nav.append(back); root.append(nav); installChrome(nav);
     }
     const { App } = await import("./ui/app");
     root.appendChild(route==="mosaic-motifs"?App("1.0.0","mosaic-motif"):route==="mosaic-emblems"?App("1.0.0","mosaic-emblem"):App(route==="mosaic-craft"?"3.0.0":route==="mosaic"?"2.0.0":"1.0.0"));
     return;
   }
   mountLauncher(root);
+  installChrome(root.querySelector<HTMLElement>(".launcher-header"));
 }
 void main().catch(error => {
   const root = document.getElementById("app");

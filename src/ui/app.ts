@@ -1,3 +1,4 @@
+import { decorateMosaicChrome } from "./chrome.mjs";
 import type { Candidate, CandidateStatus, GenerationState, Pace, Playback, GASettingsSnapshot } from "../core/types";
 import { paceProfile } from "../core/pace";
 import { renderEvolutionLenses, renderCandidateRadar, type LensState } from "./evolution-lenses";
@@ -1019,6 +1020,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       back.appendChild(modal);
       el.appendChild(back);body.scrollTop=priorScroll;
     }
+    decorateMosaicChrome(el);
   }
 
   render();

@@ -47,6 +47,12 @@ describe("multi-experience contract",()=>{
     expect(mixRgb([0,120,255],[255,60,0],.5)).toEqual([128,90,128]);
     expect(constraintPair(220,100,1).remaining).toBe(100);
   });
+
+  it("keeps the standalone arena chrome identical to the shared implementation",()=>{
+    const chrome=read("src/ui/chrome.mjs").replace(/^export /gm,"");
+    const arena=read("public/experiences/alife/index.html");
+    expect(arena).toContain(chrome);
+  });
   it("parses shipped JavaScript and constrains GPU bindings",()=>{
     const arena=read("public/experiences/alife/index.html");
     const js=arena.split("<script>")[1].split("</script>")[0];
