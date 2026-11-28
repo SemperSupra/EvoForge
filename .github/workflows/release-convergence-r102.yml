@@ -1,0 +1,150 @@
+name: R102 converged release-candidate qualification
+on:
+  pull_request:
+    branches: [rdte/visual-remediation-r100]
+permissions:
+  contents: read
+env:
+  EXPECTED_SOURCE: ${{ github.event.pull_request.head.sha }}
+jobs:
+  container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Exact-source non-root container builds, distribution manifests and canonical goldens
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/product-source.txt
+          printf '%s\n' "$GITHUB_SHA" > evidence/workflow-event-sha.txt
+          docker build --pull --file Dockerfile.tooling --tag evoforge-r102-tooling .
+          docker image inspect evoforge-r102-tooling --format '{{.Id}}' > evidence/container-id.txt
+          docker run --rm evoforge-r102-tooling bash -lc 'node -v; npm -v; dpkg-query -W' > evidence/tooling-inventory.txt
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          for i in 1 2; do
+            mkdir "$work/build-$i"
+            git archive HEAD | tar -x -C "$work/build-$i"
+            docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -e CI=1 -v "$work/build-$i:/workspace" evoforge-r102-tooling bash -lc 'set -euo pipefail; npm ci --ignore-scripts --no-audit; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist' 2>&1 | tee "evidence/build-$i.log"
+            (cd "$work/build-$i/dist" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > "evidence/dist-$i.sha256"
+          done
+          cmp evidence/dist-1.sha256 evidence/dist-2.sha256
+          sha256sum evidence/dist-1.sha256 | tee evidence/manifest-observed.sha256
+          docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp -e CI=1 -v "$work/build-1:/workspace" evoforge-r102-tooling bash -lc 'set -euo pipefail; npx playwright install chromium; npm run dev -- --host 127.0.0.1 --port 5173 & pid=$!; trap "kill $pid 2>/dev/null || true" EXIT; node scripts/wait-for-server.mjs http://127.0.0.1:5173/ 60000; npm run golden:test' 2>&1 | tee evidence/golden.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r102-container
+          path: evidence/
+          retention-days: 30
+  mosaic:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            browser: firefox
+          - os: ubuntu-24.04
+            browser: webkit
+          - os: windows-latest
+            browser: chromium
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: node -e "const a=require('node:assert/strict');a.equal(require('node:child_process').execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),process.env.EXPECTED_SOURCE)"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+        if: runner.os == 'Linux'
+      - run: npx playwright install ${{ matrix.browser }}
+        if: runner.os == 'Windows'
+      - run: npm run build
+      - run: node experiments/visual-remediation-r100/browser.mjs ${{ matrix.browser }}
+      - run: node experiments/mosaic-timeline-r82/browser.mjs ${{ matrix.browser }}
+      - run: node experiments/mosaic-workspace-r80/browser.mjs ${{ matrix.browser }}
+      - run: node experiments/human-ux-r58/mosaic.mjs ${{ matrix.browser }}
+      - run: node experiments/icon-theme-r73/browser.mjs ${{ matrix.browser }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r102-mosaic-${{ matrix.browser }}
+          path: |
+            radar-cluster-evidence/
+            timeline-evidence/
+            lens-workspace-evidence/
+            ux-evidence/
+            chrome-evidence/
+          retention-days: 30
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [visual, governor, endurance]
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: node -e "const a=require('node:assert/strict');a.equal(require('node:child_process').execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),process.env.EXPECTED_SOURCE)"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install chromium
+      - run: npm run build
+      - run: node experiments/arena-r101/native.mjs ${{ matrix.lane }}
+      - run: node experiments/arena-foundation-r76/native.mjs
+        if: matrix.lane == 'visual'
+      - run: node experiments/arena-strike-r77/native.mjs
+        if: matrix.lane == 'governor'
+      - run: node experiments/arena-aftermath-r78/native.mjs
+        if: matrix.lane == 'endurance'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r102-native-${{ matrix.lane }}
+          path: |
+            arena-r101-*/
+            foundation-evidence/
+            strike-recovery-evidence/
+            aftermath-evidence/
+          retention-days: 30
+  offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: node -e "const a=require('node:assert/strict');a.equal(require('node:child_process').execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),process.env.EXPECTED_SOURCE)"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: node experiments/release-convergence-r102/offline.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r102-offline
+          path: offline-assurance-evidence/
+          retention-days: 30
