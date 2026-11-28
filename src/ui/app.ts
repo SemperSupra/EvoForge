@@ -116,7 +116,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   function commitInteraction(){if(!interactionHeld)return;if(interactionRelease!==null){clearTimeout(interactionRelease);interactionRelease=null;}interactionHeld=false;editingControl=null;}
   el.addEventListener("click",e=>{const target=actionable(e.target);if(target?.matches("button,summary,canvas,[role=button]"))commitInteraction();},true);
   el.addEventListener("change",()=>commitInteraction(),true);
-  el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
+  el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){if(target.matches("[role=button]")&&(e.key==="Enter"||e.key===" ")){commitInteraction();return;}holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
   let designExpanded=!(window.matchMedia?.('(max-width: 640px), (max-height: 500px)')?.matches??false);
   compactLens.addEventListener("change",()=>{if(el.isConnected)render();});
   document.addEventListener("visibilitychange",()=>{if(!el.isConnected)return;presentationLast=null;stopPresentationTimer();stopHistoryTimer();cancelReadyTimer();render();});
