@@ -8,12 +8,19 @@ const out='experience-assurance-evidence';
 await mkdir(out,{recursive:true});
 const {base,close}=await serve();
 let browser;
+// Pausing the simulation freezes ticks, not the asynchronous renderer.
+const invariantKnobs = ({knobs}) => {
+ const {viewRevision,...state}=knobs.state;
+ assert.ok(Number.isSafeInteger(viewRevision)&&viewRevision>=0);
+ return {state,speciesConfig:knobs.speciesConfig};
+};
 const results={schemaVersion:1,source:process.env.GITHUB_SHA??null,runner:process.env.RUNNER_OS??process.platform,scope:'scripted browser RPC consumer, not autonomous agent or physical mobile qualification',scenarios:[]};
 try {
  browser=await chromium.launch({channel:'chromium',headless:true,args:['--enable-unsafe-webgpu']});
  for(const mode of ['observe','play']){
   const ctx=await browser.newContext({viewport:{width:1280,height:800},serviceWorkers:'block'});
   const page=await ctx.newPage(),errors=[],samples=[];
+  const scenario={mode,pass:false,roundTrips:samples};results.scenarios.push(scenario);
   page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(()=>{if(navigator.gpu){const orig=navigator.gpu.requestAdapter.bind(navigator.gpu);navigator.gpu.requestAdapter=async(...a)=>{const adapter=await orig(...a);if(adapter)window.__testAdapter={vendor:adapter.info.vendor,fallback:adapter.info.isFallbackAdapter??adapter.isFallbackAdapter};return adapter;};}});
   const started=performance.now();
@@ -49,12 +56,12 @@ try {
    for(const [method,args] of [['setKnobs',[{ambientTemp:30}]],['triggerSurprise',['bloom']],['armMeteor',[0,0]],['lightning',[0,0]],['cancelMeteor',[]],['resetEcosystem',[]]]){
     assert.match((await reject(method,...args)).message,/Observation mode/);
    }
-   assert.deepEqual((await call('getState')).knobs,paused.knobs);
+   assert.deepEqual(invariantKnobs(await call('getState')),invariantKnobs(paused));
   }else{
    await reject('setKnobs',{ambientTemp:30,gravityScale:99});
-   assert.deepEqual((await call('getState')).knobs,paused.knobs);
+   assert.deepEqual(invariantKnobs(await call('getState')),invariantKnobs(paused));
    await reject('setKnobs',{species:{0:{burn:.7},7:{burn:.7}}});
-   assert.deepEqual((await call('getState')).knobs,paused.knobs);
+   assert.deepEqual(invariantKnobs(await call('getState')),invariantKnobs(paused));
    await call('setKnobs',{ambientTemp:30,species:{0:{burn:.7}}});
    const after=await call('getState');assert.equal(after.knobs.state.ambientTemp,30);assert.equal(after.knobs.speciesConfig[0].burn,.7);
    // Only this parity probe uses a UI locator; the consumer above uses RPC.
@@ -70,7 +77,7 @@ try {
    assert.equal(await call('cancelMeteor'),true);assert.equal((await call('getState')).interventions.pending,null);
   }
   assert.deepEqual(errors,[]);
-  results.scenarios.push({mode,adapter,readyMs,methods,roundTrips:samples,pass:true});
+  Object.assign(scenario,{adapter,readyMs,methods,pass:true});
   await page.screenshot({path:out+'/'+mode+'.png'});
   await ctx.close();
  }
