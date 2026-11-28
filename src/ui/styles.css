@@ -104,3 +104,7 @@ button, select { font: inherit; }
 
 /* Constrain native WebKit range/select intrinsic overflow within the control surface. */
 @media(max-width:640px){.header>.controls{contain:inline-size;overflow:clip}.header>.controls>*{min-inline-size:0;max-inline-size:100%}.review-speed{inline-size:100%;overflow:clip}.review-speed input[type=range]{appearance:auto;min-inline-size:0;max-inline-size:100%}.advance-strip,.gallery-notice,.evolution-lenses{box-sizing:border-box;max-inline-size:100%}.evolution-lenses details{overflow:clip}}
+
+/* Keep modal headers reachable even on short landscape displays. Scroll the body, not the dialog chrome. */
+.modalBack{box-sizing:border-box;z-index:1000;align-items:center;overflow:hidden}.modal{box-sizing:border-box;display:flex;flex-direction:column;min-width:0;min-height:0;max-height:calc(100dvh - 32px);overflow:hidden}.modalHead{flex:0 0 auto;min-width:0;flex-wrap:wrap;background:inherit}.modalHead button{min-height:36px}.modalBody{flex:1 1 auto;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain}.modalBody>*{min-width:0}.focus-frame{min-width:0}.modalBody canvas{max-width:100%}
+@media(max-width:640px),(max-height:600px),(pointer:coarse){.modalBack{padding:8px}.modal{max-height:calc(100dvh - 16px)}.modalHead button{min-height:44px;min-width:44px}.modalHead{gap:6px;padding:8px}.modalBody{padding:8px}.focus-frame{min-height:0;aspect-ratio:16/9}.focus-frame canvas{height:100%;object-fit:contain}.focus-radar{max-height:100%;overflow:auto}}

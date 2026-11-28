@@ -633,6 +633,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
 
   function render() {
     if(interactionHeld)return;
+    const priorScroll=el.querySelector<HTMLElement>(".modalBody")?.scrollTop??0;
     el.innerHTML = "";
 
     const header = document.createElement("div");
@@ -867,7 +868,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       back.className = "modalBack";
       back.onclick = (e) => { if (e.target === back) closeFocus(); };
 
-      const modal = document.createElement("div"); modal.className = "modal";
+      const modal = document.createElement("div"); modal.className = "modal";modal.setAttribute("role","dialog");modal.setAttribute("aria-label","Candidate focus");modal.setAttribute("aria-modal","true");
       const mh = document.createElement("div"); mh.className = "modalHead";
       mh.innerHTML = `<b>Focus</b> <span class="small">${c.id}</span>`;
       const close = document.createElement("button"); close.textContent = "Close"; close.onclick = () => closeFocus();
@@ -903,7 +904,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       body.append(actions);
       modal.appendChild(body);
       back.appendChild(modal);
-      el.appendChild(back);
+      el.appendChild(back);body.scrollTop=priorScroll;
     }
 
     if (libraryOpen) {
@@ -912,7 +913,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       back.onclick = (e) => { if (e.target === back) closeLibrary(); };
 
       const modal = document.createElement("div");
-      modal.className = "modal";
+      modal.className = "modal";modal.setAttribute("role","dialog");modal.setAttribute("aria-label","Favorites library");modal.setAttribute("aria-modal","true");
 
       const mh = document.createElement("div");
       mh.className = "modalHead";
@@ -1005,7 +1006,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       body.appendChild(list);
       modal.appendChild(body);
       back.appendChild(modal);
-      el.appendChild(back);
+      el.appendChild(back);body.scrollTop=priorScroll;
     }
   }
 
