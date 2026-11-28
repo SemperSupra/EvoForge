@@ -13,8 +13,9 @@ export function plant(w,g,x,z,age=0){position(x,z);if(w.plants.length>=128||!SPE
 export function animal(w,x,z){position(x,z);if(w.animals.length>=64)throw Error('animal capacity');const a={id:w.nextId++,x,z,energy:0,pollen:null,gut:[]};w.animals.push(a);return a;}
 export function visit(w,a,p){if(!w.animals.includes(a)||!w.plants.includes(p)||distance(a,p)>1||p.age<p.g.bloomAge||p.energy<.2)throw Error('visit not admitted');
  if(p.g.species==='flower-tree'||p.g.species==='fruit-tree'){
-  if(a.pollen&&a.pollen.id!==p.id&&a.pollen.g.species===p.g.species&&!p.pollinated){p.pollinated=true;p.mate={...a.pollen.g};p.donorId=a.pollen.id;record(w,'cross-pollination',{plant:p.id,donor:a.pollen.id,animal:a.id});}
-  a.pollen={id:p.id,g:{...p.g}};a.energy+=p.g.nectar*.1;
+  const carried=a.pollenBySpecies?a.pollenBySpecies[p.g.species]:a.pollen;
+  if(carried&&carried.id!==p.id&&carried.g.species===p.g.species&&!p.pollinated){p.pollinated=true;p.mate={...carried.g};p.donorId=carried.id;record(w,'cross-pollination',{plant:p.id,donor:carried.id,animal:a.id});}
+  a.pollen={id:p.id,g:{...p.g}};if(a.pollenBySpecies)a.pollenBySpecies[p.g.species]=a.pollen;a.energy+=p.g.nectar*.1;
  }
  if(p.g.species==='fruit-tree'&&p.fruit>0&&a.gut.length<8){p.fruit--;const stored=p.fruitSeeds.shift();a.gut.push({g:stored?.g??mutate(p.g,p.mate??p.g,()=>rnd(w)),parent:p.id,donor:stored?.donor??p.donorId,due:w.tick+6});a.energy+=p.g.fruit*.25;record(w,'fruit-eaten',{plant:p.id,animal:a.id});}
 }

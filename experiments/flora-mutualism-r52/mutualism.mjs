@@ -5,7 +5,7 @@ export function run(seed,withAnimals=true,ticks=240,resourcePolicy=null){
  const w=createWorld(seed),metrics={pollinations:0,fruitEaten:0,gutSeeds:0,gutGerminations:0,windGerminations:0,plantDeaths:0},frames=[],events=[];
  const types=['flower-tree','fruit-tree','herb'];
  for(let i=0;i<3;i++)for(let j=0;j<4;j++){const angle=j*Math.PI/2+i*.38,r=3+i*2.5;plant(w,genome(types[i],(seed+7919*i+3571*j)>>>0),Math.cos(angle)*r,Math.sin(angle)*r,24);}
- if(withAnimals)for(let i=0;i<6;i++){const a=animal(w,Math.cos(i*Math.PI/3)*4,Math.sin(i*Math.PI/3)*4);a.role=i<3?'pollinator':'frugivore';a.target=null;a.rest=0;a.last=null;a.energy=1;}
+ if(withAnimals)for(let i=0;i<6;i++){const a=animal(w,Math.cos(i*Math.PI/3)*4,Math.sin(i*Math.PI/3)*4);a.role=i<3?'pollinator':'frugivore';a.target=null;a.rest=0;a.last=null;a.energy=1;if(resourcePolicy?.generalists)a.pollenBySpecies={};}
  const founderIds=new Set(w.plants.map(p=>p.id));const capture=()=>frames.push({tick:w.tick,plants:w.plants.map(p=>({id:p.id,x:p.x,z:p.z,age:p.age,energy:p.energy,fruit:p.fruit,species:p.g.species,pollinated:p.pollinated})),animals:w.animals.map(a=>({id:a.id,x:a.x,z:a.z,role:a.role,energy:a.energy,pollen:a.pollen?.id??null,gut:a.gut.length}))});
  capture();
  for(let t=0;t<ticks;t++){
@@ -18,7 +18,7 @@ export function run(seed,withAnimals=true,ticks=240,resourcePolicy=null){
    if(!targets.length)continue;
    let p=targets.find(p=>p.id===a.target);
    if(!p){p=targets.slice().sort((p,q)=>score(q)-score(p)||p.id-q.id)[0];a.target=p.id;}
-   function score(p){return (a.role==='frugivore'?p.fruit*.7:0)+(a.pollen&&a.pollen.id!==p.id&&!p.pollinated?1.1:0)+p.g.nectar*.2-dist(a,p)*.09;}
+   function score(p){const carried=a.pollenBySpecies?a.pollenBySpecies[p.g.species]:a.pollen;const preferred=p.g.species===(a.role==='pollinator'?'flower-tree':'fruit-tree');return (a.role==='frugivore'?p.fruit*.7:0)+(carried&&carried.id!==p.id&&carried.g.species===p.g.species&&!p.pollinated?1.1:0)+(resourcePolicy?.generalists&&preferred?.25:0)+p.g.nectar*.2-dist(a,p)*.09;}
    const d=dist(a,p),speed=a.role==='pollinator'?.65:.42;
    if(d>.75){const n=Math.min(d,speed);move(a,a.x+(p.x-a.x)*n/d,a.z+(p.z-a.z)*n/d);}
    if(dist(a,p)<=.75&&a.rest===0){visit(w,a,p);a.energy=Math.min(2,a.energy);a.last=p.id;a.target=null;a.rest=3;}
