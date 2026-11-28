@@ -142,6 +142,14 @@
     @media(max-width:1199px),(pointer:coarse){:root{--workspace-bottom:calc(60px + 26dvh + 64px)}#hud-left,#hud-right{bottom:var(--workspace-bottom);max-height:none;min-height:0}}
     @media(max-height:500px) and (pointer:coarse){:root{--workspace-bottom:48px}#hud-left,#hud-right{bottom:48px;max-height:none;width:min(42vw,350px)!important}#world-tool-dock{right:8px;left:auto;bottom:calc(60px + 38dvh);width:min(48vw,340px)}body.mobile-panel-right #hud-right{right:8px;left:auto}body.mobile-panel-right #world-tool-dock,body.mobile-panel-right #camera-controls{left:8px;right:auto}}
     body:has(#strike-panel:not([hidden])) #hud-left,body:has(#strike-panel:not([hidden])) #hud-right{visibility:hidden;pointer-events:none}
+    /* A single flow layout prevents the camera and tool dock from overlapping at any height. */
+    #viewport-tool-stack{position:fixed;z-index:24;left:50%;bottom:8px;transform:translateX(-50%);width:min(580px,calc(100vw - 16px));display:flex;flex-direction:column;gap:5px;align-items:stretch;max-height:50dvh;pointer-events:none}
+    #viewport-tool-stack #camera-controls,#viewport-tool-stack #world-tool-dock{position:static;inset:auto;transform:none;width:100%;max-width:none;max-height:none;margin:0;pointer-events:auto;box-sizing:border-box;flex:0 0 auto}
+    #viewport-tool-stack #world-tool-dock{order:-1;max-height:28dvh;overflow:auto}
+    #viewport-tool-stack #camera-controls{max-height:24dvh;overflow:auto}
+    #viewport-tool-stack #strike-panel{max-height:20dvh}
+    #hud-left,#hud-right{bottom:calc(var(--tool-stack-height,158px) + 16px);max-height:none}
+    @media(max-height:500px) and (pointer:coarse){#viewport-tool-stack{left:auto;right:8px;transform:none;width:min(47vw,340px);max-height:calc(100dvh - var(--toolbar-height) - 66px)}body.mobile-panel-right #viewport-tool-stack{right:auto;left:8px}#viewport-tool-stack #camera-controls{max-height:35dvh}#viewport-tool-stack #world-tool-dock{max-height:28dvh}#hud-left,#hud-right{bottom:8px;width:min(42vw,350px)!important}}
   </style>
 </head>
 <body>
@@ -156,6 +164,7 @@
   <section id="mobile-start" hidden aria-labelledby="mobile-start-title" style="position:fixed;z-index:45;inset:0;background:#131c27;padding:24px;overflow:auto;color:white;font-size:16px"><h2 id="mobile-start-title" style="font-size:24px;display:block;margin-bottom:16px">ALife — mobile safe start</h2><p style="line-height:1.6;margin-bottom:20px">The simulation uses WebGPU. Start a reduced-load session only when ready. If your browser reloads or closes, return here instead of restarting automatically.</p><button id="mobile-start-button" style="min-height:48px;font-size:16px;padding:12px;width:100%;margin-bottom:16px">Start reduced-load simulation</button><p id="mobile-start-status" role="status" style="margin-bottom:20px"></p><a href="../../" style="color:#9ce5ff;display:inline-flex;align-items:center;min-height:44px">Return to all experiences</a></section>
   <section id="arena-message" role="status" hidden><p id="arena-error"></p><a href="../../">Return to EvoForge</a></section>
   <div id="panel-controls" role="group" aria-label="Arena panels"><button id="panel-life" aria-controls="hud-left" aria-expanded="true">‹ Life</button><button id="panel-world" aria-controls="hud-right" aria-expanded="true">World ›</button><button id="hud-toggle" aria-label="Hide both panels">Hide panels</button></div>
+  <div id="viewport-tool-stack">
   <div id="camera-controls" role="group" aria-label="Arena camera">
     <span id="navigation-help" class="visually-hidden">Drag to pan, right or Control drag to rotate, wheel or pinch to zoom. Arrow keys pan; Shift arrows rotate or tilt. Escape disarms world tools.</span>
     <button id="cam-orbit" aria-pressed="false" title="Drag to rotate the view">Orbit</button>
@@ -178,6 +187,7 @@
         <div class="btn-row"><label for="strike-x">X <input aria-label="Target X" id="strike-x" type="number" value="3" step=".1"></label><label for="strike-z">Z <input aria-label="Target Z" id="strike-z" type="number" value="0" step=".1"></label><button id="strike-place">Apply coordinates</button></div>
         <div id="strike-status" role="status">Select Meteor or Lightning, then tap terrain. Drag to navigate.</div>
       </div>
+  </div>
   </div>
   <div id="hud-left" role="region" aria-label="Life panel">
     <h1>
@@ -2587,6 +2597,9 @@ updateCamera();
 
 // ARENA_STARTUP_BOUNDARY
 showPanel(state.panel);
+const toolStack=document.getElementById("viewport-tool-stack");
+const measureTools=()=>document.documentElement.style.setProperty("--tool-stack-height",Math.ceil(toolStack.getBoundingClientRect().height)+"px");
+if(typeof ResizeObserver!=="undefined")new ResizeObserver(measureTools).observe(toolStack);measureTools();
 const beginArena=()=>init().catch(error => failArena(error.message || String(error)));
 if(mobileBudget){
   const entry=document.getElementById('mobile-start'),start=document.getElementById('mobile-start-button'),status=document.getElementById('mobile-start-status');
