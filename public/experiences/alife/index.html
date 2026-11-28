@@ -150,6 +150,9 @@
     #viewport-tool-stack #strike-panel{max-height:20dvh}
     #hud-left,#hud-right{bottom:calc(var(--tool-stack-height,158px) + 16px);max-height:none}
     @media(max-height:500px) and (pointer:coarse){#viewport-tool-stack{left:auto;right:8px;transform:none;width:min(47vw,340px);max-height:calc(100dvh - var(--toolbar-height) - 66px)}body.mobile-panel-right #viewport-tool-stack{right:auto;left:8px}#viewport-tool-stack #camera-controls{max-height:35dvh}#viewport-tool-stack #world-tool-dock{max-height:28dvh}#hud-left,#hud-right{bottom:8px;width:min(42vw,350px)!important}}
+    /* Visual acceptance: keep a visible world region on compact portrait displays. */
+    @media(max-width:999px) and (min-height:501px){#hud-left,#hud-right,body.mobile-panel-left #hud-left,body.mobile-panel-right #hud-right{max-height:42dvh;bottom:auto}}
+    @media(min-width:1000px) and (max-width:1399px){#hud-left,#hud-right{width:min(27vw,320px)}}
   </style>
 </head>
 <body>
@@ -1838,7 +1841,7 @@ fn fsTerrain(in: VSOut) -> @location(0) vec4<f32> {
   if (cam.arena.lavaRadius > 0.05 && r < cam.arena.lavaRadius) {
     col = vec3<f32>(1.0, 0.28, 0.06) * (0.8 + 0.2 * sin(simT * 4.0 + r * 5.0));
   }
-  let kind=u32(cam.targetPos.w);if(kind==7u){col=mix(col*.24,vec3<f32>(0.35,0.95,0.25),clamp(flora,0.0,1.0));}else if(kind!=9u){col*=0.55;}
+  let kind=u32(cam.targetPos.w);if(kind==7u){let f=clamp(flora,0.0,1.0);let gray=dot(col,vec3<f32>(0.2126,0.7152,0.0722));let base=mix(col,vec3<f32>(gray),0.40)*0.55;col=mix(base,vec3<f32>(0.42,0.69,0.35),0.62*f);}else if(kind!=9u){col*=0.55;}
   return vec4<f32>(col, 1.0);
 }
 `;
@@ -2153,7 +2156,7 @@ document.getElementById('btn-export-json').addEventListener('click', () => {
  const data=JSON.stringify(window.__ARENA_RPC__.getState(),null,2),url=URL.createObjectURL(new Blob([data],{type:'application/json'})),a=document.createElement('a');
  a.href=url;a.download='evoforge-arena-'+state.seed+'-'+state.simTick+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);logEvent('Snapshot download requested.');
 });
-function compactPanels(){return (window.innerWidth||1440)<760||(mobileBudget&&Math.min(window.innerWidth||1440,window.innerHeight||1440)<640);}
+function compactPanels(){return (window.innerWidth||1440)<1000||(mobileBudget&&Math.min(window.innerWidth||1440,window.innerHeight||1440)<640);}
 let lastPanel=mobileBudget?'life':'both';
 function showPanel(panel){
  if(panel==='both'&&compactPanels())panel='life';
