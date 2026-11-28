@@ -1,0 +1,80 @@
+name: R96 exact R90 container, reproducibility and offline assurance
+on:
+  pull_request:
+    branches: [rdte/integrated-experience-r90]
+permissions:
+  contents: read
+env:
+  PRODUCT_SOURCE: 980d5911ca38ddd4d895f51500dea2e6f857379b
+jobs:
+  container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.PRODUCT_SOURCE }}
+          persist-credentials: false
+      - name: Independently rebuild twice with the pinned tooling container and run canonical goldens
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PRODUCT_SOURCE"
+          mkdir -p evidence
+          printf '%s\n' "$(git rev-parse HEAD)" > evidence/product-source.txt
+          printf '%s\n' "$GITHUB_SHA" > evidence/workflow-event-sha.txt
+          docker build --pull --file Dockerfile.tooling --tag evoforge-r96-tooling .
+          docker image inspect evoforge-r96-tooling --format '{{.Id}}' > evidence/container-id.txt
+          docker run --rm evoforge-r96-tooling bash -lc 'node -v; npm -v; dpkg-query -W' > evidence/tooling-inventory.txt
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          for i in 1 2; do
+            mkdir "$work/build-$i"
+            git archive HEAD | tar -x -C "$work/build-$i"
+            docker run --rm -e CI=1 -v "$work/build-$i:/workspace" evoforge-r96-tooling bash -lc 'set -euo pipefail; npm ci --ignore-scripts --no-audit; npm run typecheck; npm test -- --exclude scripts/wait-for-server.test.mjs; node --test scripts/wait-for-server.test.mjs; npm run build; npm run verify:dist' 2>&1 | tee "evidence/build-$i.log"
+            (cd "$work/build-$i/dist" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > "evidence/dist-$i.sha256"
+          done
+          cmp evidence/dist-1.sha256 evidence/dist-2.sha256
+          sha256sum evidence/dist-1.sha256 | tee evidence/manifest-observed.sha256
+          docker run --rm -e CI=1 -v "$work/build-1:/workspace" evoforge-r96-tooling bash -lc 'set -euo pipefail; npx playwright install chromium; npm run dev -- --host 127.0.0.1 --port 5173 & pid=$!; trap "kill $pid 2>/dev/null || true" EXIT; node scripts/wait-for-server.mjs http://127.0.0.1:5173/ 60000; npm run golden:test' 2>&1 | tee evidence/golden.log
+          printf '%s\n' 'PASS: two identical same-tooling builds and exact canonical goldens; production pin/authorization separate' > evidence/result.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r96-container-repro-golden
+          path: evidence/
+          retention-days: 30
+  offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.PRODUCT_SOURCE }}
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: harness
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.23.5'
+          package-manager-cache: false
+      - working-directory: source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PRODUCT_SOURCE"
+          mkdir -p experiments/release-assurance-r96
+          cp ../harness/experiments/release-assurance-r96/offline.mjs experiments/release-assurance-r96/
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+          npm run build
+          node experiments/release-assurance-r96/offline.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: r96-offline
+          path: source/offline-assurance-evidence/
+          retention-days: 30
