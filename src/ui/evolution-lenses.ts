@@ -1,9 +1,10 @@
 import type { Candidate } from "../core/types";
 import type { PresentationStage } from "./lens-presentation";
+import {radarClusters,type RadarPoint} from "./radar-clusters";
 type Preview = { w:number; h:number; rgba:Uint8ClampedArray; status:"gen"|"ready"|"err" };
 type Metric = "brightness"|"contrast"|"saturation"|"edge";
 type Metrics = Record<Metric,number>;
-export type LensState = { ringsOpen:boolean; radarOpen:boolean; selected:string|null; filters: {metric:Metric;minimum:number}[]; stage:number; angleMetric?:Metric; radiusMetric?:Metric; layout?:'auto'|'stages'|'lanes'|'rings'; radarPlot?:boolean; leftWidth?:number;rightWidth?:number;combined?:boolean;pipelineMode?:'walkthrough'|'live'; stageMs?:number };
+export type LensState = { ringsOpen:boolean; radarOpen:boolean; selected:string|null; filters: {metric:Metric;minimum:number}[]; stage:number; angleMetric?:Metric; radiusMetric?:Metric; layout?:'auto'|'stages'|'lanes'|'rings'; radarPlot?:boolean; leftWidth?:number;rightWidth?:number;combined?:boolean;pipelineMode?:'walkthrough'|'live'; stageMs?:number;radarCluster?:string;radarDisplay?:"clusters"|"individual" };
 const names:Record<Metric,string>={brightness:"Brightness",contrast:"Contrast",saturation:"Saturation",edge:"Edge variation"};
 const keys=Object.keys(names) as Metric[];
 const cache=new WeakMap<Uint8ClampedArray,Metrics>();
@@ -134,18 +135,49 @@ export function renderEvolutionLenses(candidates:Candidate[],previews:Map<string
  const axis=(label:string,value:Metric,change:(k:Metric)=>void)=>{const s=document.createElement("select");s.setAttribute("aria-label",label);s.dataset.lensFocus="metric-"+label;for(const k of keys){const o=document.createElement("option");o.value=k;o.textContent=label+": "+names[k];s.append(o);}s.value=value;s.onchange=()=>{change(s.value as Metric);onChange();};return s;};
  const angle=state.angleMetric??"brightness",radius=state.radiusMetric??"contrast";
  selectors.append(axis("Angle",angle,k=>state.angleMetric=k),axis(state.combined?"Marker size":"Radius",radius,k=>state.radiusMetric=k));(state.combined?rings:radar).append(selectors);
- radar.append(make("p","Position uses measured raster metrics. Color and outline follow the same stage as Reality Rings; no invented movement when image metrics stay unchanged. Unrendered candidates appear below the plot."));
+ radar.append(make("p","Measured coordinates and stage colors are preserved. Nearby points are grouped; select a group to inspect its members."));
+ const radarMode=document.createElement("select");radarMode.setAttribute("aria-label","Radar display");radarMode.dataset.lensFocus="radar-display";for(const [v,label] of [["clusters","Group nearby points"],["individual","Individual thumbnails"]]){const o=document.createElement("option");o.value=v;o.textContent=label;radarMode.append(o);}radarMode.value=state.radarDisplay??"clusters";radarMode.onchange=()=>{state.radarDisplay=radarMode.value==="individual"?"individual":"clusters";state.radarCluster=undefined;onChange();};radar.append(radarMode);
  const chart=svg("svg",{viewBox:"0 0 320 320",role:"group","aria-label":"Population radar candidate positions"});
  for(const f of [.25,.5,.75,1])chart.append(svg("circle",{cx:160,cy:160,r:130*f,fill:"none",stroke:"currentColor","stroke-opacity":.25}));
  for(const f of [0,.25,.5,.75,1]){const a=(-135+270*f)*Math.PI/180;chart.append(svg("line",{x1:160,y1:160,x2:160+130*Math.cos(a),y2:160+130*Math.sin(a),stroke:"currentColor","stroke-opacity":.25}));const t=svg("text",{x:160+145*Math.cos(a),y:164+145*Math.sin(a),"text-anchor":"middle","font-size":9,fill:"currentColor"});t.textContent=String(f*100);chart.append(t);}
  const roster=document.createElement("div");roster.className="lens-stage-list";
+ const measured:RadarPoint[]=[],descriptions=new Map<string,string>();
  for(const c of ready){const p=previews.get(c.id)!,m=previewMetrics(p);if(!m)continue;const q=populationProjection(m,angle,radius),i=membership.get(c.id)!;
   const desc=c.id+" · "+stages[i].label+" · "+names[angle]+" "+Math.round(m[angle]*100)+"% · "+names[radius]+" "+Math.round(m[radius]*100)+"%";
-  inspectMarker(chart,c.id,160+130*q.x,160+130*q.y,colors[i%colors.length],desc,i);
-  const marker=chart.lastElementChild!;marker.setAttribute("data-stage-label",stages[i].label);
-  const halo=svg("circle",{r:16,fill:"none",stroke:colors[i%colors.length],"stroke-width":2,"stroke-dasharray":i===1?"3 2":"none","pointer-events":"none"});marker.append(halo);
-  const b=button(String(candidates.findIndex(v=>v.id===c.id)+1)+" · "+stages[i].label,()=>onInspect(c.id));b.title=desc;b.dataset.radarCandidate=c.id;b.dataset.ring=String(i);roster.append(b);
+  const point={id:c.id,x:160+130*q.x,y:160+130*q.y,ring:i};measured.push(point);descriptions.set(c.id,desc);
+  const b=button(String(candidates.findIndex(v=>v.id===c.id)+1)+" · "+stages[i].label,()=>onInspect(c.id));b.title=desc;b.setAttribute("aria-label",desc);b.dataset.radarCandidate=c.id;b.dataset.ring=String(i);roster.append(b);
  }
+ const clusters=radarClusters(measured),individual=state.radarDisplay==="individual";
+ chart.dataset.clusterCount=String(clusters.length);chart.dataset.measuredCount=String(measured.length);chart.dataset.display=individual?"individual":"clusters";
+ const groups=document.createElement("section");groups.className="radar-cluster-inspector";groups.setAttribute("aria-label","Radar groups");
+ if(individual){
+  for(const p of measured){inspectMarker(chart,p.id,p.x,p.y,colors[p.ring%colors.length],descriptions.get(p.id)!,p.ring);const marker=chart.lastElementChild!;marker.setAttribute("data-stage-label",stages[p.ring].label);marker.append(svg("circle",{r:16,fill:"none",stroke:colors[p.ring%colors.length],"stroke-width":2,"stroke-dasharray":p.ring===1?"3 2":"none","pointer-events":"none"}));}
+ }else{
+  // Keep exact measured coordinates and stage identity on actual point elements.
+  // The aggregate centroid is separately labeled; no jitter or synthetic metrics.
+  for(const c of clusters){
+   if(c.members.length===1){const p=c.members[0];inspectMarker(chart,p.id,p.x,p.y,colors[p.ring%colors.length],descriptions.get(p.id)!,p.ring,.75);continue;}
+   for(const p of c.members){
+    const g=svg("g",{"data-candidate-id":p.id,"data-ring":p.ring,"data-x":p.x,"data-y":p.y,"aria-hidden":"true","pointer-events":"none"});
+    g.append(svg("circle",{cx:p.x,cy:p.y,r:3,fill:colors[p.ring%colors.length],stroke:"white","stroke-width":.6}));chart.append(g);
+   }
+   const label=c.members.length+" nearby candidates · "+Object.entries(c.counts).map(([k,v])=>stages[Number(k)].label+" "+v).join(", ");
+   const g=svg("g",{transform:"translate("+c.x+" "+c.y+")",role:"button",tabindex:0,"aria-label":label,"aria-expanded":String(state.radarCluster===c.id),"data-cluster-id":c.id,"data-count":c.members.length,"data-lens-focus":"cluster-"+c.id});
+   const title=svg("title",{});title.textContent=label;g.append(title,svg("circle",{r:14,fill:"#334155",stroke:"white","stroke-width":1.2}));
+   let offset=0;for(const [k,n] of Object.entries(c.counts)){
+    const segment=2*Math.PI*13*n/c.members.length;
+    g.append(svg("circle",{r:13,fill:"none",stroke:colors[Number(k)%colors.length],"stroke-width":3,"stroke-dasharray":segment+" "+(2*Math.PI*13-segment),"stroke-dashoffset":-offset,transform:"rotate(-90)","pointer-events":"none"}));offset+=segment;
+   }
+   const t=svg("text",{x:0,y:4,"text-anchor":"middle","font-size":12,"font-weight":600,fill:"white","pointer-events":"none"});t.textContent=String(c.members.length);g.append(t);
+   const choose=()=>{state.radarCluster=state.radarCluster===c.id?undefined:c.id;onChange();};g.addEventListener("click",choose);g.addEventListener("keydown",e=>{if(["Enter"," "].includes((e as KeyboardEvent).key)){e.preventDefault();choose();}});chart.append(g);
+   const b=button(label,choose);b.dataset.lensFocus="cluster-list-"+c.id;b.setAttribute("aria-expanded",String(state.radarCluster===c.id));groups.append(b);
+   if(state.radarCluster===c.id){
+    const list=document.createElement("div");list.className="radar-cluster-members";list.setAttribute("aria-label","Members of selected radar group");
+    for(const p of c.members){const c=cardFor(p.id,descriptions.get(p.id));c.dataset.radarGroupMember=p.id;list.append(c);}groups.append(list);
+   }
+  }
+ }
+ const rosterDetails=document.createElement("details");rosterDetails.className="radar-all-candidates";rosterDetails.append(make("summary","All "+measured.length+" measured candidates"),roster);
  const plotSwitch=button(state.radarPlot?"Hide plot":"Show plot",()=>{state.radarPlot=!state.radarPlot;onChange();});plotSwitch.className="radar-plot-toggle";plotSwitch.setAttribute("aria-expanded",String(!!state.radarPlot));
  chart.classList.add("population-plot");radar.dataset.showPlot=String(!!state.radarPlot);roster.classList.add("radar-roster");
  const mobileRoster=document.createElement("div");mobileRoster.className="radar-cards";for(const c of ready){const m=previewMetrics(previews.get(c.id)!);if(m)mobileRoster.append(cardFor(c.id,stages[membership.get(c.id)!].label+" · "+names[angle]+" "+Math.round(m[angle]*100)+"% · "+names[radius]+" "+Math.round(m[radius]*100)+"%"));}
@@ -156,7 +188,7 @@ export function renderEvolutionLenses(candidates:Candidate[],previews:Map<string
  pendingStrip.append(pendingItems);
  const legend=document.createElement("div");legend.className="radar-stage-key";legend.setAttribute("aria-label","Current stage residents");
  stages.forEach((s,i)=>{const t=make("span",s.label+" "+memberships.filter(m=>m.ring===i).length);t.style.setProperty("--stage-color",colors[i%colors.length]);t.dataset.stageCount=String(memberships.filter(m=>m.ring===i).length);t.dataset.ring=String(i);legend.append(t);});
- radar.append(plotSwitch,chart,pendingStrip,legend,make("p",ready.length+" of "+candidates.length+" shown with measured raster metrics"),roster,mobileRoster);
+ radar.append(plotSwitch,chart,groups,pendingStrip,legend,make("p",ready.length+" of "+candidates.length+" shown with measured raster metrics"),rosterDetails,mobileRoster);
  const dock=document.createElement("div");dock.className="lens-dock";
  const dockButton=(side:"left"|"right",label:string,open:boolean)=>{const b=button(label,()=>setOpen(side,!open));b.dataset.lensFocus=side+"-dock";b.setAttribute("aria-expanded",String(open));b.setAttribute("aria-controls","mosaic-lens-"+side);return b;};
  dock.append(dockButton("left","Reality Rings",state.ringsOpen),dockButton("right","Population radar",state.radarOpen));

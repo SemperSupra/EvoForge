@@ -83,6 +83,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   type StageFrame={stages:Map<string,PresentationStage>;candidates:Candidate[];previews:typeof thumbMap;filters:LensState["filters"];elapsed:number};
   const journal=new StageJournal<StageFrame>();
   let historyDirection:-1|0|1=0,historyTimer:number|null=null;
+  let timelineOptionsExpanded=false;
   const stageInterval=()=>clampDwell(lensState.stageMs??1100);
   const lensScroll=new Map<string,number>();
   let libraryOpen = false;
@@ -115,7 +116,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   function commitInteraction(){if(!interactionHeld)return;if(interactionRelease!==null){clearTimeout(interactionRelease);interactionRelease=null;}interactionHeld=false;editingControl=null;}
   el.addEventListener("click",e=>{const target=actionable(e.target);if(target?.matches("button,summary,canvas,[role=button]"))commitInteraction();},true);
   el.addEventListener("change",()=>commitInteraction(),true);
-  el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
+  el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){if(target.matches("[role=button]")&&(e.key==="Enter"||e.key===" ")){commitInteraction();return;}holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
   let designExpanded=!(window.matchMedia?.('(max-width: 640px), (max-height: 500px)')?.matches??false);
   compactLens.addEventListener("change",()=>{if(el.isConnected)render();});
   document.addEventListener("visibilitychange",()=>{if(!el.isConnected)return;presentationLast=null;stopPresentationTimer();stopHistoryTimer();cancelReadyTimer();render();});
@@ -371,7 +372,10 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     const output=document.createElement("output");const show=()=>{output.textContent=(stageInterval()/1000).toFixed(2)+" s";range.setAttribute("aria-valuetext",output.textContent+" per stage");};show();
     range.oninput=()=>{lensState.stageMs=clampDwell(Number(range.value));show();stopHistoryTimer();};
     range.onchange=()=>{saveLensLayout(lensState);commitInteraction();render();};rate.append(label,range,output);
-    section.append(heading,buttons,scrub,rate);
+    section.dataset.options=String(timelineOptionsExpanded);
+    const options=document.createElement("button");options.type="button";options.className="stage-options-toggle";options.textContent=timelineOptionsExpanded?"Less":"Stage options";options.setAttribute("aria-label","Stage timing and position options");options.setAttribute("aria-expanded",String(timelineOptionsExpanded));options.dataset.lensFocus="stage-options";
+    options.onclick=()=>{timelineOptionsExpanded=!timelineOptionsExpanded;render();};
+    section.append(heading,options,buttons,scrub,rate);
     return section;
   }
   function armPresentationTimer(){
