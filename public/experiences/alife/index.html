@@ -134,6 +134,14 @@
     body.mobile-panel-left #hud-left{left:8px;right:auto}body.mobile-panel-right #hud-right{right:8px;left:auto}
     @media(max-width:1199px),(pointer:coarse){#panel-controls button{min-height:44px}#hud-left,#hud-right{top:calc(var(--toolbar-height) + 66px)}}
     @media(max-height:500px) and (pointer:coarse){#hud-left,#hud-right{max-height:calc(100dvh - var(--toolbar-height) - 120px)}}
+    /* One explicit lower workspace for viewport tools. Panels stop above this workspace,
+       so their controls never sit under the tool dock or camera buttons. */
+    :root{--workspace-bottom:158px}
+    #hud-left,#hud-right{bottom:var(--workspace-bottom);max-height:none;min-height:0}
+    #world-tool-dock{bottom:76px}
+    @media(max-width:1199px),(pointer:coarse){:root{--workspace-bottom:calc(60px + 26dvh + 64px)}#hud-left,#hud-right{bottom:var(--workspace-bottom);max-height:none;min-height:0}}
+    @media(max-height:500px) and (pointer:coarse){:root{--workspace-bottom:48px}#hud-left,#hud-right{bottom:48px;max-height:none;width:min(42vw,350px)!important}#world-tool-dock{right:8px;left:auto;bottom:calc(60px + 38dvh);width:min(48vw,340px)}body.mobile-panel-right #hud-right{right:8px;left:auto}body.mobile-panel-right #world-tool-dock,body.mobile-panel-right #camera-controls{left:8px;right:auto}}
+    body:has(#strike-panel:not([hidden])) #hud-left,body:has(#strike-panel:not([hidden])) #hud-right{visibility:hidden;pointer-events:none}
   </style>
 </head>
 <body>
