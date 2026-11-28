@@ -1,7 +1,8 @@
 import { decorateMosaicChrome } from "./chrome.mjs";
 import type { Candidate, CandidateStatus, GenerationState, Pace, Playback, GASettingsSnapshot } from "../core/types";
 import { paceProfile } from "../core/pace";
-import { renderEvolutionLenses, renderCandidateRadar, type LensState } from "./evolution-lenses";
+import { renderEvolutionLenses, renderCandidateRadar, readLensLayout, type LensState } from "./evolution-lenses";
+import { presentedStage, presentationComplete, stageDwell, type PresentationStage, type PresentationRecord } from "./lens-presentation";
 import { WorkerPool } from "../workers/pool";
 import type { RenderJob, MainMessage } from "../workers/protocol";
 import { XorShift32, mixU32 } from "../core/prng";
@@ -74,7 +75,12 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   let radarCandidateId: string | null = null;
   let focusRender: { candidateId: string; w:number; h:number; rgba: Uint8ClampedArray; status: "gen"|"ready"|"err" } | null = null;
 
-  const lensState:LensState={ringsOpen:false,radarOpen:false,selected:null,filters:[],stage:2};
+  const compactLens=window.matchMedia("(max-width: 999px)");
+  const lensState:LensState={ringsOpen:!compactLens.matches,radarOpen:!compactLens.matches,selected:null,filters:[],stage:0,pipelineMode:"walkthrough",...readLensLayout()};
+  if(compactLens.matches){lensState.ringsOpen=false;lensState.radarOpen=false;}
+  let presentationKey="",presentationElapsed=0,presentationLast:number|null=null,presentationTimer:number|null=null,presentationStarted=false;
+  let presentationRecords=new Map<string,PresentationRecord>(),presentationStages=new Map<string,PresentationStage>();
+  const lensScroll=new Map<string,number>();
   let libraryOpen = false;
   let libraryItems: FavoriteRecord[] = [];
   // `null` means "all favorites" (default when unset). `[]` means "none".
@@ -93,8 +99,8 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   const replaceGalleryPool=()=>{pool.terminate();pool=new WorkerPool(workerCountFromPace(pace));pool.onMessage(onWorkerMessage);};
 
   // Preserve the live control during pointer gestures, native pickers and keyboard edits.
-  const actionable=(t:EventTarget|null)=>t instanceof Element?t.closest<HTMLElement>("button,select,input,summary,canvas,[role=button]"):null;
-  function holdInteraction(){if(interactionRelease!==null){clearTimeout(interactionRelease);interactionRelease=null;}interactionHeld=true;cancelReadyTimer();}
+  const actionable=(t:EventTarget|null)=>t instanceof Element?t.closest<HTMLElement>("button,select,input,summary,canvas,[role=button],[role=separator]"):null;
+  function holdInteraction(){if(interactionRelease!==null){clearTimeout(interactionRelease);interactionRelease=null;}interactionHeld=true;cancelReadyTimer();stopPresentationTimer();presentationLast=null;}
   function releaseInteraction(){if(interactionRelease!==null)clearTimeout(interactionRelease);interactionRelease=window.setTimeout(()=>{interactionRelease=null;interactionHeld=false;editingControl=null;render();},180);}
   el.addEventListener("pointerdown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;}},true);
   window.addEventListener("pointerup",()=>{if(interactionHeld&&!editingControl)releaseInteraction();},true);
@@ -106,6 +112,8 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   el.addEventListener("click",e=>{const target=actionable(e.target);if(target?.matches("button,summary,canvas,[role=button]"))commitInteraction();},true);
   el.addEventListener("change",()=>commitInteraction(),true);
   el.addEventListener("keydown",e=>{const target=actionable(e.target);if(target){holdInteraction();if(target.matches("select,input:not([type=range])"))editingControl=target;else releaseInteraction();}},true);
+  compactLens.addEventListener("change",()=>{if(el.isConnected)render();});
+  document.addEventListener("visibilitychange",()=>{if(!el.isConnected)return;presentationLast=null;stopPresentationTimer();cancelReadyTimer();render();});
   // First session seed is derived from favorites (if any). App() can't be async, so bootstrap.
   void startNewSession();
 
@@ -274,7 +282,34 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function pickedCount(): number { return gen.candidates.filter(c => c.status === "picked").length; }
-  function readyToAdvance(): boolean { return gen.candidates.length > 0 && gen.candidates.every(c => thumbMap.get(c.id)?.status === "ready"); }
+  function actualReady():boolean {return gen.candidates.length>0&&gen.candidates.every(c=>thumbMap.get(c.id)?.status==="ready");}
+  function activePresentation():boolean{return lensState.pipelineMode!=="live"&&presentationStarted;}
+  function stopPresentationTimer(){if(presentationTimer!==null){clearTimeout(presentationTimer);presentationTimer=null;}}
+  function syncPresentation():boolean{
+    const key=gen.generationId+":"+gen.renderIntentId+":"+(lensState.pipelineMode??"walkthrough");
+    if(presentationKey!==key){presentationKey=key;presentationElapsed=0;presentationLast=null;presentationStarted=false;presentationRecords.clear();presentationStages.clear();stopPresentationTimer();}
+    if(lensState.pipelineMode==="live"){presentationLast=null;return false;}
+    if(playback==="playing")presentationStarted=true;
+    const now=performance.now(),running=presentationStarted&&currentGate()==="open"&&!document.hidden;
+    if(running&&presentationLast!==null)presentationElapsed+=Math.max(0,Math.min(250,now-presentationLast));
+    presentationLast=running?now:null;
+    let changed=false;
+    for(const [index,c] of gen.candidates.entries()){
+      const ready=thumbMap.get(c.id)?.status==="ready";
+      if(ready&&!presentationRecords.has(c.id))presentationRecords.set(c.id,{readyAt:presentationElapsed});
+      const old=presentationStages.get(c.id)??0;
+      const stage=presentedStage(ready,presentationRecords.get(c.id),presentationElapsed,index,stageDwell(reviewSeconds));
+      const next=ready?Math.max(old,stage) as PresentationStage:0;
+      presentationStages.set(c.id,next);changed||=next!==old;
+    }
+    return changed;
+  }
+  function armPresentationTimer(){
+    if(presentationTimer!==null||!activePresentation()||currentGate()!=="open"||document.hidden)return;
+    if(!gen.candidates.some(c=>thumbMap.get(c.id)?.status==="ready"&&presentationStages.get(c.id)!==2))return;
+    presentationTimer=window.setTimeout(()=>{presentationTimer=null;if(!el.isConnected)return;if(syncPresentation())render();else armPresentationTimer();},100);
+  }
+  function readyToAdvance(): boolean { return actualReady()&&(!activePresentation()||presentationComplete(gen.candidates.map(c=>c.id),presentationStages)); }
 
   function cancelReadyTimer() { if (readyTimer !== null) { clearTimeout(readyTimer); readyTimer = null; } }
 
@@ -349,7 +384,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function currentGate(): AdvanceGate {
-    if (focusCandidateId !== null || libraryOpen || interactionHeld) return "focus_open";
+    if (focusCandidateId !== null || libraryOpen || interactionHeld || document.hidden) return "focus_open";
     if (playback === "paused") return "paused";
     if (refineHold) return "hold_refine";
     return "open";
@@ -645,6 +680,10 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
 
   function render() {
     if(interactionHeld)return;
+    syncPresentation();
+    if(currentGate()!=="open")stopPresentationTimer();
+    const lensFocus=el.contains(document.activeElement)?document.activeElement?.getAttribute("data-lens-focus"):null;
+    for(const p of el.querySelectorAll<HTMLElement>(".lens-pane"))lensScroll.set(p.id,p.scrollTop);
     const priorScroll=el.querySelector<HTMLElement>(".modalBody")?.scrollTop??0;
     el.innerHTML = "";
 
@@ -773,14 +812,13 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     const prof = paceProfile(pace);
     const readyLatch=shouldShowReadyLatch({ playback, pace, gate: currentGate(), readyToAdvance: readyToAdvance() });
     const latch=document.createElement("div");latch.className="advance-strip";
-    const status=document.createElement("span");status.className="advance-status";status.textContent=readyLatch?"Ready · continuing in "+reviewSeconds+"s":currentGate()==="hold_refine"?"Refining generation…":playback==="playing"?"Rendering / exploring":"Paused";
+    const status=document.createElement("span");status.className="advance-status";status.textContent=readyLatch?"Ready · continuing in "+reviewSeconds+"s":currentGate()==="hold_refine"?"Refining generation…":playback==="playing"&&actualReady()?"Showing candidate stages…":playback==="playing"?"Rendering / exploring":"Paused";
     const hold=document.createElement("button");hold.textContent="Hold";hold.disabled=!readyLatch;hold.onclick=()=>setPlayback("paused");
     const adv=document.createElement("button");adv.textContent="Advance now";adv.disabled=!readyLatch;adv.onclick=()=>advanceOneGeneration();
     latch.append(status,hold,adv);el.append(latch);
     const notification=document.createElement("div");notification.className="gallery-notice";notification.setAttribute("role","status");notification.textContent=lastActionMsg??"";el.append(notification);
     armReadyTimerIfNeeded();
 
-    el.append(renderEvolutionLenses(gen.candidates,thumbMap,lensState,()=>{cancelReadyTimer();render();},openFocus));
     const grid = document.createElement("div"); grid.className = "grid";
     grid.dataset.playback = playback; grid.dataset.pace = pace; grid.dataset.advanceGate = currentGate();
     grid.dataset.engineId=engineRef.engineId;grid.dataset.engineVersion=engineRef.engineVersion;grid.dataset.generation=String(gen.generationId);
@@ -864,7 +902,10 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
       grid.appendChild(card);
     }
 
-    el.appendChild(grid);
+    el.append(renderEvolutionLenses(gen.candidates,thumbMap,lensState,()=>{cancelReadyTimer();render();},openFocus,grid,activePresentation()?presentationStages:undefined));
+    for(const p of el.querySelectorAll<HTMLElement>(".lens-pane"))p.scrollTop=lensScroll.get(p.id)??0;
+    if(lensFocus){const replacement=[...el.querySelectorAll<HTMLElement>("[data-lens-focus]")].find(e=>e.getAttribute("data-lens-focus")===lensFocus);replacement?.focus({preventScroll:true});}
+    armPresentationTimer();
 
     if (focusCandidateId) {
       const c = gen.candidates.find(x => x.id === focusCandidateId);
