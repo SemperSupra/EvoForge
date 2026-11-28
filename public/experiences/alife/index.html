@@ -150,6 +150,10 @@
     #viewport-tool-stack #strike-panel{max-height:20dvh}
     #hud-left,#hud-right{bottom:calc(var(--tool-stack-height,158px) + 16px);max-height:none}
     @media(max-height:500px) and (pointer:coarse){#viewport-tool-stack{left:auto;right:8px;transform:none;width:min(47vw,340px);max-height:calc(100dvh - var(--toolbar-height) - 66px)}body.mobile-panel-right #viewport-tool-stack{right:auto;left:8px}#viewport-tool-stack #camera-controls{max-height:35dvh}#viewport-tool-stack #world-tool-dock{max-height:28dvh}#hud-left,#hud-right{bottom:8px;width:min(42vw,350px)!important}}
+    /* Scene view is presentation only. The toolbar retains an explicit exit and pause. */
+    body.scene-only #panel-controls,body.scene-only #viewport-tool-stack,body.scene-only #hud-left,body.scene-only #hud-right{display:none!important}
+    #scene-only{white-space:nowrap;min-height:36px}#scene-only[aria-pressed=true]{outline:2px solid var(--ef-accent,#9ce5ff);outline-offset:1px}
+    @media(pointer:coarse){#scene-only{min-height:44px}}
     /* Visual acceptance: keep a visible world region on compact portrait displays. */
     @media(max-width:999px) and (min-height:501px){#hud-left,#hud-right,body.mobile-panel-left #hud-left,body.mobile-panel-right #hud-right{max-height:42dvh;bottom:auto}}
     @media(min-width:1000px) and (max-width:1399px){#hud-left,#hud-right{width:min(27vw,320px)}}
@@ -162,6 +166,7 @@
     <a href="../../">All experiences</a>
     <span id="experience-mode"></span>
     <button id="btn-pause" type="button" disabled>Pause</button>
+    <button id="scene-only" type="button" aria-pressed="false" title="Hide or restore view panels and tools">Scene view</button>
     <a href="?mode=observe">Observe</a><a href="?mode=play">Play</a>
   </nav>
   <section id="mobile-start" hidden aria-labelledby="mobile-start-title" style="position:fixed;z-index:45;inset:0;background:#131c27;padding:24px;overflow:auto;color:white;font-size:16px"><h2 id="mobile-start-title" style="font-size:24px;display:block;margin-bottom:16px">ALife — mobile safe start</h2><p style="line-height:1.6;margin-bottom:20px">The simulation uses WebGPU. Start a reduced-load session only when ready. If your browser reloads or closes, return here instead of restarting automatically.</p><button id="mobile-start-button" style="min-height:48px;font-size:16px;padding:12px;width:100%;margin-bottom:16px">Start reduced-load simulation</button><p id="mobile-start-status" role="status" style="margin-bottom:20px"></p><a href="../../" style="color:#9ce5ff;display:inline-flex;align-items:center;min-height:44px">Return to all experiences</a></section>
@@ -321,7 +326,7 @@ const launchQuery = new URLSearchParams(location.search);
 const mode = launchQuery.get('mode') === 'play' ? 'play' : 'observe';
 const initialSeed = launchQuery.get('seed');
 const validSeed = initialSeed !== null && /^\d{1,10}$/.test(initialSeed) && Number(initialSeed) <= 0xffffffff;
-const experience = { id: 'alife', version: '0.1.0-rdte.7', upstream: 'gemini-v7', mode, phase: 'initializing', error: null };
+const experience = { id: 'alife', version: '0.1.0-rdte.8', upstream: 'gemini-v7', mode, phase: 'initializing', error: null };
 let paused = false, stopped = false, resetEpoch = 0, viewDirty = true;
 document.getElementById('experience-mode').textContent = mode === 'play' ? 'Play • experimental' : 'Observe • experimental';
 function setPaused(value) {
@@ -657,18 +662,21 @@ function strikeVisual(id,i=0){
  let x=(Math.imul(id+1,0x9e3779b1)^Math.imul(i+17,0x85ebca6b)^state.seed)>>>0;
  x^=x>>>16;x=Math.imul(x,0x7feb352d);x^=x>>>15;return (x>>>0)/4294967296;
 }
+let strikeVisualFrame={tick:0,viewRevision:0,visible:false,pendingId:null,phase:null,meteorBodies:0,dustParticles:0,lightningStrokes:0,impactIds:[]};
 function paintInterventions(matrix,width,height){
  if(strikeCanvas.width!==width||strikeCanvas.height!==height){strikeCanvas.width=width;strikeCanvas.height=height;}
  const ctx=strikeCtx,dpr=Math.min(devicePixelRatio,state.renderDpr);
  ctx.clearRect(0,0,width,height);
+ strikeVisualFrame={tick:strikeWorld.tick,viewRevision:state.viewRevision+1,visible:state.camPitch>=0,pendingId:null,phase:null,meteorBodies:0,dustParticles:0,lightningStrokes:0,impactIds:[]};
  if(state.camPitch<0)return;
  function proj(x,y,z){const w=matrix[3]*x+matrix[7]*y+matrix[11]*z+matrix[15];if(w<=.01)return null;const p=[(matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12])/w*width/2+width/2,height/2-(matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13])/w*height/2];return p.every(Number.isFinite)?p:null}
- function line(points,color,thick,closed=false){if(points.some(p=>!p)||!points.length)return;ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);if(closed)ctx.closePath();ctx.strokeStyle=color;ctx.lineWidth=thick*dpr;ctx.lineCap='round';ctx.stroke()}
+ function line(points,color,thick,closed=false){if(points.some(p=>!p)||!points.length)return;ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);if(closed)ctx.closePath();ctx.strokeStyle=color;ctx.lineWidth=thick*dpr;ctx.lineCap='round';ctx.stroke();return points.some(p=>p[0]>=0&&p[0]<=width&&p[1]>=0&&p[1]<=height)}
  function ring(x,z,r,color,thick=2){line(Array.from({length:49},(_,i)=>{const a=i/48*Math.PI*2,xx=x+Math.cos(a)*r,zz=z+Math.sin(a)*r;return proj(xx,surface(xx,zz)+.06,zz)}),color,thick,true)}
  function textAt(label,p,color){if(!p)return;ctx.font='bold '+Math.round(14*dpr)+'px system-ui';ctx.fillStyle=color;ctx.textAlign='center';ctx.fillText(label,p[0],p[1]-15*dpr)}
- function dot(p,r,c){if(!p||!Number.isFinite(r))return;ctx.beginPath();ctx.arc(p[0],p[1],Math.max(1,Math.min(130,r*dpr)),0,Math.PI*2);ctx.fillStyle=c;ctx.fill()}
- function cloud(p,r,rgb,opacity){if(!p||!Number.isFinite(r))return;const n=Math.max(2,Math.min(160,r*dpr));if(p[0]<-n||p[0]>width+n||p[1]<-n||p[1]>height+n)return;const g=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],n);g.addColorStop(0,'rgba('+rgb+','+opacity+')');g.addColorStop(1,'rgba('+rgb+',0)');ctx.fillStyle=g;ctx.fillRect(p[0]-n,p[1]-n,2*n,2*n)}
+ function dot(p,r,c){if(!p||!Number.isFinite(r))return;ctx.beginPath();ctx.arc(p[0],p[1],Math.max(1,Math.min(130,r*dpr)),0,Math.PI*2);ctx.fillStyle=c;ctx.fill();return p[0]>=0&&p[0]<=width&&p[1]>=0&&p[1]<=height}
+ function cloud(p,r,rgb,opacity){if(!p||!Number.isFinite(r))return;const n=Math.max(2,Math.min(160,r*dpr));if(p[0]<-n||p[0]>width+n||p[1]<-n||p[1]>height+n)return;const g=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],n);g.addColorStop(0,'rgba('+rgb+','+opacity+')');g.addColorStop(1,'rgba('+rgb+',0)');ctx.fillStyle=g;ctx.fillRect(p[0]-n,p[1]-n,2*n,2*n);return opacity>0}
  const pending=strikeWorld.pending;
+ if(pending){strikeVisualFrame.pendingId=pending.id;strikeVisualFrame.phase=pending.phase;}
  if(strikeHover&&!pending&&mode==='play'&&state.worldTool)ring(strikeHover.x,strikeHover.z,strikeProfiles[strikeTool].radius,'rgba(255,220,150,.55)',1);
  if(pending){
   const e=pending,h=surface(e.x,e.z),p=proj(e.x,h+.05,e.z),variant=Math.floor(strikeVisual(e.id)*4),az=strikeVisual(e.id,1)*Math.PI*2,dx=Math.cos(az),dz=Math.sin(az);
@@ -680,9 +688,9 @@ function paintInterventions(matrix,width,height){
    const f=Math.max(0,Math.min(1,(strikeWorld.tick-e.launchAt)/interventionModel.DESCENT)),q=1-f;
    const x=e.x-dx*approach*q,z=e.z-dz*approach*q,y=h+q*(6+variant*.8)+.18;
    const m=proj(x,y,z),tail=proj(x-dx*2.8,y+3,z-dz*2.8);
-   const size=13+variant*3+7*f;
+   const size=19+variant*4+10*f;
    if(!reducedStrike){line([tail,m],tones[variant],size*.8);cloud(m,size*2.8,glows[variant],.48);}
-   dot(m,size,'#352b2a');dot(m,size*.72,tones[variant]);dot(m,size*.36,'#fff0c8');
+   if(dot(m,size,'#352b2a'))strikeVisualFrame.meteorBodies++;dot(m,size*.72,tones[variant]);dot(m,size*.36,'#fff0c8');
    if(!reducedStrike&&variant===2)for(let i=0;i<5;i++){const k=strikeVisual(e.id,i+8),t=proj(x-dx*k*2+(k-.5)*.8,y+k*1.3,z-dz*k*2);cloud(t,6+k*6,glows[variant],.40);}
    textAt('DESCENT · COMMITTED',p,'#ffe5ac');
   }
@@ -690,20 +698,21 @@ function paintInterventions(matrix,width,height){
  // Keep visual debris longer than the one-shot simulation impulse; receipts are already bounded.
  const impacts=strikeWorld.receipts.filter(e=>e.type==='meteor-impact'&&strikeWorld.tick-e.tick<120).slice(-8);
  for(const e of impacts){
-  const age=strikeWorld.tick-e.tick,f=age/120,h=surface(e.x,e.z),p=proj(e.x,h+.08,e.z);
+  const age=strikeWorld.tick-e.tick,f=age/120,h=surface(e.x,e.z),p=proj(e.x,h+.08,e.z);strikeVisualFrame.impactIds.push(e.id);
   if(age<12){cloud(p,35*(1-age/14),'255,177,82',.60*(1-age/14));ring(e.x,e.z,e.radius*Math.max(.15,age/12),'#ffc47c',3);}
   const n=reducedStrike?6:(mobileBudget?18:30);
   for(let i=0;i<n;i++){const a=strikeVisual(e.id,20+i)*Math.PI*2,k=strikeVisual(e.id,70+i),r=e.radius*(.18+1.45*f)*(.4+k*.8),x=e.x+Math.cos(a)*r+state.airWind*f*.7,z=e.z+Math.sin(a)*r;
    if(Math.hypot(x,z)>state.arenaRadius)continue;
    const base=surface(x,z),lift=(.15+1.1*Math.sin(Math.PI*f))*(.5+k);
-   cloud(proj(x,base+lift,z),(10+20*f)*(0.65+k*.55),'124,107,86',(.31*(1-f))*(.8+k*.2));
+   if(cloud(proj(x,base+lift,z),(15+25*f)*(0.65+k*.55),i%3===0?'185,151,105':'142,117,85',(.50*(1-f))*(.8+k*.2)))strikeVisualFrame.dustParticles++;
   }
  }
  for(const e of strikeWorld.effects){if(e.type!=='lightning')continue;
   const age=strikeWorld.tick-e.tick,f=age/e.duration,h=surface(e.x,e.z),p=proj(e.x,h+.05,e.z),variant=Math.floor(strikeVisual(e.id)*4);
   const points=[];for(let i=0;i<=8;i++){const t=i/8,spread=(1-t)*.7;points.push(proj(e.x+(strikeVisual(e.id,140+i)-.5)*spread,h+5.8*(1-t),e.z+(strikeVisual(e.id,160+i)-.5)*spread));}
   points[points.length-1]=p;
-  if(variant!==1||age%3!==1||reducedStrike){line(points,'rgba(110,163,255,'+(1-f)*.45+')',reducedStrike?3:7);line(points,'#e1f3ff',reducedStrike?1.5:2.5);}
+  // Retain a visible core throughout the accepted event; no intentionally blank flicker frames.
+  line(points,'rgba(110,163,255,'+(1-f)*.35+')',reducedStrike?3:6);if(line(points,'#e1f3ff',reducedStrike?1.5:2.5))strikeVisualFrame.lightningStrokes++;
   if(!reducedStrike&&variant>=2)for(let k=0;k<(variant===3?3:1);k++){const j=2+k,sgn=k%2?1:-1;line([points[j],proj(e.x+sgn*.65,h+2.8,e.z+.4*k),proj(e.x+sgn*(.9+k*.2),h+1.2,e.z+.2)],'#b5d7ff',1.6);}
   cloud(p,11+variant*3,'174,214,255',.36*(1-f));
  }
@@ -2386,7 +2395,7 @@ window.addEventListener('resize',()=>{if(state.panel==='both'&&compactPanels())s
 
 
 window.__ARENA_RPC__ = Object.freeze({
-  getState: () => structuredClone({ ...experience, tick: state.simTick, telemetry: telemetry.latest, knobs: { state, speciesConfig }, interventions:interventionModel.snapshot(strikeWorld) }),
+  getState: () => structuredClone({ ...experience, tick: state.simTick, telemetry: telemetry.latest, knobs: { state, speciesConfig }, interventions:interventionModel.snapshot(strikeWorld),visual:{...strikeVisualFrame,sceneOnly:document.body.classList.contains('scene-only')} }),
   setPaused: value => { setPaused(value); return window.__ARENA_RPC__.getState(); },
   setKnobs: patch => { applyKnobPatch(patch); return window.__ARENA_RPC__.getState(); },
   triggerSurprise: type => triggerSurprise(type),
@@ -2530,9 +2539,9 @@ async function init() {
   let depthTex = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
   function resizeDepth(){if(stopped)return;viewDirty=true;depthTex.destroy();depthTex=device.createTexture({size:[canvas.width,canvas.height],format:'depth24plus',usage:GPUTextureUsage.RENDER_ATTACHMENT});}
   window.addEventListener('resize',resizeDepth);
-  let budgetPending=false,slowSamples=0;
+  let budgetPending=false,slowMs=0;
   function applyBudget(hz,dpr){state.targetHz=hz;state.renderDpr=dpr;budgetPending=true;viewDirty=true;document.getElementById('budget-status').textContent=state.deviceProfile+' · '+hz+' Hz target · '+dpr.toFixed(2)+' DPR cap';}
-  document.getElementById('performance-mode').addEventListener('change',e=>{state.performanceMode=e.target.value;slowSamples=0;if(state.performanceMode==='reduced')applyBudget(Math.min(24,arenaProfile.hz),Math.min(.75,arenaProfile.dpr));else applyBudget(arenaProfile.hz,arenaProfile.dpr);});
+  document.getElementById('performance-mode').addEventListener('change',e=>{state.performanceMode=e.target.value;slowMs=0;if(state.performanceMode==='reduced')applyBudget(Math.min(24,arenaProfile.hz),Math.min(.75,arenaProfile.dpr));else applyBudget(arenaProfile.hz,arenaProfile.dpr);});
 
   let lastTime = performance.now(), smoothDt = 16.6, readingStats = false;
 
@@ -2709,8 +2718,14 @@ async function init() {
       if(stopped)return;
       if(stepping&&!document.hidden&&arenaProfile.name!=='smoke'&&state.performanceMode==='auto'){
         const cost=performance.now()-workStarted;
-        slowSamples=cost>1000/state.targetHz*.9?slowSamples+1:Math.max(0,slowSamples-2);
-        if(slowSamples>=90){slowSamples=0;applyBudget(Math.max(15,state.targetHz-5),Math.max(.75,state.renderDpr-.25));}
+        // Display-only load shedding. Use accumulated queue-completion time, not frame count:
+        // a badly overloaded device otherwise takes longest to adapt. Retain simulation tick
+        // cap, population, timestep and solver iterations. Do not reallocate at the floor.
+        const period=1000/state.targetHz;
+        slowMs=cost>period*.9?slowMs+Math.min(cost,500):Math.max(0,slowMs-2*Math.min(cost,500));
+        const effectiveDpr=Math.min(devicePixelRatio,state.renderDpr);
+        if(slowMs>=2000&&effectiveDpr>.75){slowMs=0;const delta=cost>period*2?.5:.25;applyBudget(state.targetHz,Math.max(.75,effectiveDpr-delta));}
+        else if(effectiveDpr<=.75)slowMs=0;
       }
       requestAnimationFrame(frame);
     }).catch(error => failArena(error.message));
@@ -2975,6 +2990,14 @@ function installChrome(host,arena=false){
 showPanel(state.panel);
 installChrome(document.getElementById("experience-toolbar"),true);
 const toolStack=document.getElementById("viewport-tool-stack");
+const sceneButton=document.getElementById("scene-only");
+sceneButton.addEventListener("click",()=>{
+ const enabled=!document.body.classList.contains("scene-only");
+ if(enabled){disarmTool();showWorldTools(false);}
+ document.body.classList.toggle("scene-only",enabled);
+ sceneButton.setAttribute("aria-pressed",String(enabled));sceneButton.textContent=enabled?"Restore controls":"Scene view";
+ viewDirty=true;sceneButton.focus();
+});
 const measureTools=()=>document.documentElement.style.setProperty("--tool-stack-height",Math.ceil(toolStack.getBoundingClientRect().height)+"px");
 if(typeof ResizeObserver!=="undefined")new ResizeObserver(measureTools).observe(toolStack);measureTools();
 const beginArena=()=>init().catch(error => failArena(error.message || String(error)));
