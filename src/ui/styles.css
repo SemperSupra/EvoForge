@@ -187,3 +187,9 @@ button, select { font: inherit; }
 .radar-stage-key span::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--stage-color);border:1px solid currentColor}
 @media(max-width:999px){.stage-transport{padding:5px 6px;gap:4px 7px}.stage-transport-heading{flex:1 1 100%}.stage-transport-buttons{flex:1 1 100%}.stage-transport>input[type=range]{max-width:100%}.stage-interval{flex:1 1 100%}.stage-interval input{flex:1 1 90px}.stage-transport-buttons button{min-width:38px;min-height:38px}}
 @media(pointer:coarse){.stage-transport-buttons button,.radar-pending-items button{min-height:44px;min-width:44px}}
+
+/* R95 explicit read-only generation archive, not a live rollback surface. */
+.generation-history-panel{margin:8px 12px;padding:12px;border:1px solid #8886;border-radius:8px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0;box-sizing:border-box}
+.generation-history-panel h2,.generation-history-panel p{flex:1 1 100%;margin:0}.generation-history-panel h2{font-size:16px}.generation-history-panel p{font-size:13px;line-height:1.5}
+.generation-history-controls{display:flex;flex-wrap:wrap;gap:6px}.generation-history-panel select{max-width:100%;min-width:0}.generation-history-panel button{min-height:32px}
+@media(max-width:640px),(pointer:coarse){.generation-history-panel{margin:4px 6px;padding:8px}.generation-history-panel button,.generation-history-panel select{min-height:44px;max-width:100%}}
