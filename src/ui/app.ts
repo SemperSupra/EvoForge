@@ -1,4 +1,5 @@
 import { decorateMosaicChrome } from "./chrome.mjs";
+import {GenerationHistory} from "./generation-history";
 import type { Candidate, CandidateStatus, GenerationState, Pace, Playback, GASettingsSnapshot } from "../core/types";
 import { paceProfile } from "../core/pace";
 import { renderEvolutionLenses, renderCandidateRadar, readLensLayout, saveLensLayout, type LensState } from "./evolution-lenses";
@@ -54,6 +55,10 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   let effectiveSessionSeed=sessionSeed;
   let sessionRequest=0;
   let generationIndex = 0;
+  let historyStorage:Storage|null=null;try{historyStorage=window.localStorage;}catch{/* explicit in-memory fallback */}
+  const generationHistory=new GenerationHistory(engineId,engineVersion,historyStorage);
+  let historyBranch="",generationHistoryOpen=false,historySelection="",historyParentCandidate="",historyCompareMessage="",historyCompareRequest=0;
+  void generationHistory.settled().then(()=>{if(generationHistoryOpen&&el.isConnected)render();});
 
   const settings: GASettingsSnapshot = {
     pickN: 4,
@@ -133,6 +138,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     focusRender = null;
 
     const request=++sessionRequest;
+    historyBranch="s-"+crypto.randomUUID();generationHistoryOpen=false;historySelection="";historyCompareMessage="";historyCompareRequest++;
     generationIndex = 0;
     refineHold = false;
     generationId++;
@@ -336,6 +342,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     },stageInterval());
   }
   function timelineAction(command:"first"|"prev"|"next"|"reverse"|"forward"|"pause"|"live",seek?:number){
+    generationHistoryOpen=false;historyCompareRequest++;
     stopHistoryTimer();historyDirection=0;
     if(command==="live"){journal.live();render();return;}
     if(!gen.candidates.length)return;
@@ -347,6 +354,24 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     else if(command==="reverse"){if(journal.index>0)historyDirection=-1;}
     else if(command==="forward"){historyDirection=1;}
     render();
+  }
+  function renderGenerationHistory(){
+    const host=document.createElement("section");host.className="generation-history-panel";host.setAttribute("aria-label","Generation history");
+    const heading=document.createElement("h2");heading.textContent="Generation checkpoints";host.append(heading);
+    const note=document.createElement("p");note.textContent="Read-only archive of actual pre-advance populations. Compare a different parent selection without changing the live population. Up to 64 checkpoints per engine.";host.append(note);
+    const rows=generationHistory.rows(),warning=generationHistory.warning;if(warning){const p=document.createElement("p");p.setAttribute("role","status");p.textContent=warning;host.append(p);}
+    const buttons=document.createElement("div");buttons.className="generation-history-controls";
+    const close=document.createElement("button");close.textContent="Close history";close.onclick=()=>{generationHistoryOpen=false;historyCompareRequest++;render();};buttons.append(close);
+    const exp=document.createElement("button");exp.textContent="Export history";exp.disabled=!rows.length;exp.onclick=()=>downloadBlob("evoforge-history.json",new Blob([generationHistory.export()],{type:"application/json"}));buttons.append(exp);host.append(buttons);
+    if(!rows.length){const p=document.createElement("p");p.textContent="Advance a generation to record its checkpoint.";host.append(p);return host;}
+    if(!rows.some(x=>x.id===historySelection))historySelection=rows.at(-1)!.id;
+    const select=document.createElement("select");select.setAttribute("aria-label","Recorded generation");select.dataset.lensFocus="history-generation";for(const row of rows){const opt=document.createElement("option");opt.value=row.id;opt.textContent="Gen "+row.generationIndex+" · "+row.branch.slice(0,10)+" · "+row.picked+" picks";select.append(opt);}select.value=historySelection;select.onchange=()=>{historySelection=select.value;historyParentCandidate="";historyCompareMessage="";historyCompareRequest++;render();};host.append(select);
+    const cp=generationHistory.get(historySelection);host.dataset.checkpoint=historySelection;host.dataset.generation=String(cp.generationIndex);
+    const summary=document.createElement("p");summary.textContent=cp.candidates.length+" candidates · "+cp.candidates.filter(c=>c.status==="picked").length+" recorded picks · seed "+cp.sessionSeed;host.append(summary);
+    const parents=cp.candidates.filter(c=>c.status!=="retired"),parent=document.createElement("select");parent.setAttribute("aria-label","Alternative parent");parent.dataset.lensFocus="history-parent";for(const c of parents){const opt=document.createElement("option");opt.value=c.id;opt.textContent=c.id+" · "+c.status;parent.append(opt);}if(!parents.some(x=>x.id===historyParentCandidate))historyParentCandidate=parents[0]?.id??"";parent.value=historyParentCandidate;parent.onchange=()=>{historyParentCandidate=parent.value;historyCompareMessage="";historyCompareRequest++;render();};host.append(parent);
+    const compare=document.createElement("button");compare.textContent="Compare alternative next generation";compare.disabled=!historyParentCandidate;compare.onclick=()=>{const id=historySelection,candidate=historyParentCandidate,request=++historyCompareRequest;const edits=Object.fromEntries(cp.candidates.filter(c=>c.status!=="retired").map(c=>[c.id,c.id===candidate?"picked" as const:"normal" as const]));historyCompareMessage="Comparing…";render();void generationHistory.compare(id,"preview-"+crypto.randomUUID(),edits).then(result=>{if(request!==historyCompareRequest||!generationHistoryOpen)return;historyCompareMessage=result.changedSlots+" of "+result.baseline.candidates.length+" next-generation slots differ. Preview only; live population unchanged.";render();},err=>{if(request!==historyCompareRequest||!generationHistoryOpen)return;historyCompareMessage="Comparison failed: "+String(err);render();});};host.append(compare);
+    const result=document.createElement("p");result.className="generation-history-result";result.setAttribute("role","status");result.textContent=historyCompareMessage;host.append(result);
+    return host;
   }
   function renderTimeline(){
     const section=document.createElement("section");section.className="stage-transport";
@@ -370,7 +395,8 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     const output=document.createElement("output");const show=()=>{output.textContent=(stageInterval()/1000).toFixed(2)+" s";range.setAttribute("aria-valuetext",output.textContent+" per stage");};show();
     range.oninput=()=>{lensState.stageMs=clampDwell(Number(range.value));show();stopHistoryTimer();};
     range.onchange=()=>{saveLensLayout(lensState);commitInteraction();render();};rate.append(label,range,output);
-    section.append(heading,buttons,scrub,rate);
+    const archive=document.createElement("button");archive.type="button";archive.textContent="Generations";archive.setAttribute("aria-label","Generation history");archive.setAttribute("aria-expanded",String(generationHistoryOpen));archive.dataset.lensFocus="generation-history-toggle";archive.onclick=()=>{generationHistoryOpen=!generationHistoryOpen;historyCompareRequest++;if(generationHistoryOpen){playback="paused";cancelReadyTimer();stopPresentationTimer();stopHistoryTimer();historyDirection=0;presentationLast=null;}render();};
+    section.append(heading,buttons,scrub,rate,archive);
     return section;
   }
   function armPresentationTimer(){
@@ -453,7 +479,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function currentGate(): AdvanceGate {
-    if (journal.reviewing || focusCandidateId !== null || libraryOpen || interactionHeld || document.hidden) return "focus_open";
+    if (journal.reviewing || generationHistoryOpen || focusCandidateId !== null || libraryOpen || interactionHeld || document.hidden) return "focus_open";
     if (playback === "paused") return "paused";
     if (refineHold) return "hold_refine";
     return "open";
@@ -474,7 +500,9 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function advanceOneGeneration() {
-    if(journal.reviewing)return;
+    if(journal.reviewing||generationHistoryOpen||!gen.candidates.length)return;
+    const checkpoint={engineId,engineVersion,engineConfig,sessionSeed,effectiveSessionSeed,generationIndex,settings,candidates:gen.candidates};
+    void generationHistory.record(historyBranch,checkpoint).then(()=>{if(generationHistoryOpen&&el.isConnected)render();},()=>{if(el.isConnected){setLastAction("Generation history not saved; export available history.");render();}});
     cancelReadyTimer();
     focusCandidateId = null;
     focusRender = null;
@@ -502,7 +530,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
   }
 
   function setPlayback(p: Playback) {
-    if(p==="playing"){journal.live();historyDirection=0;stopHistoryTimer();presentationLast=null;}
+    if(p==="playing"){generationHistoryOpen=false;historyCompareRequest++;journal.live();historyDirection=0;stopHistoryTimer();presentationLast=null;}
     playback = p;
     cancelReadyTimer();
     if (p === "playing" && pace === "manual") { setPace("medium"); return; }
@@ -889,7 +917,7 @@ export function App(engineVersion = "1.0.0", engineId = "mosaic"): HTMLElement {
     const status=document.createElement("span");status.className="advance-status";status.textContent=journal.reviewing?"Recorded stages · live gallery":readyLatch?"Ready · continuing in "+reviewSeconds+"s":currentGate()==="hold_refine"?"Refining generation…":playback==="playing"&&actualReady()?"Showing candidate stages…":playback==="playing"?"Rendering / exploring":"Paused";
     const hold=document.createElement("button");hold.textContent="Hold";hold.disabled=!readyLatch;hold.onclick=()=>setPlayback("paused");
     const adv=document.createElement("button");adv.textContent="Advance now";adv.disabled=!readyLatch;adv.onclick=()=>advanceOneGeneration();
-    latch.append(status,hold,adv);el.append(latch,renderTimeline());
+    latch.append(status,hold,adv);el.append(latch,renderTimeline());if(generationHistoryOpen)el.append(renderGenerationHistory());
     const notification=document.createElement("div");notification.className="gallery-notice";notification.setAttribute("role","status");notification.textContent=lastActionMsg??"";el.append(notification);
     armReadyTimerIfNeeded();
 
